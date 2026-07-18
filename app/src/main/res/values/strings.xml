@@ -26,6 +26,8 @@
     <string name="setting_show_all">显示非本周课程</string>
     <string name="setting_clear">清除数据</string>
     <string name="license">开源协议</string>
+    <string name="view_source">查看源代码</string>
+    <string name="license_load_failed">无法读取许可证资源：%1$s</string>
     <string name="login">认证</string>
     <string name="hint_userid">请输入您的学号</string>
     <string name="hint_wisdom_password">请输入您的智慧安大密码</string>

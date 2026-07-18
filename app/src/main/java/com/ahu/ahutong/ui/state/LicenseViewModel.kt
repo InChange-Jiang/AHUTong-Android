@@ -91,6 +91,14 @@ class LicenseViewModel : ViewModel() {
                 "Apache Software License 2.0"
             ),
             License(
+                "GuiXu (Rust rewrite)",
+                "Delsart and GuiXu Rust contributors",
+                "https://github.com/Yukon163/GuiXu/tree/rust-rewrite",
+                "Apache License 2.0",
+                "licenses/guixu/LICENSE",
+                "licenses/guixu/NOTICE"
+            ),
+            License(
                 "More...",
                 "Various Developers",
                 "https://github.com/",

@@ -83,6 +83,24 @@ android {
     }
 }
 
+val generatedThirdPartyAssets = layout.buildDirectory.dir("generated/thirdPartyAssets")
+val generateThirdPartyAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("GuiXu-Rust/LICENSE")) {
+        into("licenses/guixu")
+    }
+    from(rootProject.file("GuiXu-Rust/NOTICE")) {
+        into("licenses/guixu")
+    }
+    into(generatedThirdPartyAssets)
+}
+
+android.sourceSets.getByName("main").assets.srcDir(generatedThirdPartyAssets)
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+    .configureEach {
+        dependsOn(generateThirdPartyAssets)
+    }
+
 val rustSdkArm64Output = project.file("src/main/jniLibs/arm64-v8a/libahutong_rs.so")
 val rebuildRustSdk = providers.environmentVariable("AHUTONG_REBUILD_RUST")
     .map { it == "1" || it.equals("true", ignoreCase = true) }

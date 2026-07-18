@@ -20,18 +20,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -42,16 +50,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.notification.CourseReminderCapability
 import com.ahu.ahutong.notification.CourseReminderNotifier
 import com.ahu.ahutong.notification.CourseReminderScheduler
@@ -60,19 +69,19 @@ import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
-import com.kyant.monet.a1
-import com.kyant.monet.n1
-import com.kyant.monet.withNight
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Preferences() {
 
     val preferencesViewModel: PreferencesViewModel = hiltViewModel()
     val context = LocalContext.current
     var isRequestingPermission by remember { mutableStateOf(false) }
+    var isThemeModeMenuExpanded by remember { mutableStateOf(false) }
     var useCmbCardRecharge by remember { mutableStateOf(AHUCache.isCmbCardRechargePreferred()) }
     var showClearLearningConfirm by remember { mutableStateOf(false) }
 
+    val appThemeMode by preferencesViewModel.appThemeMode.collectAsState()
     val showQRCode by preferencesViewModel.showQRCode.collectAsState()
     val personalizationEnabled by preferencesViewModel.personalizationEnabled.collectAsState()
     val predictivePrefetchEnabled by preferencesViewModel.predictivePrefetchEnabled.collectAsState()
@@ -82,8 +91,22 @@ fun Preferences() {
     val courseReminderEnabled by preferencesViewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by preferencesViewModel.courseReminderLiveCountdownEnabled.collectAsState()
 
-    val cardColor = 100.n1 withNight 20.n1
+    val cardColor = MaterialTheme.colorScheme.surfaceContainer
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val themeModeOptions = listOf(
+        AppThemeMode.FOLLOW_SYSTEM to "跟随系统",
+        AppThemeMode.DARK to "开启",
+        AppThemeMode.LIGHT to "关闭"
+    )
+    val currentThemeModeLabel = themeModeOptions
+        .first { (mode, _) -> mode == appThemeMode }
+        .second
     val backdrop = rememberCanvasBackdrop { drawRect(cardColor) }
+    val setCmbCardRechargePreferred: (Boolean) -> Unit = { enabled ->
+        useCmbCardRecharge = enabled
+        AHUCache.setCmbCardRechargePreferred(enabled)
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -109,6 +132,7 @@ fun Preferences() {
         Text(
             text = stringResource(id = R.string.preferences),
             modifier = Modifier.padding(24.dp, 32.dp),
+            color = primaryTextColor,
             style = MaterialTheme.typography.headlineLarge
         )
 
@@ -169,15 +193,19 @@ fun Preferences() {
                 Modifier
                     .clip(SmoothRoundedCornerShape(16.dp))
                     .background(cardColor)
-                    .clickable {
-                        val enabled = !useCmbCardRecharge
-                        useCmbCardRecharge = enabled
-                        AHUCache.setCmbCardRechargePreferred(enabled)
-                    }
+                    .toggleable(
+                        value = useCmbCardRecharge,
+                        role = Role.Switch,
+                        onValueChange = setCmbCardRechargePreferred
+                    )
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "充值", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "充值",
+                color = primaryTextColor,
+                style = MaterialTheme.typography.headlineSmall
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -190,20 +218,18 @@ fun Preferences() {
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(text = "总是使用招商银行充值")
+                    Text(text = "总是使用招商银行充值", color = primaryTextColor)
                     Text(
                         text = "开启后首页校园卡充值会直接进入招商银行充值",
-                        color = 50.n1 withNight 80.n1,
+                        color = secondaryTextColor,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
                 LiquidToggle(
                     selected = { useCmbCardRecharge },
-                    onSelect = { enabled ->
-                        useCmbCardRecharge = enabled
-                        AHUCache.setCmbCardRechargePreferred(enabled)
-                    },
-                    backdrop = backdrop
+                    onSelect = setCmbCardRechargePreferred,
+                    backdrop = backdrop,
+                    userInputEnabled = false
                 )
             }
         }
@@ -237,7 +263,11 @@ fun Preferences() {
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "通知", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "通知",
+                color = primaryTextColor,
+                style = MaterialTheme.typography.headlineSmall
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -250,10 +280,10 @@ fun Preferences() {
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(text = "课前提醒")
+                    Text(text = "课前提醒", color = primaryTextColor)
                     Text(
                         text = "上课前 10 分钟提醒下一节课",
-                        color = 50.n1 withNight 80.n1,
+                        color = secondaryTextColor,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -293,7 +323,11 @@ fun Preferences() {
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "通知增强", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "通知增强",
+                color = primaryTextColor,
+                style = MaterialTheme.typography.headlineSmall
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -306,10 +340,13 @@ fun Preferences() {
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(text = "课前倒计时岛卡提醒（实验性）")
+                    Text(
+                        text = "课前倒计时岛卡提醒（实验性）",
+                        color = primaryTextColor
+                    )
                     Text(
                         text = "仅部分系统支持 需同时开启课前提醒",
-                        color = 50.n1 withNight 80.n1,
+                        color = secondaryTextColor,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -357,7 +394,10 @@ fun Preferences() {
                 },
                 modifier = Modifier.align(Alignment.End)
             ) {
-                Text(text = "管理系统岛卡权限")
+                Text(
+                    text = "管理系统岛卡权限",
+                    color = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -366,20 +406,105 @@ fun Preferences() {
                 Modifier
                     .clip(SmoothRoundedCornerShape(16.dp))
                     .background(cardColor)
-                    .clickable { preferencesViewModel.setUseLiquidGlass(!preferencesViewModel.useLiquidGlass.value) }
                     .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "液态玻璃", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                text = "外观",
+                color = primaryTextColor,
+                style = MaterialTheme.typography.headlineSmall
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(SmoothRoundedCornerShape(8.dp))
                     .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "深色模式",
+                    modifier = Modifier.weight(1f),
+                    color = primaryTextColor
+                )
+                ExposedDropdownMenuBox(
+                    expanded = isThemeModeMenuExpanded,
+                    onExpandedChange = { isThemeModeMenuExpanded = !isThemeModeMenuExpanded }
+                ) {
+                    TextField(
+                        value = currentThemeModeLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        singleLine = true,
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(
+                                expanded = isThemeModeMenuExpanded
+                            )
+                        },
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                            color = primaryTextColor
+                        ),
+                        colors = TextFieldDefaults.colors(
+                            focusedTextColor = primaryTextColor,
+                            unfocusedTextColor = primaryTextColor,
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outline,
+                            focusedTrailingIconColor = MaterialTheme.colorScheme.primary,
+                            unfocusedTrailingIconColor = secondaryTextColor
+                        ),
+                        modifier = Modifier
+                            .menuAnchor(
+                                type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
+                                enabled = true
+                            )
+                            .width(144.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = isThemeModeMenuExpanded,
+                        onDismissRequest = { isThemeModeMenuExpanded = false },
+                        modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
+                    ) {
+                        themeModeOptions.forEach { (mode, label) ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = label,
+                                        color = primaryTextColor,
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                },
+                                trailingIcon = {
+                                    if (mode == appThemeMode) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    preferencesViewModel.setAppThemeMode(mode)
+                                    isThemeModeMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(SmoothRoundedCornerShape(8.dp))
+                    .clickable {
+                        preferencesViewModel.setUseLiquidGlass(!preferencesViewModel.useLiquidGlass.value)
+                    }
+                    .padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(text = "启用液态玻璃效果")
+                Text(text = "启用液态玻璃效果", color = primaryTextColor)
                 LiquidToggle(
                     selected = { useLiquidGlass },
                     onSelect = { preferencesViewModel.setUseLiquidGlass(!preferencesViewModel.useLiquidGlass.value) },
@@ -424,7 +549,7 @@ private fun PreferenceRetentionCard(
         Text(text = "本地学习记录保留期", style = MaterialTheme.typography.headlineSmall)
         Text(
             text = "只影响本机行为事件的保留时间；模型和聚合统计仍受清除记录操作控制。",
-            color = 50.n1 withNight 80.n1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
         Row(
@@ -485,7 +610,7 @@ private fun PreferenceToggleCard(
                 description?.let {
                     Text(
                         text = it,
-                        color = 50.n1 withNight 80.n1,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -527,7 +652,7 @@ private fun PreferenceActionCard(
             Text(text = actionTitle, color = MaterialTheme.colorScheme.error)
             Text(
                 text = description,
-                color = 50.n1 withNight 80.n1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
         }
@@ -542,6 +667,8 @@ fun ThemeColorSelector(
     val themeColor by viewModel.themeColor.collectAsState()
     var showCustomColorDialog by remember { mutableStateOf(false) }
     var customColorInput by remember { mutableStateOf("") }
+    val primaryTextColor = MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = MaterialTheme.colorScheme.onSurfaceVariant
 
     val colors = listOf(
         null to "默认",
@@ -568,7 +695,7 @@ fun ThemeColorSelector(
             title = {
                 Text(
                     text = "自定义主题颜色",
-                    color = 10.n1 withNight 100.n1,
+                    color = primaryTextColor,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -577,7 +704,7 @@ fun ThemeColorSelector(
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
                         text = "请输入ARGB Hex颜色代码 (例如 #FF007FAC)",
-                        color = 30.n1 withNight 80.n1,
+                        color = secondaryTextColor,
                         style = MaterialTheme.typography.bodyMedium
                     )
                     androidx.compose.material3.OutlinedTextField(
@@ -588,13 +715,13 @@ fun ThemeColorSelector(
                         modifier = Modifier.fillMaxWidth(),
                         shape = SmoothRoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = 40.a1 withNight 80.a1,
-                            unfocusedBorderColor = 50.n1 withNight 60.n1,
-                            focusedLabelColor = 40.a1 withNight 80.a1,
-                            unfocusedLabelColor = 50.n1 withNight 60.n1,
-                            cursorColor = 40.a1 withNight 80.a1,
-                            focusedTextColor = 10.n1 withNight 100.n1,
-                            unfocusedTextColor = 10.n1 withNight 100.n1
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
+                            unfocusedLabelColor = secondaryTextColor,
+                            cursorColor = MaterialTheme.colorScheme.primary,
+                            focusedTextColor = primaryTextColor,
+                            unfocusedTextColor = primaryTextColor
                         )
                     )
                 }
@@ -614,7 +741,7 @@ fun ThemeColorSelector(
                 ) {
                     Text(
                         text = "确定",
-                        color = 40.a1 withNight 80.a1,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -623,7 +750,7 @@ fun ThemeColorSelector(
                 TextButton(onClick = { showCustomColorDialog = false }) {
                     Text(
                         text = "取消",
-                        color = 40.a1 withNight 80.a1,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -638,7 +765,11 @@ fun ThemeColorSelector(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(text = "主题颜色", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = "主题颜色",
+            color = primaryTextColor,
+            style = MaterialTheme.typography.headlineSmall
+        )
 
         // Use FlowRow or LazyRow if there are many colors. For now, a simple wrapped layout or Column is fine.
         // Let's use a FlowRow equivalent or just a simple vertical list of rows if we want to be safe without experimental APIs,
@@ -693,6 +824,7 @@ fun ThemeColorSelector(
                 }
                 Text(
                     text = "自定义",
+                    color = primaryTextColor,
                     style = MaterialTheme.typography.labelMedium
                 )
             }
@@ -736,9 +868,9 @@ fun ThemeColorSelector(
                         text = name,
                         style = MaterialTheme.typography.labelMedium,
                         color = if (isSelected) {
-                            50.a1
+                            MaterialTheme.colorScheme.primary
                         } else {
-                            Color.Black withNight Color.White
+                            primaryTextColor
                         }
                     )
                 }

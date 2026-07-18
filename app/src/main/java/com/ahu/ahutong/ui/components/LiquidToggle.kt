@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -57,9 +58,11 @@ fun LiquidToggle(
     selected: () -> Boolean,
     onSelect: (Boolean) -> Unit,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userInputEnabled: Boolean = true
 ) {
     val isLiquid = LocalIsLiquidGlassEnabled.current
+    val isSelected = selected()
     if (!isLiquid) {
         val switchColor = SwitchDefaults.colors(
             checkedThumbColor = 80.a1 withNight 80.n1,
@@ -69,8 +72,8 @@ fun LiquidToggle(
             uncheckedBorderColor = 80.n1 withNight 40.n1
         )
         Switch(
-            checked = selected(),
-            onCheckedChange = onSelect,
+            checked = isSelected,
+            onCheckedChange = onSelect.takeIf { userInputEnabled },
             modifier = modifier.height(28f.dp),
             colors = switchColor
         )
@@ -89,8 +92,10 @@ fun LiquidToggle(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val dragWidth = with(density) { 20f.dp.toPx() }
     val animationScope = rememberCoroutineScope()
+    val selectedState = rememberUpdatedState(isSelected)
+    val onSelectState = rememberUpdatedState(onSelect)
     var didDrag by remember { mutableStateOf(false) }
-    var fraction by remember { mutableFloatStateOf(if (selected()) 1f else 0f) }
+    var fraction by remember { mutableFloatStateOf(if (isSelected) 1f else 0f) }
     val dampedDragAnimation = remember(animationScope) {
         DampedDragAnimation(
             animationScope = animationScope,
@@ -103,11 +108,11 @@ fun LiquidToggle(
             onDragStopped = {
                 if (didDrag) {
                     fraction = if (targetValue >= 0.5f) 1f else 0f
-                    onSelect(fraction == 1f)
+                    onSelectState.value(fraction == 1f)
                     didDrag = false
                 } else {
-                    fraction = if (selected()) 0f else 1f
-                    onSelect(fraction == 1f)
+                    fraction = if (selectedState.value) 0f else 1f
+                    onSelectState.value(fraction == 1f)
                 }
             },
             onDrag = { _, dragAmount ->
@@ -127,15 +132,12 @@ fun LiquidToggle(
                 dampedDragAnimation.updateValue(fraction)
             }
     }
-    LaunchedEffect(selected) {
-        snapshotFlow { selected() }
-            .collectLatest { isSelected ->
-                val target = if (isSelected) 1f else 0f
-                if (target != fraction) {
-                    fraction = target
-                    dampedDragAnimation.animateToValue(target)
-                }
-            }
+    LaunchedEffect(isSelected) {
+        val target = if (isSelected) 1f else 0f
+        if (target != fraction) {
+            fraction = target
+            dampedDragAnimation.animateToValue(target)
+        }
     }
 
     val trackBackdrop = rememberLayerBackdrop()
@@ -167,7 +169,7 @@ fun LiquidToggle(
                 .semantics {
                     role = Role.Switch
                 }
-                .then(dampedDragAnimation.modifier)
+                .then(if (userInputEnabled) dampedDragAnimation.modifier else Modifier)
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(
                         backdrop,

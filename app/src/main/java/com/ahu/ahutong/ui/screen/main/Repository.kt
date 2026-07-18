@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -287,20 +288,24 @@ internal fun RepositoryMarkdownReader(
     val context = LocalContext.current
     val markwon = remember(context) { Markwon.create(context) }
     val markdownTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
+    val markdownLinkColor = MaterialTheme.colorScheme.primary.toArgb()
 
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxSize(0.8f)
                 .clip(RoundedCornerShape(20.dp))
-                .background(96.n1 withNight 16.n1)
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = markdownState.document?.title ?: "Markdown",
-                    color = 0.n1 withNight 100.n1,
+                    color = MaterialTheme.colorScheme.onSurface,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -308,7 +313,7 @@ internal fun RepositoryMarkdownReader(
                 )
                 Text(
                     "关闭",
-                    color = 40.a1 withNight 80.a1,
+                    color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier
                         .clickable { onDismiss() }
@@ -338,7 +343,7 @@ internal fun RepositoryMarkdownReader(
                     AndroidView(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(420.dp),
+                            .weight(1f),
                         factory = { viewContext ->
                             ScrollView(viewContext).apply {
                                 addView(
@@ -352,8 +357,9 @@ internal fun RepositoryMarkdownReader(
                         },
                         update = { scrollView ->
                             val textView = scrollView.getChildAt(0) as TextView
-                            textView.setTextColor(markdownTextColor)
                             markwon.setMarkdown(textView, markdownState.document.content)
+                            textView.setTextColor(markdownTextColor)
+                            textView.setLinkTextColor(markdownLinkColor)
                         }
                     )
                 }

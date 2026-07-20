@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import configparser
+from contextlib import contextmanager
 from dataclasses import dataclass
 import getpass
 import json
@@ -17,7 +19,7 @@ from typing import Any
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_CONFIG = SKILL_DIR / "config.local.json"
+AIO_CONFIG_RELATIVE = Path(".agents") / "skills" / "yukon-auto-update-release" / "config.local.json"
 WORK_DIR = SKILL_DIR / ".work"
 
 REMOTE_STATIC_DIR = "/home/ubuntu/AHUTong/server/update_server/static"
@@ -35,12 +37,13 @@ CONFIG_FIELD_HELP = """Required config.local.json fields:
 - server.port: SSH port, normally 22
 - server.username: SSH username
 - server.auth_method: password or private_key
+- server.known_hosts_path: optional path to a separately verified SSH known_hosts file
 - server.password: required when auth_method=password
 - server.private_key_path: required when auth_method=private_key
 - server.private_key_passphrase: optional when auth_method=private_key
 
 These values are stored only in the ignored local file:
-  .agents/skills/yukon-auto-update-release/config.local.json
+  <AIO-main>/.agents/skills/yukon-auto-update-release/config.local.json
 """
 
 GENERIC_CHANGELOG_LINES = ["修复了一些 bug", "进行了一些体验优化"]
@@ -84,8 +87,8 @@ def fail(message: str, code: int = 1) -> None:
 
 def no_interactive_input_error() -> ReleaseError:
     return ReleaseError(
-        "Interactive input is not available. Ask the user for the fields below, "
-        "then create config.local.json or rerun this script in an interactive shell.\n"
+        "Interactive input is not available. Ask the user to run --setup-config "
+        "from a normal interactive terminal; do not collect secrets in chat.\n"
         f"{CONFIG_FIELD_HELP}"
     )
 
@@ -99,8 +102,8 @@ def should_prompt_for_missing_config() -> bool:
 def missing_config_error(path: Path) -> ReleaseError:
     return ReleaseError(
         f"{path} does not exist.\n"
-        "Ask the user for the fields below, then create config.local.json or rerun "
-        "this script from a normal interactive terminal to be prompted field by field.\n"
+        "Ask the user to run this helper with --setup-config from a normal interactive "
+        "terminal. Do not collect signing or server secrets in chat.\n"
         f"{CONFIG_FIELD_HELP}"
     )
 
@@ -110,7 +113,59 @@ def repo_root_from(start: Path) -> Path:
     for candidate in [current, *current.parents]:
         if (candidate / "settings.gradle.kts").exists() and (candidate / "app").is_dir():
             return candidate
-    fail("Could not find AHUTong repo root. Run from the repository or pass --repo-root.")
+    fail("Could not find the AHUTong Android subrepository root. Run from Android or pass --repo-root.")
+
+
+def aio_has_android_submodule(path: Path) -> bool:
+    modules_path = path / ".gitmodules"
+    if not modules_path.is_file():
+        return False
+    parser = configparser.ConfigParser()
+    parser.read(modules_path, encoding="utf-8")
+    return any(
+        section.startswith("submodule ")
+        and parser.get(section, "path", fallback="") == "Android"
+        for section in parser.sections()
+    )
+
+
+def aio_main_root_for(repo: Path) -> Path:
+    configured_root = os.environ.get("AHUTONG_AIO_ROOT")
+    if configured_root:
+        aio_root = Path(configured_root).expanduser().resolve()
+        if not aio_has_android_submodule(aio_root):
+            raise ReleaseError(
+                f"AHUTONG_AIO_ROOT is not an AHUTong AIO root with Android configured: {aio_root}"
+            )
+        return aio_root
+
+    aio_worktree = repo.parent.resolve()
+    if repo.resolve() != (aio_worktree / "Android").resolve() or not aio_has_android_submodule(aio_worktree):
+        raise ReleaseError(
+            "Android is not inside an AHUTong AIO worktree. Set AHUTONG_AIO_ROOT "
+            "or pass --config with the canonical AIO config path."
+        )
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+        cwd=str(aio_worktree),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise ReleaseError(f"Could not resolve AIO Git common directory: {result.stderr.strip()}")
+    common_dir = Path(result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = (aio_worktree / common_dir).resolve()
+    aio_root = common_dir.resolve().parent
+    if common_dir.name != ".git" or not aio_has_android_submodule(aio_root):
+        raise ReleaseError(f"Could not resolve the AIO main worktree from Git common dir: {common_dir}")
+    return aio_root
+
+
+def default_config_path(repo: Path) -> Path:
+    return aio_main_root_for(repo) / AIO_CONFIG_RELATIVE
 
 
 def prompt_required(label: str, secret: bool = False) -> str:
@@ -128,6 +183,16 @@ def prompt_required(label: str, secret: bool = False) -> str:
 def prompt_optional_secret(label: str) -> str | None:
     try:
         value = getpass.getpass(f"{label} (blank if none): ").strip()
+    except EOFError:
+        return None
+    except KeyboardInterrupt as exc:
+        raise no_interactive_input_error() from exc
+    return value or None
+
+
+def prompt_optional(label: str) -> str | None:
+    try:
+        value = input(f"{label} (blank if none): ").strip()
     except EOFError:
         return None
     except KeyboardInterrupt as exc:
@@ -156,6 +221,7 @@ def create_config_interactively() -> dict[str, Any]:
         "port": prompt_int("server port"),
         "username": prompt_required("server username"),
         "auth_method": auth_method,
+        "known_hosts_path": prompt_optional("verified SSH known_hosts path"),
     }
     if auth_method == "password":
         server["password"] = prompt_required("server password", secret=True)
@@ -207,14 +273,22 @@ def validate_config(config: dict[str, Any]) -> None:
         if not Path(str(key_path)).exists():
             raise ReleaseError(f"Server private key does not exist: {key_path}")
 
+    known_hosts_path = server.get("known_hosts_path")
+    if known_hosts_path and not Path(str(known_hosts_path)).exists():
+        raise ReleaseError(f"SSH known_hosts file does not exist: {known_hosts_path}")
 
-def load_or_create_config(path: Path, dry_run: bool) -> dict[str, Any]:
+
+def load_or_create_config(
+    path: Path,
+    dry_run: bool,
+    allow_create: bool = False,
+) -> dict[str, Any]:
     if path.exists():
         config = json.loads(path.read_text(encoding="utf-8"))
         validate_config(config)
         return config
 
-    if not should_prompt_for_missing_config():
+    if not allow_create or not should_prompt_for_missing_config():
         raise missing_config_error(path)
 
     print(f"{path} does not exist. Enter release credentials for this machine.")
@@ -247,7 +321,10 @@ def ssh_connect(config: dict[str, Any]):
     paramiko = import_paramiko()
     server = config["server"]
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.load_system_host_keys()
+    if server.get("known_hosts_path"):
+        client.load_host_keys(str(server["known_hosts_path"]))
+    client.set_missing_host_key_policy(paramiko.RejectPolicy())
     kwargs: dict[str, Any] = {
         "hostname": server["host"],
         "port": int(server["port"]),
@@ -262,7 +339,14 @@ def ssh_connect(config: dict[str, Any]):
         kwargs["key_filename"] = server["private_key_path"]
         if server.get("private_key_passphrase"):
             kwargs["passphrase"] = server["private_key_passphrase"]
-    client.connect(**kwargs)
+    try:
+        client.connect(**kwargs)
+    except paramiko.SSHException as exc:
+        client.close()
+        raise ReleaseError(
+            "SSH connection or host-key verification failed. Verify the server key in the "
+            "system known_hosts file or server.known_hosts_path before retrying."
+        ) from exc
     return client
 
 
@@ -300,6 +384,20 @@ def update_local_versions(repo: Path, version_code: int, version_name: str) -> N
     text = re.sub(r"\bversionCode\s*=\s*\d+", f"versionCode = {version_code}", text, count=1)
     text = re.sub(r'\bversionName\s*=\s*"[^"]+"', f'versionName = "{version_name}"', text, count=1)
     gradle_file.write_text(text, encoding="utf-8")
+
+
+@contextmanager
+def temporary_local_versions(repo: Path, version_code: int, version_name: str):
+    gradle_file = repo / "app" / "build.gradle.kts"
+    original = gradle_file.read_bytes()
+    update_local_versions(repo, version_code, version_name)
+    try:
+        yield
+    finally:
+        gradle_file.write_bytes(original)
+        if gradle_file.read_bytes() != original:
+            raise ReleaseError("Failed to restore app/build.gradle.kts after rollback publishing.")
+        print("Restored app/build.gradle.kts after rollback publishing.")
 
 
 def parse_version_tuple(version: str) -> tuple[int, ...]:
@@ -428,9 +526,14 @@ def find_build_tool(repo: Path, tool_name: str) -> Path:
     return sorted(matches, key=lambda item: version_key(item.parent), reverse=True)[0]
 
 
-def run_cmd(cmd: list[str], cwd: Path, redacted: str | None = None) -> None:
+def run_cmd(
+    cmd: list[str],
+    cwd: Path,
+    redacted: str | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
     print(f"[RUN] {redacted or ' '.join(shlex.quote(part) for part in cmd)}")
-    result = subprocess.run(cmd, cwd=str(cwd))
+    result = subprocess.run(cmd, cwd=str(cwd), env=env)
     if result.returncode != 0:
         raise ReleaseError(f"Command failed with exit code {result.returncode}.")
 
@@ -635,6 +738,22 @@ def prepare_release_branches(
     return previous_branch, target_branch
 
 
+def require_pushed_release_branch(repo: Path, branch: str) -> str:
+    if not git_remote_exists(repo, "origin"):
+        raise ReleaseError("Production release requires an origin remote.")
+    local_ref = f"refs/heads/{branch}"
+    remote_ref = f"refs/remotes/origin/{branch}"
+    if not git_ref_exists(repo, local_ref) or not git_ref_exists(repo, remote_ref):
+        raise ReleaseError(f"Release branch must exist locally and on origin: {branch}")
+    local_commit = git_resolve_ref(repo, local_ref)
+    remote_commit = git_resolve_ref(repo, remote_ref)
+    if local_commit != remote_commit:
+        raise ReleaseError(
+            f"{branch} is not synchronized with origin: local={local_commit}, remote={remote_commit}"
+        )
+    return local_commit
+
+
 def ref_available(repo: Path, ref: str | None) -> bool:
     return bool(ref) and git_ref_exists(repo, ref)
 
@@ -661,10 +780,14 @@ def derive_changelog_from_release_diff(repo: Path, previous_branch: str | None, 
     revision_range = f"{previous_branch}..{target_branch}"
     subjects_text = git_capture(repo, ["log", "--no-merges", "--format=%s", revision_range], check=False)
     files_text = git_capture(repo, ["diff", "--name-only", revision_range], check=False)
-    combined = f"{subjects_text}\n{files_text}"
-    if not combined.strip() or contains_hidden_release_detail(combined):
+    if not subjects_text.strip() and not files_text.strip():
         return generic_changelog()
 
+    visible_files = [
+        path
+        for path in files_text.splitlines()
+        if path.strip() and not contains_hidden_release_detail(path)
+    ]
     lines: list[str] = []
     for subject in subjects_text.splitlines():
         clean = safe_subject(subject)
@@ -672,7 +795,7 @@ def derive_changelog_from_release_diff(repo: Path, previous_branch: str | None, 
             lines.append(clean)
         if len(lines) == 2:
             break
-    if not lines:
+    if not visible_files or not lines:
         return generic_changelog()
     return "\n".join(lines) + "\n"
 
@@ -702,10 +825,10 @@ def collect_changelog(
     if clean:
         clean_text = "\n".join(clean)
         extra_hidden = [term for term in (hidden_terms or []) if term and term in clean_text]
-        if rollback and (contains_hidden_release_detail(clean_text) or extra_hidden):
+        if contains_hidden_release_detail(clean_text) or (rollback and extra_hidden):
             raise ReleaseError(
-                "Rollback publish changelog must not mention rollback, downgrade, or internal release details. "
-                "Omit --changelog to use generic release notes."
+                "Release changelog must not mention hidden, debug, rollback, downgrade, "
+                "or internal release details. Omit --changelog to derive or use generic notes."
             )
         return "\n".join(clean) + "\n"
 
@@ -740,6 +863,9 @@ def build_and_sign(repo: Path, config: dict[str, Any], version_name: str) -> Pat
     run_cmd([str(zipalign), "-f", "-p", "4", str(input_apk), str(aligned)], repo)
 
     keystore = config["keystore"]
+    sign_env = os.environ.copy()
+    sign_env["AHUTONG_RELEASE_KS_PASSWORD"] = str(keystore["store_password"])
+    sign_env["AHUTONG_RELEASE_KEY_PASSWORD"] = str(keystore["key_password"])
     sign_cmd = [
         str(apksigner),
         "sign",
@@ -750,9 +876,9 @@ def build_and_sign(repo: Path, config: dict[str, Any], version_name: str) -> Pat
         "--ks-key-alias",
         str(keystore["key_alias"]),
         "--ks-pass",
-        f"pass:{keystore['store_password']}",
+        "env:AHUTONG_RELEASE_KS_PASSWORD",
         "--key-pass",
-        f"pass:{keystore['key_password']}",
+        "env:AHUTONG_RELEASE_KEY_PASSWORD",
         "--out",
         str(signed),
         str(aligned),
@@ -761,6 +887,7 @@ def build_and_sign(repo: Path, config: dict[str, Any], version_name: str) -> Pat
         sign_cmd,
         repo,
         redacted=f"{apksigner} sign --ks <keystore> --ks-key-alias <alias> --ks-pass <redacted> --key-pass <redacted> --out {signed} {aligned}",
+        env=sign_env,
     )
     run_cmd([str(apksigner), "verify", "--verbose", "--print-certs", str(signed)], repo)
     return signed
@@ -814,15 +941,18 @@ chmod 644 "$final"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build, sign, and publish AHUTong release APK.")
     parser.add_argument("--repo-root", type=Path, default=None)
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--config", type=Path, default=None)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--dry-run", action="store_true")
+    mode.add_argument("--setup-config", action="store_true")
+    mode.add_argument("--print-config-path", action="store_true")
     parser.add_argument("--version-code", type=int, default=None)
     parser.add_argument("--version-name", default=None)
     parser.add_argument("--changelog", action="append", default=[])
     parser.add_argument("--previous-release-ref", default="HEAD~1")
     parser.add_argument("--base-branch", default="master")
     parser.add_argument("--on-version-mismatch", choices=["ask", "upgrade", "abort"], default="ask")
-    parser.add_argument("--print-config-fields", action="store_true")
+    mode.add_argument("--print-config-fields", action="store_true")
     return parser.parse_args()
 
 
@@ -833,7 +963,15 @@ def main() -> int:
         return 0
 
     repo = args.repo_root.resolve() if args.repo_root else repo_root_from(Path.cwd())
-    config = load_or_create_config(args.config.resolve(), args.dry_run)
+    config_path = args.config.expanduser().resolve() if args.config else default_config_path(repo)
+    if args.print_config_path:
+        print(config_path)
+        return 0
+    if args.setup_config:
+        load_or_create_config(config_path, dry_run=False, allow_create=True)
+        print(f"Release config is ready: {config_path}")
+        return 0
+    config = load_or_create_config(config_path, args.dry_run)
 
     client = ssh_connect(config)
     try:
@@ -859,6 +997,7 @@ def main() -> int:
             else None
         )
         target_branch = release_branch(target_name)
+        release_commit = None
         if args.dry_run:
             fetch_origin(repo)
             if version_plan.rollback and not release_branch_available(repo, target_name):
@@ -886,6 +1025,7 @@ def main() -> int:
                 rollback=version_plan.rollback,
                 base_branch=args.base_branch,
             )
+            release_commit = require_pushed_release_branch(repo, target_branch)
 
         changelog = collect_changelog(
             repo,
@@ -897,6 +1037,8 @@ def main() -> int:
         )
         print(f"Target release: versionCode={target_code}, versionName={target_name}")
         print(f"Release branch: {target_branch}")
+        if release_commit:
+            print(f"Release commit: {release_commit}")
         if version_plan.rollback:
             print("Release mode: rollback publish with incremented versionCode")
         print(f"Android SDK: {android_sdk_dir(repo)}")
@@ -910,12 +1052,16 @@ def main() -> int:
             print("[DRY-RUN] Would update apk_version.txt, apk_version_name.txt, and apk_changelog.txt.")
             return 0
 
-        if version_plan.rollback:
-            update_local_versions(repo, target_code, target_name)
-        signed_apk = build_and_sign(repo, config, target_name)
         backup_version = server_name or str(server_code)
-        upload_release(client, signed_apk, target_code, target_name, backup_version, changelog)
+        if version_plan.rollback:
+            with temporary_local_versions(repo, target_code, target_name):
+                signed_apk = build_and_sign(repo, config, target_name)
+                upload_release(client, signed_apk, target_code, target_name, backup_version, changelog)
+        else:
+            signed_apk = build_and_sign(repo, config, target_name)
+            upload_release(client, signed_apk, target_code, target_name, backup_version, changelog)
         print("Release publish completed.")
+        print(f"Immutable release target: {target_branch}@{release_commit}")
         return 0
     finally:
         client.close()

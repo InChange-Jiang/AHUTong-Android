@@ -1,6 +1,6 @@
 ---
 name: yukon-auto-update-release
-description: AHUTong Android release publishing workflow. Use only when the user's request explicitly contains the Chinese word 发版 and asks to publish/release an APK; do not use for ordinary build, test, release-package-only, upload-only, or version-check requests that do not contain 发版.
+description: AHUTong Android production release publishing workflow. Use when the AIO release workflow routes an Android release here, or when the user explicitly includes the Chinese word 发版 and clearly asks to publish the Android APK; do not use for other platforms, ordinary builds, tests, release-package-only, upload-only, or version-check requests.
 ---
 
 # Yukon Auto Update Release
@@ -16,67 +16,48 @@ Do not use this skill for requests such as "打 release 包", "构建 release", 
 ## Required Workflow
 
 1. Read this `SKILL.md` completely.
-2. Confirm the repo is on a project-compliant branch, normally `p/Yukon163/feat`, and do not continue from a dirty worktree unless the dirty files are understood.
-3. Run `adb devices`.
-4. Run `.\gradlew.bat :app:testDebugUnitTest`.
-5. Run the helper script from repo root. If the user says only `发版`, do not pass a version. If the user says a concrete target such as `发版3.1.4`, pass it as `--version-name 3.1.4`:
+2. Confirm the Android subrepository is on a project-compliant named branch such as `p/Yukon163/feat/<task-name>` or `p/Yukon163/fix/<task-name>`. Never release from the detached HEAD created by submodule initialization, and do not continue from a dirty worktree unless the dirty files are understood.
+3. Check whether the Android checkout is shallow. Fetch the exact source, `master`, and required release refs; deepen only until fast-forward, merge-base, and changelog comparisons are reliable. Do not assume the AIO default `--depth 1` contains enough release history.
+4. Run `adb devices`.
+5. Run `.\gradlew.bat :app:testDebugUnitTest`.
+6. Run the helper script from the Android subrepository root. If the user says only `发版`, do not pass a version. If the user says a concrete target such as `发版3.1.4`, pass it as `--version-name 3.1.4`:
 
    ```powershell
    python .agents\skills\yukon-auto-update-release\scripts\release_publish.py
    ```
 
-6. If `config.local.json` is missing, do not merely tell the user to create it. Ask for the exact fields listed in "First-Use Credential Collection" below, preferably with `request_user_input` when that tool is available; otherwise ask a concise direct question with the same field list.
-7. If the script reports a local/server version mismatch, stop and ask the user to choose one of the two options printed by the script. Do not modify versions, build, or upload until the user confirms.
-8. For normal forward releases, first fast-forward merge the current work branch, for example `p/Yukon163/feat`, into `master`; update `app/build.gradle.kts` on `master`; commit `chore(release): bump version to {versionName}`; push `master`; then create or validate `release/{target versionName}` at that exact `master` commit. For rollback releases where the target `versionName` is lower than the server `versionName`, the target release branch must already exist locally or on `origin`; never create a rollback target branch from the current `HEAD`.
-9. Do not ask the user for release notes by default. Normal releases derive `apk_changelog.txt` from the diff between `release/{previous versionName}` and `release/{target versionName}`. Rollback releases always use generic changelog text unless the user explicitly supplies safe generic notes.
-10. After the script succeeds, verify:
+7. Use the ignored `config.local.json` in the AIO main worktree. Do not copy it into the Android subrepository or a linked worktree. If it is missing, follow "First-Use Credential Setup" below and never ask the user to paste secrets into the conversation.
+8. If the script reports a local/server version mismatch, stop and ask the user to choose one of the two options printed by the script. Do not modify versions, build, or upload until the user confirms.
+9. For normal forward releases, first fast-forward merge the current work branch, for example `p/Yukon163/feat/<task-name>`, into `master`; update `app/build.gradle.kts` on `master`; commit `chore(release): bump version to {versionName}`; push `master`; then create or validate `release/{target versionName}` at that exact `master` commit. For rollback releases where the target `versionName` is lower than the server `versionName`, the target release branch must already exist locally or on `origin`; never create a rollback target branch from the current `HEAD`.
+10. Do not ask the user for release notes by default. Normal releases derive `apk_changelog.txt` from the diff between `release/{previous versionName}` and `release/{target versionName}`. Rollback releases always use generic changelog text unless the user explicitly supplies safe generic notes.
+11. After the script succeeds, verify:
 
    ```powershell
    curl https://openahu.org/api/check_apk_update
    ```
 
-11. Confirm the helper pushed `master` and `release/{target versionName}` for normal forward releases. For rollback releases, commit and push only if an explicit branch-policy decision requires recording the rollback publish metadata.
+12. Confirm the helper pushed `master` and `release/{target versionName}` for normal forward releases. For rollback releases, commit and push only if an explicit branch-policy decision requires recording the rollback publish metadata.
+13. Record the full commit SHA printed for `release/{target versionName}`. When running under the AIO workflow, return that exact branch and commit to the AIO release skill so it can update the Android gitlink through its release-branch gate.
 
-## First-Use Credential Collection
+## First-Use Credential Setup
 
-If `.agents/skills/yukon-auto-update-release/config.local.json` is absent, collect these fields explicitly before continuing:
-
-- `keystore.path`: absolute path to the signing `.jks` file.
-- `keystore.store_password`: keystore store password.
-- `keystore.key_alias`: signing key alias.
-- `keystore.key_password`: signing key password.
-- `server.host`: SSH server host.
-- `server.port`: SSH port, normally `22`.
-- `server.username`: SSH username.
-- `server.auth_method`: exactly `password` or `private_key`.
-- If `server.auth_method=password`: `server.password`.
-- If `server.auth_method=private_key`: `server.private_key_path` and optional `server.private_key_passphrase`.
-
-Make the security tradeoff clear in one sentence: these values will be stored in ignored local file `config.local.json` on this machine and must not be committed. In Codex shell sessions, the helper script intentionally exits with this field list instead of prompting, so the agent must ask the user for the missing values. In a normal interactive terminal, the same script may prompt field by field and create the file locally.
-
-Use this prompt shape instead of a vague "create the config file" message:
+The canonical config is stored in the AIO main worktree, even when the Android release runs from a linked AIO worktree:
 
 ```text
-缺少本机发版配置。我需要以下信息才能创建被 git 忽略的 config.local.json：
-1. keystore.path
-2. keystore.store_password
-3. keystore.key_alias
-4. keystore.key_password
-5. server.host
-6. server.port
-7. server.username
-8. server.auth_method（password 或 private_key）
-9. 如果用 password：server.password
-10. 如果用 private_key：server.private_key_path，以及可选 server.private_key_passphrase
-
-这些值只会写入本机 .agents/skills/yukon-auto-update-release/config.local.json，不会提交到 git。
+<AIO-main>/.agents/skills/yukon-auto-update-release/config.local.json
 ```
 
-To print the same required field list from the helper script, run:
+The helper resolves `<AIO-main>` from the AIO Git common directory, so all linked worktrees share one config. `AHUTONG_AIO_ROOT` or `--config` may override discovery for an unusual layout.
+
+If the file is missing, do not collect passwords, private keys, or signing secrets in Codex chat. Ask the user to run this command from the Android subrepository root in a normal interactive terminal:
 
 ```powershell
-python .agents\skills\yukon-auto-update-release\scripts\release_publish.py --print-config-fields
+python .agents\skills\yukon-auto-update-release\scripts\release_publish.py --setup-config
 ```
+
+The setup command creates or validates the ignored AIO-root config and exits without building or publishing. Use `--print-config-fields` only to display the non-secret field names.
+
+Before the first connection, verify the release server's SSH host-key fingerprint through a trusted channel and add it to the operating-system `known_hosts` file. Alternatively, set optional `server.known_hosts_path` to a dedicated verified file. The helper rejects unknown host keys and never accepts them automatically.
 
 ## Helper Script Behavior
 
@@ -84,9 +65,11 @@ The helper script is `scripts/release_publish.py`.
 
 It performs these actions:
 
-- Creates `config.local.json` on first use by interactively asking for keystore and server login details.
-- Stores `config.local.json` in this skill directory. It is ignored by git and must never be committed.
-- When run from Codex shell and `config.local.json` is missing, exits with the required field list so the agent can ask the user explicitly.
+- Resolves the AIO main worktree and loads its ignored `.agents/skills/yukon-auto-update-release/config.local.json`.
+- Creates or validates that AIO-root config only when `--setup-config` is run interactively; setup exits without publishing.
+- Never stores the canonical config in the Android subrepository or a linked worktree.
+- When run from a Codex shell and the config is missing, exits with setup guidance instead of prompting for secrets.
+- Loads SSH host keys from the operating-system trust store and optional `server.known_hosts_path`, then rejects unknown or mismatched server keys.
 - Reads local `app/build.gradle.kts` for `versionCode` and `versionName`.
 - Reads server `/home/ubuntu/AHUTong/server/update_server/static/apk_version.txt` and, if present, `apk_version_name.txt`.
 - Defaults to `versionCode = max(localVersionCode, serverVersionCode) + 1`.
@@ -99,10 +82,12 @@ It performs these actions:
 - For normal forward releases, switches to `release/{target versionName}` only after the version bump has already been committed on `master`; for rollback releases, switches to the existing rollback release branch before updating versions, building, signing, or uploading.
 - Uses `--previous-release-ref` only when the previous release branch is missing; the default is `HEAD~1`, but the agent should pass the actual previous-release baseline if that default is wrong.
 - Derives changelog lines from `git log` and `git diff --name-only` over `release/{previous versionName}..release/{target versionName}`.
-- If the diff is only hidden/internal work such as gray rollout, debug-only controls, or this release skill itself, writes generic notes such as `修复了一些 bug` and `进行了一些体验优化` instead of exposing the hidden feature.
+- Filters hidden/internal subjects and paths such as gray rollout, debug-only controls, or this release skill itself. It keeps safe user-visible subjects from a mixed diff, and uses generic notes such as `修复了一些 bug` and `进行了一些体验优化` when no safe user-visible change remains.
 - For rollback publish, writes generic notes and never mentions rollback, downgrade, revert, or the older target version in user-facing changelog text.
+- Restores `app/build.gradle.kts` byte-for-byte after rollback publishing, including when building, signing, or uploading fails.
 - Builds release with `.\gradlew.bat :app:assembleRelease`.
 - Locates Android SDK from `local.properties`, then uses the highest installed build-tools `zipalign` and `apksigner`.
+- Passes keystore passwords to `apksigner` through child-process environment variables rather than command-line arguments.
 - Uploads the signed APK to `/home/ubuntu/AHUTong/server/update_server/static/ahutong.apk`.
 - Backs up the old APK as `ahutong.apk_{version}.bak`, appending a timestamp if that backup already exists.
 - Updates `apk_version.txt`, creates or updates `apk_version_name.txt`, and writes the generated or explicitly supplied 1-2 changelog lines to `apk_changelog.txt`.
@@ -129,7 +114,7 @@ It performs these actions:
   -keep class com.ahu.ahutong.data.AHURepository { *; }
   ```
 
-- When signing manually, align before signing and explicitly pass `--ks-type PKCS12`. From Git Bash/MSYS2 invoke `apksigner.bat` with the `.bat` suffix. Do not store keystore passwords, server passwords, or host credentials in this skill or in committed files; use ignored local config or one-off shell input.
+- When signing manually, align before signing and explicitly pass `--ks-type PKCS12`. From Git Bash/MSYS2 invoke `apksigner.bat` with the `.bat` suffix. Use `apksigner`'s environment-backed password input instead of `pass:<password>` command-line arguments. Do not store keystore passwords, server passwords, or host credentials in this skill or in committed files; use ignored local config or one-off shell input.
 
 ## Release Branch and Changelog Rule
 
@@ -146,7 +131,7 @@ git log --no-merges --format=%s release/{previous}..release/{target}
 git diff --name-only release/{previous}..release/{target}
 ```
 
-Do not mention hidden gray-release functionality in user-facing changelog text. If the diff includes a feature hidden behind gray rollout, debug-only enablement, internal release tooling, or other non-user-visible work, use generic lines instead, for example:
+Do not mention hidden gray-release functionality in user-facing changelog text. Filter hidden subjects and paths from mixed diffs while preserving safe user-visible subjects. If no safe user-visible subject or path remains, use generic lines instead, for example:
 
 ```text
 修复了一些 bug
@@ -174,5 +159,4 @@ Use dry-run to validate config, version parsing, mismatch handling, and tool dis
 python .agents\skills\yukon-auto-update-release\scripts\release_publish.py --dry-run
 ```
 
-Dry-run may prompt for missing config only in a normal interactive terminal and use it in memory, but it must not create `config.local.json`. In Codex shell, dry-run exits with the required config field list.
-Dry-run prints the branch integration and release branches it would perform, but it must not merge `master`, create branches, switch branches, build, sign, upload, or modify server files.
+Dry-run requires the AIO-root config and never creates it. It may fetch remote Git refs and read server version metadata, but it must not modify tracked files, merge `master`, create branches, switch branches, build, sign, upload, or modify server files.

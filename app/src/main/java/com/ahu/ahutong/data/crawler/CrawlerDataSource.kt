@@ -33,6 +33,115 @@ import org.jsoup.Jsoup
 import retrofit2.Response
 import kotlin.text.Regex
 
+internal suspend fun fetchCurrentSemester(): CurrentSemester {
+    val basicInfo = JwxtApi.API.fetchCourseTableBasicInfo()
+    val body = basicInfo.body()?.string()
+        ?: throw IllegalStateException("Cannot load current semester page")
+    val currentSemesterJson = Jsoup.parse(body)
+        .select("script")
+        .asSequence()
+        .map { it.data() }
+        .mapNotNull(::extractCurrentSemesterJson)
+        .firstOrNull()
+        ?: throw IllegalStateException("Cannot parse current semester")
+
+    return Gson().fromJson(
+        currentSemesterJson,
+        CurrentSemester::class.java
+    )
+}
+
+internal fun extractCurrentSemesterJson(script: String): String? {
+    val assignment = Regex("(?:var|let|const)\\s+currentSemester\\s*=\\s*")
+        .find(script)
+        ?: return null
+    var cursor = assignment.range.last + 1
+    while (cursor < script.length && script[cursor].isWhitespace()) cursor += 1
+
+    if (script.startsWith("JSON.parse", cursor)) {
+        cursor += "JSON.parse".length
+        while (cursor < script.length && script[cursor].isWhitespace()) cursor += 1
+        if (cursor >= script.length || script[cursor] != '(') return null
+        cursor += 1
+        while (cursor < script.length && script[cursor].isWhitespace()) cursor += 1
+        val parsed = parseJavaScriptString(script, cursor) ?: return null
+        cursor = parsed.nextIndex
+        while (cursor < script.length && script[cursor].isWhitespace()) cursor += 1
+        return parsed.value.takeIf { cursor < script.length && script[cursor] == ')' }
+    }
+
+    return extractBalancedJsonObject(script, cursor)
+}
+
+private fun extractBalancedJsonObject(source: String, startIndex: Int): String? {
+    if (startIndex >= source.length || source[startIndex] != '{') return null
+    var depth = 0
+    var quote: Char? = null
+    var escaped = false
+    for (index in startIndex until source.length) {
+        val character = source[index]
+        if (quote != null) {
+            when {
+                escaped -> escaped = false
+                character == '\\' -> escaped = true
+                character == quote -> quote = null
+            }
+            continue
+        }
+        when (character) {
+            '\'', '"' -> quote = character
+            '{' -> depth += 1
+            '}' -> {
+                depth -= 1
+                if (depth == 0) return source.substring(startIndex, index + 1)
+                if (depth < 0) return null
+            }
+        }
+    }
+    return null
+}
+
+private data class ParsedJavaScriptString(val value: String, val nextIndex: Int)
+
+private fun parseJavaScriptString(source: String, startIndex: Int): ParsedJavaScriptString? {
+    if (startIndex >= source.length || source[startIndex] !in charArrayOf('\'', '"')) return null
+    val quote = source[startIndex]
+    val result = StringBuilder()
+    var cursor = startIndex + 1
+    while (cursor < source.length) {
+        val character = source[cursor++]
+        if (character == quote) return ParsedJavaScriptString(result.toString(), cursor)
+        if (character != '\\') {
+            result.append(character)
+            continue
+        }
+        if (cursor >= source.length) return null
+        when (val escaped = source[cursor++]) {
+            '\\', '\'', '"', '/' -> result.append(escaped)
+            'b' -> result.append('\b')
+            'f' -> result.append('\u000C')
+            'n' -> result.append('\n')
+            'r' -> result.append('\r')
+            't' -> result.append('\t')
+            'u' -> {
+                if (cursor + 4 > source.length) return null
+                val codePoint = source.substring(cursor, cursor + 4).toIntOrNull(16) ?: return null
+                result.append(codePoint.toChar())
+                cursor += 4
+            }
+            'x' -> {
+                if (cursor + 2 > source.length) return null
+                val codePoint = source.substring(cursor, cursor + 2).toIntOrNull(16) ?: return null
+                result.append(codePoint.toChar())
+                cursor += 2
+            }
+            '\n' -> Unit
+            '\r' -> if (cursor < source.length && source[cursor] == '\n') cursor += 1
+            else -> result.append(escaped)
+        }
+    }
+    return null
+}
 
 class CrawlerDataSource : BaseDataSource {
 
@@ -46,7 +155,7 @@ class CrawlerDataSource : BaseDataSource {
     }
 
     override suspend fun getSchedule(): AHUResponse<List<Course>> {
-        val currentSemesterJson = getCurrentSemester()
+        val currentSemesterJson = fetchCurrentSemester()
         val courseTable = JwxtApi.API.getCourse(currentSemesterJson.id, currentSemesterJson.id)
 
         AHUCache.saveSchoolTerm(currentSemesterJson.name)
@@ -59,7 +168,7 @@ class CrawlerDataSource : BaseDataSource {
     }
 
     override suspend fun getNextSchedule(): AHUResponse<List<Course>> {
-        val currentSemesterJson = getCurrentSemester()
+        val currentSemesterJson = fetchCurrentSemester()
         val nextCourseTable = JwxtApi.API.getCourse(currentSemesterJson.id + 20, currentSemesterJson.id)
 
         return AHUResponse<List<Course>>().apply {
@@ -67,33 +176,6 @@ class CrawlerDataSource : BaseDataSource {
             code = 0
             msg = ""
         }
-    }
-
-    private suspend fun getCurrentSemester(): CurrentSemester {
-        val basicInfo = JwxtApi.API.fetchCourseTableBasicInfo()
-        val doc = Jsoup.parse(basicInfo.body()!!.string())
-
-        val element = doc.select("script")
-            .map { it.data() }
-            .firstOrNull { it.contains("var semesters = JSON.parse") && it.contains("var currentSemester") }
-
-
-        if (element == null) {
-            throw IllegalStateException("Cannot find current semester script")
-        }
-        val currentSemesterPattern = Regex("var\\s+currentSemester\\s*=\\s*(\\{.*?\\});")
-        val currentSemester = currentSemesterPattern.find(element)
-            ?: throw IllegalStateException("Cannot parse current semester")
-
-
-        val gson = Gson()
-
-        val currentSemesterJson = gson.fromJson(
-            currentSemester!!.groups[1]!!.value.replace("\\\"", "\""),
-            CurrentSemester::class.java
-        )
-
-        return currentSemesterJson
     }
 
     private fun CourseTable.toCourseList(): List<Course> {

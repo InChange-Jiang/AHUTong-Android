@@ -119,6 +119,7 @@ class ScheduleViewModel () : ViewModel() {
         // 修改当前的开学时间和周数
         val configBean = (scheduleConfig.value ?: ScheduleConfigBean()).apply {
             isShowAll = AHUCache.isShowAllCourse()
+            isInSemester = true
             startTime = instance.time
             this.week = week
             weekDay = CurrentWeekResolver.getCurrentWeekDay()
@@ -128,6 +129,12 @@ class ScheduleViewModel () : ViewModel() {
             schoolYear,
             schoolTerm,
             SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(instance.time)
+        )
+        AHUCache.saveSchoolTermInSemester(
+            schoolYear = schoolYear,
+            schoolTerm = schoolTerm,
+            isInSemester = true,
+            observedOn = DebugClock.nowLocalDate().toString()
         )
         CourseReminderScheduler.reschedule(AHUApplication.getApp())
     }

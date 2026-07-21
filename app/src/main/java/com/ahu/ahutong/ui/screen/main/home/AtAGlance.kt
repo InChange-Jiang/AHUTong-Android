@@ -35,6 +35,7 @@ fun AtAGlance(
     todayCourses: List<Course>,
     currentMinutes: Int,
     navController: NavHostController,
+    isInSemester: Boolean = true,
     enabled: Boolean = true,
     trailingContent: @Composable RowScope.() -> Unit = {}
 ) {
@@ -87,22 +88,25 @@ fun AtAGlance(
                 .padding(horizontal = 32.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            if (isInSemester) {
+                Text(
+                    text = when {
+                        currentCourse != null -> "正在上课"
+                        hasRemainingCourses -> "下节课是"
+                        else -> "今日课程"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            }
             Text(
                 text = when {
-                    currentCourse != null -> "正在上课"
-                    hasRemainingCourses -> "下节课是"
-                    else -> "今日课程"
-                },
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = when {
+                    !isInSemester -> "假期中"
                     currentCourse != null -> currentCourse.name
                     hasRemainingCourses -> todayCourses[currentCourseIndex].name
                     else -> "已全部上完"
                 },
-                modifier = if (currentCourse != null || hasRemainingCourses) {
+                modifier = if (isInSemester && (currentCourse != null || hasRemainingCourses)) {
                     Modifier
                         .composed {
                             val color = 50.a1 withNight 90.a1

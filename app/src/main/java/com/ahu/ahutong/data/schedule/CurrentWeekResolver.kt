@@ -1,12 +1,12 @@
 package com.ahu.ahutong.data.schedule
 
 import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
+import com.ahu.ahutong.data.crawler.fetchCurrentSemester
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.ScheduleConfigBean
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -75,24 +75,45 @@ object CurrentWeekResolver {
             semesterKey.schoolTerm
         ) ?: return null
         val startDate = runCatching { LocalDate.parse(startTime) }.getOrNull() ?: return null
-        val days = ChronoUnit.DAYS.between(startDate, now)
-        val week = (days.coerceAtLeast(0) / 7L).toInt() + 1
+        val week = TeachingWeekPolicy.weekForDate(startDate, now)
+        val cachedState = AHUCache.getSchoolTermInSemester(
+            semesterKey.schoolYear,
+            semesterKey.schoolTerm
+        )
+        val stateObservedOn = AHUCache.getSchoolTermInSemesterObservedOn(
+            semesterKey.schoolYear,
+            semesterKey.schoolTerm
+        )?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        val isInSemester = TeachingWeekPolicy.resolveLocalSemesterState(
+            startDate = startDate,
+            date = now,
+            cachedState = cachedState,
+            stateObservedOn = stateObservedOn
+        )
         return ResolvedConfig(
             config = buildScheduleConfig(
                 week = week,
                 weekDay = now.dayOfWeek.value,
-                startDate = startDate
+                startDate = startDate,
+                isInSemester = isInSemester
             ),
             source = Source.LOCAL
         )
     }
 
     suspend fun resolveLocalFirst(now: LocalDate = DebugClock.nowLocalDate()): ResolvedConfig {
+        val localConfig = resolveLocalConfig(now)
         if (DebugClock.isMocked()) {
-            return resolveLocalConfig(now) ?: defaultConfig(now)
+            return localConfig ?: defaultConfig(now)
         }
-        return resolveLocalConfig(now)
-            ?: runCatching { syncRemoteConfig(now) }.getOrNull()
+        val cachedSemester = getCachedSemesterKey()
+        val stateObservedOn = cachedSemester?.let {
+            AHUCache.getSchoolTermInSemesterObservedOn(it.schoolYear, it.schoolTerm)
+        }
+        if (localConfig != null && stateObservedOn == now.toString()) return localConfig
+
+        return runCatching { syncRemoteConfig(now) }.getOrNull()
+            ?: localConfig
             ?: defaultConfig(now)
     }
 
@@ -108,24 +129,46 @@ object CurrentWeekResolver {
             AHUCache.saveSchoolTerm(it.raw)
         } ?: AHUCache.saveSchoolTerm(response.currentSemester)
 
-        val weekDay = now.dayOfWeek.value
-        val mondayOfCurrentWeek = now.minusDays((weekDay - 1).toLong())
-        val currentWeek = response.weekIndex.coerceAtLeast(1)
-        val startDate = mondayOfCurrentWeek.minusDays((currentWeek - 1).toLong() * 7L)
+        val cachedStartDate = semesterKey?.let {
+            AHUCache.getSchoolTermStartTime(it.schoolYear, it.schoolTerm)
+                ?.let { value -> runCatching { LocalDate.parse(value) }.getOrNull() }
+        }
+        val remoteIsInSemester = response.isInSemester && response.weekIndex > 0
+        val officialStartDate = if (!remoteIsInSemester && semesterKey != null) {
+            runCatching { getOfficialStartDate(semesterKey) }.getOrNull()
+        } else {
+            null
+        }
+        val position = TeachingWeekPolicy.resolveRemotePosition(
+            now = now,
+            remoteWeekIndex = response.weekIndex,
+            remoteIsInSemester = response.isInSemester,
+            cachedStartDate = cachedStartDate,
+            officialStartDate = officialStartDate
+        )
 
         semesterKey?.let {
-            AHUCache.saveSchoolTermStartTime(
-                it.schoolYear,
-                it.schoolTerm,
-                startDate.toString()
+            AHUCache.saveSchoolTermInSemester(
+                schoolYear = it.schoolYear,
+                schoolTerm = it.schoolTerm,
+                isInSemester = position.isInSemester,
+                observedOn = now.toString()
             )
+            if (position.isInSemester || officialStartDate != null) {
+                AHUCache.saveSchoolTermStartTime(
+                    it.schoolYear,
+                    it.schoolTerm,
+                    position.startDate.toString()
+                )
+            }
         }
 
         return ResolvedConfig(
             config = buildScheduleConfig(
-                week = currentWeek,
-                weekDay = weekDay,
-                startDate = startDate
+                week = position.week,
+                weekDay = now.dayOfWeek.value,
+                startDate = position.startDate,
+                isInSemester = position.isInSemester
             ),
             source = Source.REMOTE
         )
@@ -138,7 +181,8 @@ object CurrentWeekResolver {
             config = buildScheduleConfig(
                 week = 1,
                 weekDay = weekDay,
-                startDate = mondayOfCurrentWeek
+                startDate = mondayOfCurrentWeek,
+                isInSemester = true
             ),
             source = Source.DEFAULT
         )
@@ -147,13 +191,30 @@ object CurrentWeekResolver {
     private fun buildScheduleConfig(
         week: Int,
         weekDay: Int,
-        startDate: LocalDate
+        startDate: LocalDate,
+        isInSemester: Boolean
     ): ScheduleConfigBean {
         return ScheduleConfigBean().apply {
             this.week = week
             this.weekDay = weekDay
             this.startTime = Date.from(startDate.atStartOfDay(ZoneId.systemDefault()).toInstant())
             this.isShowAll = AHUCache.isShowAllCourse()
+            this.isInSemester = isInSemester
         }
+    }
+
+    private suspend fun getOfficialStartDate(semesterKey: SemesterKey): LocalDate? {
+        val semester = fetchCurrentSemester()
+        val officialKey = sequenceOf(semester.name, semester.code, semester.nameZh)
+            .mapNotNull(::parseSemesterKey)
+            .firstOrNull {
+                it.schoolYear == semesterKey.schoolYear &&
+                    it.schoolTerm == semesterKey.schoolTerm
+            } ?: return null
+        return LocalDate.of(
+            semester.startDate.year,
+            semester.startDate.monthOfYear,
+            semester.startDate.dayOfMonth
+        )
     }
 }

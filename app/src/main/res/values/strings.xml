@@ -67,6 +67,8 @@
     <string name="login_teach_system">教务系统</string>
     <string name="search">搜索</string>
     <string name="check_update">检查更新</string>
+    <string name="debug_build_badge">DEBUG</string>
+    <string name="debug_build_notice">正在运行调试版本，自动更新已被禁用。</string>
     <string name="update_intro">更新日志</string>
     <string name="schedule_input">导入课表</string>
     <string name="schedule_add">手动添加课程</string>

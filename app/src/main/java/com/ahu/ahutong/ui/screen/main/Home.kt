@@ -11,11 +11,20 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -35,9 +45,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import androidx.navigation.NavHostController
@@ -300,6 +314,9 @@ fun Home(
                 navController = navController,
                 enabled = !isEditingHome,
                 trailingContent = {
+                    if (BuildConfig.DEBUG) {
+                        DebugBuildBadge()
+                    }
                     if (
                         !isEditingHome &&
                         weatherHomeConfig.showOnHome &&
@@ -416,6 +433,35 @@ fun Home(
                     rootTopLeft = rootTopLeft
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DebugBuildBadge() {
+    Surface(
+        color = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onError,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .height(28.dp)
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.BugReport,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = stringResource(R.string.debug_build_badge),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

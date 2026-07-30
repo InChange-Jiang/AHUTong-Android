@@ -369,7 +369,7 @@ fun Settings(
                         .clickable {
                             mainViewModel.logout()
                             AHUCache.clearAll()
-                            RustSDK.init("")
+                            RustSDK.initSafe("")
 
                             CookieManager.cookieJar.clear()
                             CookieManager.cookieJar.clearSession()

@@ -100,6 +100,9 @@ interface JwxtApi {
 
     companion object {
         private val BASE_URL = "https://jw.ahu.edu.cn/"
+        const val BROWSER_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.HEADERS
@@ -109,6 +112,14 @@ interface JwxtApi {
 
         val okHttpClient = OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request()
+                        .newBuilder()
+                        .header("User-Agent", BROWSER_USER_AGENT)
+                        .build()
+                )
+            }
             .addNetworkInterceptor(AutoLoginInterceptor())
             .authenticator(TokenAuthenticator())
             .followRedirects(true)

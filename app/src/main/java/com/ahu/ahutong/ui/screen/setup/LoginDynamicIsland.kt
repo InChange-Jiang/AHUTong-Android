@@ -58,6 +58,7 @@ fun BoxScope.LoginDynamicIsland(
                     targetValue = when (state) {
                         LoginState.Idle -> 90.a1 withNight 85.a1
                         LoginState.InProgress -> 70.a1 withNight 60.a1
+                        LoginState.WebVerification -> 70.a1 withNight 60.a1
                         LoginState.Failed -> Color.Red
                         LoginState.Succeeded -> 70.a1 withNight 60.a1
                     }
@@ -82,7 +83,7 @@ fun BoxScope.LoginDynamicIsland(
                 }
             }
 
-            LoginState.InProgress -> {
+            LoginState.InProgress, LoginState.WebVerification -> {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

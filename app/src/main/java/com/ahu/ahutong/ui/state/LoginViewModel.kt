@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.state
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,40 +22,83 @@ class LoginViewModel : ViewModel() {
     var state by mutableStateOf(LoginState.Idle)
     var failureMessage by mutableStateOf("")
     var succeedMessage by mutableStateOf("")
+    private var pendingWebLoginUser: User? = null
 
     /**
      * 爬虫登录
      */
     fun loginWithCrawler(userID: String, password: String) = viewModelScope.launchSafe {
-
-        val result: Result<User> = try {
+        try {
             state = LoginState.InProgress
             val response = withContext(Dispatchers.IO) {
                 AHURepository.loginWithCrawler(userID, password)
             }
 
-            if(response.isSuccessful){
-                state = LoginState.Succeeded
-                succeedMessage = "欢迎，${response.data.name}！"
-                AHUCache.saveCurrentUser(response.data)
-                AHUCache.saveWisdomPassword(password)
-                AHUCache.setAgreementAccepted()
-                AHUCache.setBusinessAccepted()
-                AHUCache.setPrivacyAccepted()
-                Result.success(response.data)
-            }else{
-                state = LoginState.Failed
-                failureMessage = response.msg
-                Result.failure(IllegalArgumentException(response.msg))
+            when {
+                response.isSuccessful -> completeLogin(response.data, password)
+                response.code == AHURepository.WEB_VERIFICATION_REQUIRED_CODE &&
+                    response.data != null -> {
+                    pendingWebLoginUser = response.data
+                    state = LoginState.WebVerification
+                }
+                else -> {
+                    state = LoginState.Failed
+                    failureMessage = response.msg
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(TAG, "Login failed unexpectedly", e)
+            pendingWebLoginUser = null
+            state = LoginState.Failed
+            failureMessage = e.message ?: "登录失败，请稍后重试"
+        }
+    }
+
+    fun completeWebVerification(cookiesJson: String, password: String) =
+        viewModelScope.launchSafe {
+            state = LoginState.InProgress
+            val user = pendingWebLoginUser
+            if (user == null) {
+                failWebVerification("登录信息已失效，请重新登录")
+                return@launchSafe
             }
 
-
-        }catch (e: Throwable) {
-            Result.failure(e)
+            val importResult = withContext(Dispatchers.IO) {
+                AHURepository.importWebLoginCookies(cookiesJson)
+            }
+            importResult.fold(
+                onSuccess = {
+                    pendingWebLoginUser = null
+                    completeLogin(user, password)
+                },
+                onFailure = {
+                    Log.e(TAG, "Failed to import WebView session", it)
+                    failWebVerification(it.message ?: "教务安全验证失败，请重试")
+                }
+            )
         }
+
+    fun failWebVerification(message: String) {
+        pendingWebLoginUser = null
+        state = LoginState.Failed
+        failureMessage = message
+    }
+
+    private fun completeLogin(user: User, password: String) {
+        state = LoginState.Succeeded
+        succeedMessage = "欢迎，${user.name}！"
+        AHUCache.saveCurrentUser(user)
+        AHUCache.saveWisdomPassword(password)
+        AHUCache.setAgreementAccepted()
+        AHUCache.setBusinessAccepted()
+        AHUCache.setPrivacyAccepted()
+    }
+
+    private companion object {
+        const val TAG = "LoginViewModel"
     }
 }
 
 enum class LoginState {
-    Idle, InProgress, Failed, Succeeded
+    Idle, InProgress, WebVerification, Failed, Succeeded
 }

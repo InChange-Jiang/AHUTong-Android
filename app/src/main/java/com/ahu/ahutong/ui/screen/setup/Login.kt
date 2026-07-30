@@ -92,8 +92,12 @@ fun Login(
     }
     var focusIndex by rememberSaveable { mutableStateOf(0) }
     var passwordVisible by rememberSaveable { mutableStateOf(false) }
+    var showWebLoginContent by rememberSaveable { mutableStateOf(false) }
     val activity = LocalActivity.current
     LaunchedEffect(loginViewModel.state) {
+        if (loginViewModel.state != LoginState.WebVerification) {
+            showWebLoginContent = false
+        }
         if (loginViewModel.state == LoginState.Failed) {
             delay(1000)
             loginViewModel.state = LoginState.Idle
@@ -116,7 +120,11 @@ fun Login(
     }
 
     BackHandler {
-        activity?.finish()
+        if (showWebLoginContent) {
+            loginViewModel.failWebVerification("已取消教务安全验证")
+        } else {
+            activity?.finish()
+        }
     }
 
     Box(
@@ -124,6 +132,27 @@ fun Login(
             .fillMaxSize()
             .imePadding()
     ) {
+        if (loginViewModel.state == LoginState.WebVerification) {
+            JwxtWebLogin(
+                userID = userID.text,
+                password = password.text,
+                onInteractionRequired = { showWebLoginContent = true },
+                onVerified = { cookiesJson ->
+                    loginViewModel.completeWebVerification(
+                        cookiesJson = cookiesJson,
+                        password = password.text
+                    )
+                },
+                onFailed = loginViewModel::failWebVerification
+            )
+        }
+
+        if (!showWebLoginContent) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            )
         Column(
             modifier = Modifier
                 .verticalScroll(rememberScrollState())
@@ -301,6 +330,7 @@ fun Login(
                 userID = userID.text,
                 password = password.text
             )
+        }
         }
     }
 }

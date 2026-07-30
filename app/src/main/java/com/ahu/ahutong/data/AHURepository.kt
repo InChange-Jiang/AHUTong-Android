@@ -45,6 +45,13 @@ import retrofit2.Response
 object AHURepository {
 
     val TAG = this::class.java.simpleName
+    const val WEB_VERIFICATION_REQUIRED_CODE = 412
+
+    private enum class JwxtLoginResult {
+        Succeeded,
+        Failed,
+        WebVerificationRequired
+    }
 
     private var dataSource: BaseDataSource = SdkDataSource()
     fun initializeDataSource(useMock: Boolean = AHUCache.getMockData()) {
@@ -348,8 +355,27 @@ object AHURepository {
 
             val jwxtLogin = async {
                 val loginPage = JwxtApi.API.fetchLoginInfo()
+                val finalUrl = loginPage.raw().request.url.toString()
 
-                val document = Jsoup.parse(loginPage.body()!!.string())
+                if (loginPage.code() == WEB_VERIFICATION_REQUIRED_CODE) {
+                    loginPage.errorBody()?.close()
+                    Log.w(TAG, "JWXT browser verification required")
+                    return@async JwxtLoginResult.WebVerificationRequired
+                }
+
+                if (!loginPage.isSuccessful) {
+                    loginPage.errorBody()?.close()
+                    Log.w(TAG, "JWXT login page failed with HTTP ${loginPage.code()}")
+                    return@async JwxtLoginResult.Failed
+                }
+
+                val loginBody = loginPage.body()
+                if (loginBody == null) {
+                    Log.w(TAG, "JWXT login page returned an empty body")
+                    return@async JwxtLoginResult.Failed
+                }
+
+                val document = Jsoup.parse(loginBody.use { it.string() })
                 val lt = document.selectFirst("input[name=lt]")?.attr("value")
 
                 lt?.let {
@@ -375,38 +401,81 @@ object AHURepository {
                     )
 
                     if (jwxtResponse.raw().request.url.toString().endsWith(Constants.JWXT_HOME)) {
-                        return@async true
+                        return@async JwxtLoginResult.Succeeded
                     }
 
                 } ?: run {
-                    if (loginPage.raw().request.url.toString().endsWith(Constants.JWXT_HOME)) {
-                        return@async true
+                    if (finalUrl.endsWith(Constants.JWXT_HOME)) {
+                        return@async JwxtLoginResult.Succeeded
                     } else {
-                        return@async false
+                        return@async JwxtLoginResult.Failed
                     }
                 }
 
-                return@async false
+                return@async JwxtLoginResult.Failed
             }
 
             val crawlerResult = adwmhLogin.await()
-            val jwxtLoginSuccess: Boolean = jwxtLogin.await()
+            val jwxtLoginResult = jwxtLogin.await()
 
             val result = AHUResponse<User>()
+            val user = crawlerResult
+                ?.takeIf { it.code == 10000 }
+                ?.let { User(it.`object`.user.userName, it.`object`.user.idNumber) }
 
+            if (user != null && jwxtLoginResult == JwxtLoginResult.WebVerificationRequired) {
+                result.code = WEB_VERIFICATION_REQUIRED_CODE
+                result.data = user
+                result.msg = "需要完成教务安全验证"
+                return@withContext result
+            }
 
-            crawlerResult?.let {
-                if (it.code == 10000 && jwxtLoginSuccess) {
-                    result.code = 0
-                    result.data = User(it.`object`.user.userName, it.`object`.user.idNumber)
-                    result.msg = "登录成功"
-                    return@withContext result
-                }
+            if (user != null && jwxtLoginResult == JwxtLoginResult.Succeeded) {
+                result.code = 0
+                result.data = user
+                result.msg = "登录成功"
+                return@withContext result
             }
             result.code = -1;
             result.msg = "登录失败"
             return@withContext result
         }
+
+    suspend fun importWebLoginCookies(cookiesJson: String): Result<Unit> =
+        withContext(Dispatchers.IO) {
+            try {
+                require(cookiesJson.isNotBlank() && cookiesJson != "[]") {
+                    "教务登录会话为空"
+                }
+
+                syncCookiesFromJson(cookiesJson)
+                verifyImportedJwxtSession()
+                AHUCache.saveRustCookies(cookiesJson)
+
+                getHttpClient()?.init(cookiesJson)?.onFailure {
+                    Log.w(TAG, "Failed to import WebView cookies into local service", it)
+                }
+                if (RustSDK.isNativeLoaded()) {
+                    RustSDK.initSafe(cookiesJson)
+                }
+
+                Result.success(Unit)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to import WebView login cookies", e)
+                Result.failure(e)
+            }
+        }
+
+    private suspend fun verifyImportedJwxtSession() {
+        val response = JwxtApi.API.fetchLoginInfo()
+        val finalUrl = response.raw().request.url.toString()
+        response.body()?.close()
+        response.errorBody()?.close()
+
+        check(response.isSuccessful && finalUrl.endsWith(Constants.JWXT_HOME)) {
+            "教务安全验证会话未生效（HTTP ${response.code()}）"
+        }
+    }
 
     private suspend fun persistRustCookies(httpClient: LocalServiceClient) {
         val cookies = httpClient.dumpCookies().getOrElse {
@@ -443,37 +512,39 @@ object AHURepository {
                 RustSDK.getCookiesListSafe()
             }
             
-            // 解析 JSON 数组
-            val listType = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
-            val cookies: List<Map<String, Any>> = Gson().fromJson(json, listType)
-
-            cookies.forEach {
-                val builder = okhttp3.Cookie.Builder()
-                    .name(it["name"] as String)
-                    .value(it["value"] as String)
-                val domainObj = it["domain"]
-                val path = it["path"] as String
-
-                val domain = if (domainObj != null) {
-                    domainObj as String
-                } else {
-                    // 如果 domain 为空，根据 path 进行简单的推断 (host-only cookie 处理)
-                    if (path.contains("/cas")) "one.ahu.edu.cn" else "jw.ahu.edu.cn"
-                }
-
-                builder.domain(domain)
-                    .path(path)
-
-                if (it["secure"] == true) builder.secure()
-                if (it["http_only"] == true) builder.httpOnly()
-
-                val cookie = builder.build()
-                com.ahu.ahutong.data.crawler.manager.CookieManager.cookieJar.addCookie(cookie)
-            }
-            Log.d(TAG, "Cookies synced from Rust SDK: " + cookies.size)
+            syncCookiesFromJson(json)
         } catch(e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    private fun syncCookiesFromJson(json: String) {
+        val listType = object : com.google.gson.reflect.TypeToken<List<Map<String, Any>>>() {}.type
+        val cookies: List<Map<String, Any>> = Gson().fromJson(json, listType)
+
+        cookies.forEach {
+            val builder = okhttp3.Cookie.Builder()
+                .name(it["name"] as String)
+                .value(it["value"] as String)
+            val domainObj = it["domain"]
+            val path = it["path"] as String
+
+            val domain = if (domainObj != null) {
+                domainObj as String
+            } else {
+                if (path.contains("/cas")) "one.ahu.edu.cn" else "jw.ahu.edu.cn"
+            }
+
+            builder.domain(domain)
+                .path(path)
+
+            if (it["secure"] == true) builder.secure()
+            if (it["http_only"] == true) builder.httpOnly()
+
+            val cookie = builder.build()
+            com.ahu.ahutong.data.crawler.manager.CookieManager.cookieJar.addCookie(cookie)
+        }
+        Log.d(TAG, "Cookies synced into Android client: ${cookies.size}")
     }
 
 

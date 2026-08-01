@@ -115,7 +115,7 @@ fun Preferences() {
         PreferenceToggleCard(
             sectionTitle = "猜你想用",
             settingTitle = "显示快捷建议",
-            description = "根据仅在本机学习的使用习惯，在合适时机显示快捷建议。关闭后只隐藏建议，不会停止本地学习、行为预测或智能预加载。",
+            description = "根据仅在本机学习的使用习惯，在合适时机显示快捷建议。",
             selected = { personalizationEnabled },
             onSelect = preferencesViewModel::setPersonalizationEnabled,
             cardColor = cardColor,

@@ -110,6 +110,29 @@
 -keep class com.ahu.ahutong.sdk.LocalServiceClient { *; }
 -keep class com.ahu.ahutong.data.server.model.** { *; }
 
+# On-device prediction snapshots use a stable explicit codec. Keep the runtime snapshot model and
+# its enum types as defense in depth against accidental reflection-based serialization regressions.
+-keep class com.ahu.ahutong.personalization.context.ContextSnapshot { *; }
+-keep enum com.ahu.ahutong.personalization.context.DayType { *; }
+-keep enum com.ahu.ahutong.personalization.context.BalanceBucket { *; }
+-keep enum com.ahu.ahutong.personalization.context.ExamDistanceBucket { *; }
+-keep enum com.ahu.ahutong.personalization.action.AppActionId { *; }
+-keep enum com.ahu.ahutong.personalization.action.ActionSource { *; }
+
+# These DTOs are both Gson payload contracts and locally persisted aggregate records. Their JSON
+# field names and nested generic signatures must remain stable in minified builds.
+-keep class com.ahu.ahutong.personalization.telemetry.StoredActionMetric { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.StoredPerActionMetrics { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelMetricSums { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.PairwiseAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ActionMetricSums { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelQualityEvaluationReport { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelQualityBatchRequest { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.TelemetryCredentialRequest { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.TelemetryCredentialResponse { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.TelemetryDeletionRequest { *; }
+
 # Data source interface + implementations (prevent R8 from stripping abstract methods)
 -keep interface com.ahu.ahutong.data.base.BaseDataSource { *; }
 -keep class com.ahu.ahutong.data.crawler.CrawlerDataSource { *; }

@@ -14,6 +14,7 @@ import com.ahu.ahutong.personalization.action.SideEffect
 import com.ahu.ahutong.personalization.action.OrganicLabelPolicy
 import com.ahu.ahutong.personalization.context.BalanceBucket
 import com.ahu.ahutong.personalization.context.ContextSnapshot
+import com.ahu.ahutong.personalization.context.ContextSnapshotCodec
 import com.ahu.ahutong.personalization.context.DayType
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
 import com.ahu.ahutong.personalization.context.FeatureExtractor
@@ -47,7 +48,6 @@ import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
 import com.ahu.ahutong.data.dao.PreferencesManager
-import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -161,6 +161,7 @@ class BehaviorPredictionRuntime @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val processInstanceId = UUID.randomUUID().toString()
+    private val profileLifecycleMutex = Mutex()
     private val profileLocks = ConcurrentHashMap<String, Mutex>()
     private val deadlineJobs = ConcurrentHashMap<String, Job>()
     private val sequence = AtomicLong(0)
@@ -175,7 +176,6 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val recentActions = ArrayDeque<AppActionId>()
     private val recentActionSources = ArrayDeque<ActionSource>()
     private val organicActionHistory = ArrayDeque<AppActionId>()
-    private val gson = Gson()
     @Volatile private var suggestionExpiryJob: Job? = null
     @Volatile private var lastSuggestionElapsedMs = 0L
 
@@ -185,6 +185,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     val sensitiveUiVisible: StateFlow<Boolean> = _sensitiveUiVisible.asStateFlow()
 
     @Volatile private var profileKey: String? = null
+    @Volatile private var profileReady = false
     @Volatile private var activeAccountIdentifier: String? = null
     @Volatile private var sessionId: String? = null
     @Volatile private var foreground = false
@@ -204,15 +205,20 @@ class BehaviorPredictionRuntime @Inject constructor(
     @Volatile private var suppressedRoute: String? = null
     @Volatile private var nextNavigationSource: ActionSource? = null
 
-    suspend fun startProfile(accountIdentifier: String) {
+    suspend fun startProfile(accountIdentifier: String) = profileLifecycleMutex.withLock {
+        startProfileLocked(accountIdentifier)
+    }
+
+    private suspend fun startProfileLocked(accountIdentifier: String) {
         val nextProfile = profileKeyManager.profileKey(accountIdentifier)
-        if (profileKey == nextProfile && sessionId != null) {
+        if (profileReady && profileKey == nextProfile && sessionId != null) {
             val refreshedLoginGeneration = loginGeneration.incrementAndGet()
             paymentQrRepository.activateProfile(nextProfile, profileGeneration.get(), refreshedLoginGeneration)
             paymentQrCommands.activate(profileGeneration.get(), refreshedLoginGeneration)
             return
         }
-        stopSession(censorReason = "PROFILE_SWITCHED", clearProfile = false)
+        stopSessionLocked(censorReason = "PROFILE_SWITCHED", clearProfile = false)
+        profileReady = false
         profileKey = nextProfile
         activeAccountIdentifier = accountIdentifier
         sessionId = UUID.randomUUID().toString()
@@ -220,8 +226,6 @@ class BehaviorPredictionRuntime @Inject constructor(
         lastSuggestionElapsedMs = 0L
         val persistedMaxSequence = dao.maxEventSequence(nextProfile)
         sequence.updateAndGet { current -> maxOf(current, persistedMaxSequence) }
-        val activeProfileGeneration = profileGeneration.incrementAndGet()
-        val activeLoginGeneration = loginGeneration.incrementAndGet()
         recentActions.clear()
         recentActionSources.clear()
         organicActionHistory.clear()
@@ -239,6 +243,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         lastAction = null
         lastActionSequenceNo = 0L
         taintedChain = false
+        dao.censorPendingWithExistingResolutionEvent(nextProfile)
         dao.censorStaleProcessPending(nextProfile, processInstanceId)
         modelStateStore.loadOrCreate(nextProfile)
         val promotion = promotionManager.snapshot(nextProfile)
@@ -257,9 +262,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         }
         telemetryManager.reconcileProfile(nextProfile, promotion.modelGeneration)
         _telemetryConsentEnabled.value = onboardingChoice == true && telemetryManager.isConsentEnabled(nextProfile)
+        val activeProfileGeneration = profileGeneration.incrementAndGet()
+        val activeLoginGeneration = loginGeneration.incrementAndGet()
         paymentQrRepository.activateProfile(nextProfile, activeProfileGeneration, activeLoginGeneration)
         paymentQrCommands.activate(activeProfileGeneration, activeLoginGeneration)
         prefetchCoordinator.beginSession()
+        profileReady = true
         insertLifecycleEvent("SESSION_STARTED", ActionSource.SYSTEM)
         _diagnostics.value = _diagnostics.value.copy(
             profileActive = true,
@@ -336,14 +344,17 @@ class BehaviorPredictionRuntime @Inject constructor(
         route: String? = AppActionCatalog.spec(action).route,
         deferNextOpportunity: Boolean = false
     ) {
+        if (!profileReady) return
         val activeProfile = profileKey ?: return
         val activeSession = sessionId ?: return
         val spec = AppActionCatalog.spec(action)
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         var deferredOpportunity: RecordedActionOpportunity? = null
         lock.withLock {
+            if (!profileReady || profileKey != activeProfile || sessionId != activeSession) return@withLock
             val elapsed = SystemClock.elapsedRealtime()
             val eventId = UUID.randomUUID().toString()
+            dao.censorPendingWithExistingResolutionEvent(activeProfile)
             val currentPending = dao.latestPending(activeProfile)
             val cleanOrganic = OrganicLabelPolicy.isEligible(action, source, taintedChain = taintedChain)
             val sequenceNo = sequence.incrementAndGet()
@@ -683,7 +694,13 @@ class BehaviorPredictionRuntime @Inject constructor(
         prefetchCoordinator.cancelAll()
     }
 
-    suspend fun stopSession(censorReason: String = "SESSION_ENDED", clearProfile: Boolean = false) {
+    suspend fun stopSession(censorReason: String = "SESSION_ENDED", clearProfile: Boolean = false) =
+        profileLifecycleMutex.withLock {
+            stopSessionLocked(censorReason, clearProfile)
+        }
+
+    private suspend fun stopSessionLocked(censorReason: String, clearProfile: Boolean) {
+        profileReady = false
         val activeProfile = profileKey ?: return
         censorActive(censorReason)
         deadlineJobs.values.forEach(Job::cancel)
@@ -757,6 +774,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     private suspend fun createOpportunity(trigger: OpportunityTrigger, previousAction: AppActionId?) {
+        if (!profileReady) return
         val activeProfile = profileKey ?: return
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         lock.withLock {
@@ -774,7 +792,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     ) {
         val activeProfile = profileKey ?: return
         val activeSession = sessionId ?: return
-        if (!foreground || !interactive) return
+        if (!profileReady || !foreground || !interactive) return
         dao.latestPending(activeProfile)?.let { existing ->
             dao.censorPendingCas(existing.decisionId, activeProfile, "CENSORED_SUPERSEDED")
             deadlineJobs.remove(existing.decisionId)?.cancel()
@@ -813,7 +831,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             input.features.toBytes(),
             input.businessAvailability.toBytes(),
             input.inputDigest,
-            gson.toJson(input.snapshot),
+            ContextSnapshotCodec.encode(input.snapshot),
             "PREPARING",
             null,
             null,
@@ -962,7 +980,20 @@ class BehaviorPredictionRuntime @Inject constructor(
             _diagnostics.value = _diagnostics.value.copy(lastFailure = "AVAILABILITY_MISMATCH")
             return
         }
-        val input = restoreInput(pending)
+        val input = try {
+            restoreInput(pending)
+        } catch (error: RuntimeException) {
+            dao.resolvePendingCas(
+                pending.decisionId,
+                pending.profileKey,
+                "CENSORED_CONTEXT_DECODE_FAILED",
+                null,
+                resolvedByEventId
+            )
+            deadlineJobs.remove(pending.decisionId)?.cancel()
+            _diagnostics.value = _diagnostics.value.copy(lastFailure = "CONTEXT_SNAPSHOT_DECODE_FAILED")
+            return
+        }
         database.transaction {
             check(
                 dao.resolvePendingCas(
@@ -1110,7 +1141,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     private fun restoreInput(pending: PendingPredictionEntity): PredictionInput {
-        val snapshot = gson.fromJson(pending.contextSnapshotJson, ContextSnapshot::class.java)
+        val snapshot = ContextSnapshotCodec.decode(pending.contextSnapshotJson)
         return PredictionInput(
             pending.profileKey,
             pending.decisionId,

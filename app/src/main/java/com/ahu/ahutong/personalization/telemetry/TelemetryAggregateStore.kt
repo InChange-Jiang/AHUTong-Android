@@ -31,6 +31,25 @@ data class StoredActionMetric(
 
 data class StoredPerActionMetrics(val values: List<StoredActionMetric> = emptyList())
 
+internal fun sanitizeStoredActionMetrics(values: List<*>): List<StoredActionMetric> =
+    values.mapNotNull { value ->
+        (value as? StoredActionMetric)?.takeIf { it.isValid() }
+    }
+
+private fun StoredActionMetric.isValid(): Boolean =
+    actionId in AppActionCatalog.outputIndex &&
+        actionId != AppActionCatalog.NONE_OUTPUT_ID &&
+        actionId != AppActionCatalog.OTHER_OUTPUT_ID &&
+        eligibleSampleCount >= 0 && pairedSampleCount in 0..eligibleSampleCount &&
+        statTop1Correct in 0..pairedSampleCount.toLong() &&
+        statTop3Hit in statTop1Correct..pairedSampleCount.toLong() &&
+        tinyTop1Correct in 0..pairedSampleCount.toLong() &&
+        tinyTop3Hit in tinyTop1Correct..pairedSampleCount.toLong() &&
+        statReciprocalRankSum.isFinite() && statBrierSum.isFinite() && statLogLossSum.isFinite() &&
+        tinyReciprocalRankSum.isFinite() && tinyBrierSum.isFinite() && tinyLogLossSum.isFinite() &&
+        tinyWins >= 0 && statWins >= 0 && ties >= 0 &&
+        tinyWins + statWins + ties == pairedSampleCount
+
 /**
  * The only component allowed to turn a per-decision evaluation into telemetry state.
  * It is invoked in the same Room transaction as label resolution and stores sums only;
@@ -102,9 +121,12 @@ class TelemetryAggregateStore @Inject constructor(
         )
     }
 
-    fun readPerAction(json: String): List<StoredActionMetric> =
-        runCatching { gson.fromJson(json, StoredPerActionMetrics::class.java)?.values.orEmpty() }
-            .getOrDefault(emptyList())
+    fun readPerAction(json: String): List<StoredActionMetric> = runCatching {
+        val values: List<*> = gson.fromJson(json, StoredPerActionMetrics::class.java)
+            ?.values
+            .orEmpty()
+        sanitizeStoredActionMetrics(values)
+    }.getOrDefault(emptyList())
 
     private fun emptyWindow(
         lifecycle: TelemetryStateEntity,

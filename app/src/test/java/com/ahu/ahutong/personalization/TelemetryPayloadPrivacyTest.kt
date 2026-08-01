@@ -10,6 +10,8 @@ import com.ahu.ahutong.personalization.telemetry.ModelQualityBatchRequest
 import com.ahu.ahutong.personalization.telemetry.ModelQualityEvaluationReport
 import com.ahu.ahutong.personalization.telemetry.PairwiseAggregate
 import com.ahu.ahutong.personalization.telemetry.TelemetryPayloadValidator
+import com.ahu.ahutong.personalization.telemetry.StoredActionMetric
+import com.ahu.ahutong.personalization.telemetry.sanitizeStoredActionMetrics
 import com.google.gson.Gson
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
@@ -59,6 +61,32 @@ class TelemetryPayloadPrivacyTest {
                 validReport().copy(statistical = validReport().statistical.copy(modelVersion = 0))
             )
         }
+    }
+
+    @Test
+    fun erasedOrCorruptStoredMetricTypesAreDiscardedBeforeUse() {
+        val valid = StoredActionMetric(
+            actionId = AppActionCatalog.outputIds.first(),
+            eligibleSampleCount = 1,
+            pairedSampleCount = 1,
+            statTop1Correct = 1,
+            statTop3Hit = 1,
+            statReciprocalRankSum = 1.0,
+            statBrierSum = 0.1,
+            statLogLossSum = 0.2,
+            tinyTop1Correct = 1,
+            tinyTop3Hit = 1,
+            tinyReciprocalRankSum = 1.0,
+            tinyBrierSum = 0.1,
+            tinyLogLossSum = 0.2,
+            tinyWins = 0,
+            statWins = 0,
+            ties = 1
+        )
+        val erasedGsonElement = linkedMapOf<String, Any>("actionId" to valid.actionId)
+
+        assertTrue(sanitizeStoredActionMetrics(listOf(erasedGsonElement)).isEmpty())
+        assertTrue(sanitizeStoredActionMetrics(listOf(valid)).single() == valid)
     }
 
     private fun validReport(): ModelQualityEvaluationReport = ModelQualityEvaluationReport(

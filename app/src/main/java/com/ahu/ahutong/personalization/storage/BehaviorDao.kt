@@ -81,6 +81,25 @@ abstract class BehaviorDao {
     @Query("UPDATE pending_prediction SET resolutionStatus = 'CENSORED_PROCESS_RESTART' WHERE profileKey = :profileKey AND resolutionStatus = 'PENDING' AND processInstanceId != :processInstanceId")
     abstract suspend fun censorStaleProcessPending(profileKey: String, processInstanceId: String): Int
 
+    @Query(
+        """
+        UPDATE pending_prediction
+        SET resolutionStatus = 'CENSORED_ORPHANED_RESOLUTION_EVENT',
+            resolvedByEventId = (
+                SELECT eventId FROM behavior_event
+                WHERE behavior_event.resolvedDecisionId = pending_prediction.decisionId
+                LIMIT 1
+            )
+        WHERE profileKey = :profileKey
+          AND resolutionStatus = 'PENDING'
+          AND EXISTS (
+              SELECT 1 FROM behavior_event
+              WHERE behavior_event.resolvedDecisionId = pending_prediction.decisionId
+          )
+        """
+    )
+    abstract suspend fun censorPendingWithExistingResolutionEvent(profileKey: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertActionStat(value: ActionStatEntity)
 

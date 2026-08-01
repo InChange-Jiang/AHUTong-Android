@@ -11,6 +11,17 @@ internal data class SuggestionCandidate(
 )
 
 internal object SuggestionPolicy {
+    fun remainingVisibilityFraction(
+        shownAtElapsedMs: Long,
+        expiresAtElapsedMs: Long,
+        nowElapsedMs: Long
+    ): Float {
+        val lifetime = expiresAtElapsedMs - shownAtElapsedMs
+        if (lifetime <= 0L) return 0f
+        val remaining = expiresAtElapsedMs - nowElapsedMs
+        return (remaining.toDouble() / lifetime.toDouble()).toFloat().coerceIn(0f, 1f)
+    }
+
     fun isDisplayIntervalElapsed(
         lastShownElapsedMs: Long,
         nowElapsedMs: Long,

@@ -65,6 +65,14 @@ class SuggestionPolicyTest {
     }
 
     @Test
+    fun suggestionVisibilityTracksItsRemainingLifetime() {
+        assertEquals(1f, SuggestionPolicy.remainingVisibilityFraction(1_000L, 13_000L, 1_000L))
+        assertEquals(0.5f, SuggestionPolicy.remainingVisibilityFraction(1_000L, 13_000L, 7_000L))
+        assertEquals(0f, SuggestionPolicy.remainingVisibilityFraction(1_000L, 13_000L, 13_000L))
+        assertEquals(0f, SuggestionPolicy.remainingVisibilityFraction(1_000L, 1_000L, 1_000L))
+    }
+
+    @Test
     fun suggestionClickIsOwnedByParentAndDismissHasNoPenalty() {
         val sourceRoot = File(repositoryRoot(), "app/src/main/java")
         val host = File(
@@ -85,12 +93,29 @@ class SuggestionPolicyTest {
             "com/ahu/ahutong/data/dao/PreferencesManager.kt"
         ).readText()
 
-        assertFalse(host.contains("rememberCoroutineScope"))
+        assertTrue(host.contains("val animationScope = rememberCoroutineScope()"))
         assertTrue(host.contains("onClick = { onSuggestionClick(suggestion) }"))
-        assertTrue(host.contains("interaction.pressPosition"))
-        assertTrue(host.contains("drawCircle("))
+        assertTrue(host.contains("highlightRadiusMultiplier = 0.9f"))
+        assertTrue(host.contains(".then(interactiveHighlight.modifier)"))
+        assertTrue(host.contains(".then(interactiveHighlight.gestureModifier)"))
+        assertTrue(host.contains("interactiveHighlight.pressProgress"))
+        assertTrue(host.contains("runtime.pauseSuggestionVisibility(suggestion.executionId)"))
+        assertTrue(host.contains("runtime.restartSuggestionVisibility(suggestion.executionId)"))
+        assertTrue(host.contains("if (suggestion.visibilityPaused)"))
         assertTrue(host.contains(".clip(suggestionShape)"))
-        assertTrue(host.contains("waveVisible = false"))
+        assertFalse(host.contains("interaction.pressPosition"))
+        assertFalse(host.contains("drawCircle("))
+        assertFalse(host.contains("waveVisible"))
+        assertTrue(host.contains("lifetimeOpacity.animateTo"))
+        assertTrue(host.contains("Modifier.drawBackdrop"))
+        assertTrue(host.contains("vibrancy()"))
+        assertTrue(host.contains("blur(8f.dp.toPx())"))
+        assertTrue(host.contains("lens(24f.dp.toPx(), 24f.dp.toPx())"))
+        assertTrue(host.contains("opacity(lifetimeOpacity.value)"))
+        assertTrue(host.contains("val suggestionShape = ContinuousCapsule"))
+        assertFalse(host.contains("layerBlock = { alpha = lifetimeOpacity.value }"))
+        assertFalse(host.contains("graphicsLayer { alpha = lifetimeOpacity.value }"))
+        assertFalse(host.contains("Surface("))
         assertFalse(host.contains("LocalIndication"))
         assertFalse(host.contains("DoNotDisturbOn"))
         assertFalse(host.contains("suppressSuggestedActionByUser"))
@@ -109,6 +134,10 @@ class SuggestionPolicyTest {
                 .containsMatchIn(runtime)
         )
         assertTrue(runtime.contains("SUGGESTION_MIN_INTERVAL_MS = 30_000L"))
+        assertTrue(runtime.contains("fun pauseSuggestionVisibility(executionId: String)"))
+        assertTrue(runtime.contains("fun restartSuggestionVisibility(executionId: String)"))
+        assertTrue(runtime.contains("suggestionVisibilityGeneration.incrementAndGet()"))
+        assertTrue(runtime.contains("shownAtElapsedMs = restartedAtElapsedMs"))
         assertTrue(runtime.contains("prefetchCoordinator.prefetchSuggestedAction"))
         assertTrue(prefetch.contains("suspend fun prefetchSuggestedAction"))
         assertTrue(prefetch.contains("FileUtils.saveResponseBodyToFile(context, body, \"xiaoli.jpg\")"))

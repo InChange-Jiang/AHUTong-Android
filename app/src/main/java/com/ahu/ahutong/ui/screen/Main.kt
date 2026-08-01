@@ -342,6 +342,7 @@ fun Main(
             isReLoginShown || sensitiveUiVisible || imeVisible
         SmartSuggestionHost(
             runtime = behaviorRuntime,
+            backdrop = backdrop,
             blocked = productUiBlocked,
             onSuggestionClick = { suggestion ->
                 scope.launch {

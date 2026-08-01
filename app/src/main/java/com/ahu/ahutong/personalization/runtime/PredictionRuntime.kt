@@ -96,7 +96,10 @@ sealed interface PredictionUiState {
         val action: AppActionId,
         val title: String,
         val reason: String,
-        val confidenceBucket: ConfidenceBucket
+        val confidenceBucket: ConfidenceBucket,
+        val shownAtElapsedMs: Long,
+        val expiresAtElapsedMs: Long,
+        val visibilityPaused: Boolean = false
     ) : PredictionUiState
 }
 
@@ -162,6 +165,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val deadlineJobs = ConcurrentHashMap<String, Job>()
     private val sequence = AtomicLong(0)
     private val executionEpoch = AtomicLong(0)
+    private val suggestionVisibilityGeneration = AtomicLong(0)
     private val profileGeneration = AtomicLong(0)
     private val loginGeneration = AtomicLong(0)
     private val _diagnostics = MutableStateFlow(RuntimeDiagnosticsState())
@@ -544,6 +548,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         ) return false
         val lease = prepareVisibleIntervention(decisionId, action, "SUGGESTION", ActionSource.SUGGESTION, spec.route) ?: return false
         val consumed = consumeIntervention(lease.executionId) ?: return false
+        val shownAtElapsedMs = SystemClock.elapsedRealtime()
         _uiState.value = PredictionUiState.Suggestion(
             consumed.executionId,
             decisionId,
@@ -554,20 +559,38 @@ class BehaviorPredictionRuntime @Inject constructor(
                 probability >= 0.75f -> ConfidenceBucket.HIGH
                 probability >= 0.50f -> ConfidenceBucket.MEDIUM
                 else -> ConfidenceBucket.LOW
-            }
+            },
+            shownAtElapsedMs = shownAtElapsedMs,
+            expiresAtElapsedMs = shownAtElapsedMs + SUGGESTION_VISIBLE_TTL_MS,
+            visibilityPaused = false
         )
-        suggestionExpiryJob?.cancel()
-        suggestionExpiryJob = scope.launch {
-            delay(SUGGESTION_VISIBLE_TTL_MS)
-            val current = _uiState.value as? PredictionUiState.Suggestion
-            if (current?.executionId == consumed.executionId) {
-                _uiState.value = PredictionUiState.Hidden
-            }
-        }
+        scheduleSuggestionExpiry(consumed.executionId)
         return true
     }
 
+    fun pauseSuggestionVisibility(executionId: String) {
+        val current = _uiState.value as? PredictionUiState.Suggestion ?: return
+        if (current.executionId != executionId) return
+        suggestionVisibilityGeneration.incrementAndGet()
+        suggestionExpiryJob?.cancel()
+        suggestionExpiryJob = null
+        _uiState.value = current.copy(visibilityPaused = true)
+    }
+
+    fun restartSuggestionVisibility(executionId: String) {
+        val current = _uiState.value as? PredictionUiState.Suggestion ?: return
+        if (current.executionId != executionId) return
+        val restartedAtElapsedMs = SystemClock.elapsedRealtime()
+        _uiState.value = current.copy(
+            shownAtElapsedMs = restartedAtElapsedMs,
+            expiresAtElapsedMs = restartedAtElapsedMs + SUGGESTION_VISIBLE_TTL_MS,
+            visibilityPaused = false
+        )
+        scheduleSuggestionExpiry(executionId)
+    }
+
     fun hideSuggestion() {
+        suggestionVisibilityGeneration.incrementAndGet()
         suggestionExpiryJob?.cancel()
         suggestionExpiryJob = null
         _uiState.value = PredictionUiState.Hidden
@@ -594,6 +617,21 @@ class BehaviorPredictionRuntime @Inject constructor(
             deferNextOpportunity = true
         )
         return state.action
+    }
+
+    private fun scheduleSuggestionExpiry(executionId: String) {
+        val generation = suggestionVisibilityGeneration.incrementAndGet()
+        suggestionExpiryJob?.cancel()
+        suggestionExpiryJob = scope.launch {
+            delay(SUGGESTION_VISIBLE_TTL_MS)
+            val current = _uiState.value as? PredictionUiState.Suggestion
+            if (suggestionVisibilityGeneration.get() == generation &&
+                current?.executionId == executionId && !current.visibilityPaused
+            ) {
+                _uiState.value = PredictionUiState.Hidden
+                suggestionExpiryJob = null
+            }
+        }
     }
 
     suspend fun authorizeUserPreferencePaymentQr(): Boolean {

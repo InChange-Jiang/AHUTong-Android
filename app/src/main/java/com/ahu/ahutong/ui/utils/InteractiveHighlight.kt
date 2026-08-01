@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 class InteractiveHighlight(
     val animationScope: CoroutineScope,
     val userDragEnabled: Boolean = true,
+    val highlightRadiusMultiplier: Float = 1.5f,
     val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
 ) {
 
@@ -72,7 +73,7 @@ half4 main(float2 coord) {
                             val position = position(size, positionAnimation.value)
                             setFloatUniform("size", size.width, size.height)
                             setColorUniform("color", Color.White.copy(0.15f * progress).toArgb())
-                            setFloatUniform("radius", size.minDimension * 1.5f)
+                            setFloatUniform("radius", size.minDimension * highlightRadiusMultiplier)
                             setFloatUniform(
                                 "position",
                                 position.x.fastCoerceIn(0f, size.width),

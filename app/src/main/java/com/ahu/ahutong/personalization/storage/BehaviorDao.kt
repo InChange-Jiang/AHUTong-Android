@@ -102,8 +102,8 @@ abstract class BehaviorDao {
     @Query("SELECT COUNT(*) FROM (SELECT targetActionId FROM training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE' GROUP BY targetActionId HAVING COUNT(*) >= :minimumPerAction)")
     abstract suspend fun qualifiedTrainingActionCount(profileKey: String, minimumPerAction: Int): Int
 
-    @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey AND targetActionId = :actionId")
-    abstract suspend fun trainingActionCount(profileKey: String, actionId: String): Int
+    @Query("SELECT DISTINCT targetActionId FROM training_sample WHERE profileKey = :profileKey AND labelSource = 'ORGANIC_ACTION' AND targetActionId != 'NONE'")
+    abstract suspend fun organicNonNoneTrainingActionIds(profileKey: String): List<String>
 
     @Query("SELECT * FROM training_sample WHERE profileKey = :profileKey ORDER BY rowId DESC LIMIT :limit")
     abstract suspend fun recentTrainingSamples(profileKey: String, limit: Int): List<TrainingSampleEntity>

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -341,12 +342,32 @@ fun Main(
             isReLoginShown || sensitiveUiVisible || imeVisible
         SmartSuggestionHost(
             runtime = behaviorRuntime,
-            navController = navController,
-            paymentQrCommands = paymentQrCommands,
             blocked = productUiBlocked,
+            onSuggestionClick = { suggestion ->
+                scope.launch {
+                    val action = behaviorRuntime.acceptSuggestion(suggestion.executionId) ?: return@launch
+                    if (action == AppActionId.OPEN_PAYMENT_QR) {
+                        paymentQrCommands.publish(
+                            suggestion.executionId,
+                            suggestion.decisionId,
+                            ActionSource.SUGGESTION
+                        )
+                        behaviorRuntime.suppressNextRoute("home")
+                        navController.navigate("home") { launchSingleTop = true }
+                    } else {
+                        com.ahu.ahutong.personalization.action.AppActionCatalog.spec(action).route?.let { route ->
+                            navController.navigate(route) { launchSingleTop = true }
+                        }
+                    }
+                }
+            },
             modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 12.dp, bottom = 72.dp)
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(
+                    end = 12.dp,
+                    bottom = if (currentRoute in setOf("home", "schedule", "tools", "settings")) 88.dp else 16.dp
+                )
         )
         with(diagnosticsContribution) {
             Overlay(navController, behaviorRuntime, productUiBlocked)

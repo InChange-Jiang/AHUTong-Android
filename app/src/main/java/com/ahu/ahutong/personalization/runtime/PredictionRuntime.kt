@@ -45,6 +45,7 @@ import com.ahu.ahutong.personalization.training.OrganicTrainingSample
 import com.ahu.ahutong.personalization.training.TrainingSliceResult
 import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
+import com.ahu.ahutong.personalization.ui.SuggestionPolicy
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.google.gson.Gson
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -171,7 +172,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val recentActionSources = ArrayDeque<ActionSource>()
     private val organicActionHistory = ArrayDeque<AppActionId>()
     private val gson = Gson()
-    private val suggestionCooldownUntil = ConcurrentHashMap<String, Long>()
+    private val suggestionSuppressedUntilElapsedMs = ConcurrentHashMap<String, Long>()
     @Volatile private var suggestionExpiryJob: Job? = null
 
     val diagnostics: StateFlow<RuntimeDiagnosticsState> = _diagnostics.asStateFlow()
@@ -186,6 +187,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     @Volatile private var interactive = false
     @Volatile private var lastRoute: String? = null
     @Volatile private var lastAction: AppActionId? = null
+    @Volatile private var lastActionSequenceNo = 0L
     @Volatile private var balanceBucket = BalanceBucket.UNKNOWN
     @Volatile private var balanceFresh = false
     @Volatile private var examBucket = ExamDistanceBucket.UNKNOWN
@@ -195,10 +197,6 @@ class BehaviorPredictionRuntime @Inject constructor(
     @Volatile private var routeChangedElapsedMs = 0L
     @Volatile private var lastContextOpportunityElapsedMs = 0L
     @Volatile private var taintedChain = false
-    @Volatile private var lastSuggestionElapsedMs = 0L
-    @Volatile private var sessionSuggestionCount = 0
-    @Volatile private var suggestionEpochDay = Long.MIN_VALUE
-    @Volatile private var dailySuggestionCount = 0
     @Volatile private var suppressedRoute: String? = null
     @Volatile private var nextNavigationSource: ActionSource? = null
 
@@ -234,8 +232,8 @@ class BehaviorPredictionRuntime @Inject constructor(
                 if (source == ActionSource.ORGANIC) organicActionHistory.addLast(action)
             }
         lastAction = null
+        lastActionSequenceNo = 0L
         taintedChain = false
-        sessionSuggestionCount = 0
         dao.censorStaleProcessPending(nextProfile, processInstanceId)
         modelStateStore.loadOrCreate(nextProfile)
         val promotion = promotionManager.snapshot(nextProfile)
@@ -330,12 +328,14 @@ class BehaviorPredictionRuntime @Inject constructor(
     suspend fun recordActionIntent(
         action: AppActionId,
         source: ActionSource = ActionSource.ORGANIC,
-        route: String? = AppActionCatalog.spec(action).route
+        route: String? = AppActionCatalog.spec(action).route,
+        deferNextOpportunity: Boolean = false
     ) {
         val activeProfile = profileKey ?: return
         val activeSession = sessionId ?: return
         val spec = AppActionCatalog.spec(action)
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
+        var deferredOpportunity: RecordedActionOpportunity? = null
         lock.withLock {
             val elapsed = SystemClock.elapsedRealtime()
             val eventId = UUID.randomUUID().toString()
@@ -389,6 +389,7 @@ class BehaviorPredictionRuntime @Inject constructor(
                 taintedChain = true
             }
             lastAction = action
+            lastActionSequenceNo = sequenceNo
             if (prefetchCoordinator.onActionOpened(action)) {
                 dao.insertEvent(
                     event(
@@ -424,7 +425,35 @@ class BehaviorPredictionRuntime @Inject constructor(
             // opportunity is TAINTED_CHAIN and can never train, evaluate, or promote a model.
             // The next independent organic action starts a clean opportunity after acting only as an anchor.
             if (spec.predictable && foreground && interactive) {
-                createOpportunityLocked(OpportunityTrigger.ACTION_INTENT_ACCEPTED, action, eventId, sequenceNo)
+                if (deferNextOpportunity) {
+                    deferredOpportunity = RecordedActionOpportunity(
+                        activeProfile,
+                        activeSession,
+                        action,
+                        eventId,
+                        sequenceNo
+                    )
+                } else {
+                    createOpportunityLocked(OpportunityTrigger.ACTION_INTENT_ACCEPTED, action, eventId, sequenceNo)
+                }
+            }
+        }
+        deferredOpportunity?.let(::scheduleRecordedActionOpportunity)
+    }
+
+    private fun scheduleRecordedActionOpportunity(value: RecordedActionOpportunity) {
+        scope.launch {
+            val lock = profileLocks.getOrPut(value.profileKey) { Mutex() }
+            lock.withLock {
+                if (profileKey != value.profileKey || sessionId != value.sessionId ||
+                    lastActionSequenceNo != value.sequenceNo || lastAction != value.action
+                ) return@withLock
+                createOpportunityLocked(
+                    OpportunityTrigger.ACTION_INTENT_ACCEPTED,
+                    value.action,
+                    value.eventId,
+                    value.sequenceNo
+                )
             }
         }
     }
@@ -549,18 +578,13 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     fun dismissSuggestionByUser() {
-        val current = _uiState.value as? PredictionUiState.Suggestion
-        if (current != null) {
-            suggestionCooldownUntil[current.action.stableId] =
-                SystemClock.elapsedRealtime() + ACTION_DISMISS_COOLDOWN_MS
-        }
         hideSuggestion()
     }
 
     fun suppressSuggestedActionByUser() {
         val current = _uiState.value as? PredictionUiState.Suggestion
         if (current != null) {
-            suggestionCooldownUntil[current.action.stableId] =
+            suggestionSuppressedUntilElapsedMs[current.action.stableId] =
                 SystemClock.elapsedRealtime() + ACTION_SUPPRESS_COOLDOWN_MS
             profileKey?.let { activeProfile ->
                 scope.launch {
@@ -580,7 +604,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         if (state.executionId != executionId) return null
         hideSuggestion()
         AppActionCatalog.spec(state.action).route?.let(::suppressNextRoute)
-        recordActionIntent(state.action, ActionSource.SUGGESTION, AppActionCatalog.spec(state.action).route)
+        recordActionIntent(
+            state.action,
+            ActionSource.SUGGESTION,
+            AppActionCatalog.spec(state.action).route,
+            deferNextOpportunity = true
+        )
         return state.action
     }
 
@@ -1020,35 +1049,18 @@ class BehaviorPredictionRuntime @Inject constructor(
         if (pending.isPromotionHoldout || _sensitiveUiVisible.value || !isSuggestionSurfaceAllowed(lastRoute) ||
             !preferencesManager.personalizationEnabled.first()
         ) return
-        val now = SystemClock.elapsedRealtime()
-        val today = LocalDate.now(ZoneOffset.UTC).toEpochDay()
-        if (suggestionEpochDay != today) {
-            suggestionEpochDay = today
-            dailySuggestionCount = 0
-        }
-        if (now - lastSuggestionElapsedMs < SUGGESTION_MIN_INTERVAL_MS ||
-            sessionSuggestionCount >= MAX_SESSION_SUGGESTIONS ||
-            dailySuggestionCount >= MAX_DAILY_SUGGESTIONS
-        ) return
-        val ranked = effective.rankedIndices()
-        val top = ranked.firstOrNull() ?: return
-        val second = ranked.getOrNull(1)
-        val outputId = effective.outputIds[top]
-        val action = AppActionId.fromStableId(outputId) ?: return
-        if ((suggestionCooldownUntil[outputId] ?: 0L) > now) return
-        if ((preferencesManager.suggestionActionSuppressedUntil(pending.profileKey, outputId).first() ?: 0L) >
-            System.currentTimeMillis()
-        ) return
-        val probability = effective.probabilities[top]
-        val margin = probability - (second?.let { effective.probabilities[it] } ?: 0f)
-        if (probability < SUGGESTION_THRESHOLD || margin < SUGGESTION_MARGIN ||
-            dao.trainingActionCount(pending.profileKey, outputId) < MIN_ACTION_SUGGESTION_SAMPLES
-        ) return
-        if (showSuggestion(pending.decisionId, action, probability)) {
-            lastSuggestionElapsedMs = now
-            sessionSuggestionCount++
-            dailySuggestionCount++
-        }
+        val candidates = SuggestionPolicy.rankedCandidates(
+            effective,
+            dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet()
+        )
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val nowEpoch = System.currentTimeMillis()
+        val candidate = candidates.firstOrNull { candidate ->
+            val outputId = candidate.action.stableId
+            (suggestionSuppressedUntilElapsedMs[outputId] ?: 0L) <= nowElapsed &&
+                (preferencesManager.suggestionActionSuppressedUntil(pending.profileKey, outputId).first() ?: 0L) <= nowEpoch
+        } ?: return
+        showSuggestion(pending.decisionId, candidate.action, candidate.probability)
     }
 
     private suspend fun composeDecision(
@@ -1205,20 +1217,21 @@ class BehaviorPredictionRuntime @Inject constructor(
     private fun NextActionProbabilityVector.asMap(): Map<String, Float> =
         outputIds.indices.associate { outputIds[it] to probabilities[it] }
 
+    private data class RecordedActionOpportunity(
+        val profileKey: String,
+        val sessionId: String,
+        val action: AppActionId,
+        val eventId: String,
+        val sequenceNo: Long
+    )
+
     private companion object {
         const val LABEL_WINDOW_POLICY_VERSION = 1
         const val CONTEXT_DEBOUNCE_MS = 30_000L
         const val DEADLINE_RACE_GRACE_MS = 250L
         const val HOLDOUT_PERCENT = 15
         const val CANDIDATE_HOLDOUT_PERCENT = 20
-        const val SUGGESTION_THRESHOLD = 0.42f
-        const val SUGGESTION_MARGIN = 0.10f
-        const val MIN_ACTION_SUGGESTION_SAMPLES = 20
-        const val SUGGESTION_MIN_INTERVAL_MS = 60_000L
-        const val ACTION_DISMISS_COOLDOWN_MS = 10 * 60_000L
         const val ACTION_SUPPRESS_COOLDOWN_MS = 30L * 24 * 60 * 60_000L
-        const val MAX_SESSION_SUGGESTIONS = 3
-        const val MAX_DAILY_SUGGESTIONS = 8
         const val SUGGESTION_VISIBLE_TTL_MS = 12_000L
         const val TRAINING_IDLE_GRACE_MS = 1_500L
         const val MAX_BEHAVIOR_EVENTS = 20_000

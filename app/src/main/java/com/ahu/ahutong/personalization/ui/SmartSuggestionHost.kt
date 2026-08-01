@@ -1,13 +1,10 @@
 package com.ahu.ahutong.personalization.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DoNotDisturbOn
@@ -21,26 +18,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
-import com.ahu.ahutong.personalization.action.AppActionCatalog
-import com.ahu.ahutong.personalization.action.AppActionId
-import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.runtime.PredictionUiState
-import kotlinx.coroutines.launch
 
 @Composable
 fun SmartSuggestionHost(
     runtime: BehaviorPredictionRuntime,
-    navController: NavHostController,
-    paymentQrCommands: PaymentQrOpenCommandStore,
     blocked: Boolean,
+    onSuggestionClick: (PredictionUiState.Suggestion) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by runtime.uiState.collectAsState()
@@ -49,22 +39,10 @@ fun SmartSuggestionHost(
     }
     if (blocked) return
     val suggestion = state as? PredictionUiState.Suggestion ?: return
-    val scope = rememberCoroutineScope()
     Surface(
+        onClick = { onSuggestionClick(suggestion) },
         modifier = modifier
-            .semantics { contentDescription = "猜你想用：${suggestion.title}" }
-            .clickable {
-                scope.launch {
-                    val action = runtime.acceptSuggestion(suggestion.executionId) ?: return@launch
-                    if (action == AppActionId.OPEN_PAYMENT_QR) {
-                        paymentQrCommands.publish(suggestion.executionId, suggestion.decisionId, com.ahu.ahutong.personalization.action.ActionSource.SUGGESTION)
-                        runtime.suppressNextRoute("home")
-                        navController.navigate("home") { launchSingleTop = true }
-                    } else {
-                        AppActionCatalog.spec(action).route?.let { navController.navigate(it) { launchSingleTop = true } }
-                    }
-                }
-            },
+            .semantics { contentDescription = "猜你想用：${suggestion.title}" },
         shape = MaterialTheme.shapes.extraLarge,
         tonalElevation = 8.dp,
         shadowElevation = 8.dp

@@ -589,7 +589,7 @@ fun Debug(
                     CookieManager.cookieJar.clear()
                     TokenManager.clear()
                     CookieManager.cookieJar.logAllCookies()
-                    Log.e("TAG", "Debug: ${TokenManager.getToken()}")
+                    Log.d("Debug", "Token available=${TokenManager.getToken() != null}; value suppressed")
                     Toast.makeText(context, "已清除所有 Cookie 和 Token", Toast.LENGTH_SHORT).show()
                 }
             )

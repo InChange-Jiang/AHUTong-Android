@@ -23,8 +23,6 @@ object TokenManager {
 
         try {
 
-            CookieManager.cookieJar.logAllCookies()
-
             val loginResponse = YcardApi.API.login().execute()      //假设已经登陆过one.ahu.ehu.cn
             val redirectUrl = extractRedirectLocation(loginResponse)
                 ?: loginResponse.raw().request.url.toString()
@@ -32,7 +30,6 @@ object TokenManager {
             val regex = Regex("[?&]ticket=([^&]+)")
             val match = regex.find(redirectUrl)
             val ticket = match?.groupValues?.get(1) ?: return null
-            Log.e(TAG, "ticket: $ticket", )
             val decodedUsername = URLDecoder.decode(URLDecoder.decode(ticket, "UTF-8"), "UTF-8")
 
             val tokenResponse = YcardApi.API.getToken(
@@ -42,11 +39,11 @@ object TokenManager {
 
             if (tokenResponse.isSuccessful) {
                 token = tokenResponse.body()?.access_token
-                Log.e(TAG, "getToken: $token", )
+                Log.i(TAG, "getToken: token acquired")
                 return token
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e(TAG, "getToken: request failed (${e.javaClass.simpleName})")
         }
         return null
     }

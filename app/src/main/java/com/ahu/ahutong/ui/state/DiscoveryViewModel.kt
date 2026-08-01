@@ -12,6 +12,9 @@ import androidx.lifecycle.viewModelScope
 import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.ext.launchSafe
+import com.ahu.ahutong.personalization.prefetch.PaymentQrRepository
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.context.BalanceBucket
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -30,7 +33,10 @@ import javax.inject.Inject
 
 
 @HiltViewModel
-class DiscoveryViewModel @Inject constructor() : ViewModel() {
+class DiscoveryViewModel @Inject constructor(
+    private val paymentQrRepository: PaymentQrRepository,
+    private val behaviorRuntime: BehaviorPredictionRuntime
+) : ViewModel() {
 
     val TAG = DiscoveryViewModel::class.java.simpleName
 
@@ -88,14 +94,24 @@ class DiscoveryViewModel @Inject constructor() : ViewModel() {
         balance = newBalance
         AHUCache.saveCardBalance(newBalance)
         transitionBalance = transitionBalanceValue ?: transitionBalance
+        behaviorRuntime.onBusinessContextChanged(
+            newBalanceBucket = when {
+                newBalance < 5.0 -> BalanceBucket.ZERO_TO_FIVE
+                newBalance < 10.0 -> BalanceBucket.FIVE_TO_TEN
+                newBalance < 20.0 -> BalanceBucket.TEN_TO_TWENTY
+                newBalance < 50.0 -> BalanceBucket.TWENTY_TO_FIFTY
+                else -> BalanceBucket.FIFTY_PLUS
+            },
+            newBalanceFresh = true
+        )
     }
 
-    fun loadQrCode() {
+    fun loadQrCode(forceRefresh: Boolean = false) {
         viewModelScope.launchSafe {
             withContext(Dispatchers.IO){
                 state.value = false
                 try {
-                    val response = AHURepository.getQrcode()
+                    val response = paymentQrRepository.getForDisplay(forceRefresh = forceRefresh)
                     if (response.isSuccess) {
                         val hints = HashMap<EncodeHintType, Any>()
 
@@ -110,15 +126,20 @@ class DiscoveryViewModel @Inject constructor() : ViewModel() {
                             hints
                         )
                     } else {
-                        Log.e("QR", "接口返回错误", response.exceptionOrNull())
+                        Log.e("QR", "付款码加载失败")
                     }
                 } catch (e: Exception) {
-                    Log.e("QR", "未知异常", e)
+                    Log.e("QR", "付款码加载异常")
                 }
                 state.value = true
             }
         }
 
+    }
+
+    fun clearQrCode() {
+        qrcode.value = null
+        state.value = false
     }
 
 }

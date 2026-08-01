@@ -6,18 +6,26 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -29,6 +37,7 @@ import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.navArgument
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
 import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
@@ -52,8 +61,6 @@ import com.ahu.ahutong.ui.screen.main.REPOSITORY_PATH_ARG
 import com.ahu.ahutong.ui.screen.main.REPOSITORY_ROUTE
 import com.ahu.ahutong.ui.screen.main.SchoolCalendar
 import com.ahu.ahutong.ui.screen.main.Tools
-import com.ahu.ahutong.ui.screen.main.Repository
-import com.ahu.ahutong.ui.screen.main.RepositoryDownloads
 import com.ahu.ahutong.ui.screen.main.RepositorySettings
 import com.ahu.ahutong.ui.screen.main.Weather
 import com.ahu.ahutong.ui.screen.settings.Contributors
@@ -76,8 +83,14 @@ import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.launch
+import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
+import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.ui.SmartSuggestionHost
+import com.ahu.ahutong.personalization.action.AppActionId
 
-@OptIn(ExperimentalAnimationApi::class)
+@OptIn(ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun Main(
     navController: NavHostController,
@@ -86,6 +99,9 @@ fun Main(
     discoveryViewModel: DiscoveryViewModel = viewModel(),
     scheduleViewModel: ScheduleViewModel = viewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
+    behaviorRuntime: BehaviorPredictionRuntime,
+    diagnosticsContribution: DiagnosticsContribution,
+    paymentQrCommands: PaymentQrOpenCommandStore,
     isReLoginShown: Boolean,
     onReLoginDismiss: () -> Unit
 ) {
@@ -94,6 +110,29 @@ fun Main(
     val scope = rememberCoroutineScope()
     var homeEditGrayState by remember {
         mutableStateOf(GrayReleaseManager.localState(GrayFeatures.HomeEdit, context))
+    }
+    var firstDestination by remember { mutableStateOf(true) }
+    var lastBackStackDepth by remember { mutableIntStateOf(0) }
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStackEntry?.destination?.route
+    val currentBackStack by navController.currentBackStack.collectAsState()
+    val currentBackStackDepth = currentBackStack.size
+    val sensitiveUiVisible by behaviorRuntime.sensitiveUiVisible.collectAsState()
+    val imeVisible = WindowInsets.isImeVisible
+
+    LaunchedEffect(currentRoute, currentBackStackDepth) {
+        val route = currentRoute ?: return@LaunchedEffect
+        val isBackStackRestore = lastBackStackDepth > 0 && currentBackStackDepth < lastBackStackDepth
+        behaviorRuntime.onRouteChanged(
+            route,
+            when {
+                diagnosticsContribution.isDiagnosticsRoute(route) || route == "debug" -> ActionSource.DEBUG
+                firstDestination || isBackStackRestore -> ActionSource.RESTORE
+                else -> ActionSource.ORGANIC
+            }
+        )
+        firstDestination = false
+        lastBackStackDepth = currentBackStackDepth
     }
 
     LaunchedEffect(Unit) {
@@ -145,6 +184,9 @@ fun Main(
                     onLoggedIn = {
                         scheduleViewModel.clear()
                         scope.launch {
+                            com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
+                                behaviorRuntime.startProfile(it)
+                            }
                             homeEditGrayState = GrayReleaseManager.state(
                                 GrayFeatures.HomeEdit,
                                 context
@@ -173,6 +215,7 @@ fun Main(
                     navController = navController,
                     homeEditEnabled = homeEditGrayState.enabled,
                     onEditHome = {
+                        behaviorRuntime.recordActionIntentAsync(AppActionId.EDIT_HOME, ActionSource.ORGANIC)
                         shouldEnterHomeEdit = true
                     }
                 )
@@ -236,7 +279,8 @@ fun Main(
                 Settings(
                     navController = navController,
                     mainViewModel = mainViewModel,
-                    aboutViewModel = aboutViewModel
+                    aboutViewModel = aboutViewModel,
+                    behaviorRuntime = behaviorRuntime
                 )
             }
             animatedComposable("settings__license") {
@@ -288,10 +332,25 @@ fun Main(
             animatedComposable("splash") {
                 Splash(navController)
             }
-
-
+            diagnosticsContribution.installRoutes(this, navController, behaviorRuntime)
         }
         BottomNavBar(navController, backdrop)
+        val productUiBlocked = currentRoute == "login" || currentRoute == "setup" ||
+            currentRoute == "splash" || currentRoute?.contains("deposit") == true ||
+            currentRoute?.contains("recharge") == true || currentRoute == "electricity_pay" ||
+            isReLoginShown || sensitiveUiVisible || imeVisible
+        SmartSuggestionHost(
+            runtime = behaviorRuntime,
+            navController = navController,
+            paymentQrCommands = paymentQrCommands,
+            blocked = productUiBlocked,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 12.dp, bottom = 72.dp)
+        )
+        with(diagnosticsContribution) {
+            Overlay(navController, behaviorRuntime, productUiBlocked)
+        }
     }
     if (isReLoginShown) {
         Dialog(

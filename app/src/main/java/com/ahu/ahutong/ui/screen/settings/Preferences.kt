@@ -58,11 +58,11 @@ import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.ui.components.LiquidToggle
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
-
 
 @Composable
 fun Preferences() {
@@ -71,8 +71,13 @@ fun Preferences() {
     val context = LocalContext.current
     var isRequestingPermission by remember { mutableStateOf(false) }
     var useCmbCardRecharge by remember { mutableStateOf(AHUCache.isCmbCardRechargePreferred()) }
+    var showClearLearningConfirm by remember { mutableStateOf(false) }
 
     val showQRCode by preferencesViewModel.showQRCode.collectAsState()
+    val personalizationEnabled by preferencesViewModel.personalizationEnabled.collectAsState()
+    val predictivePrefetchEnabled by preferencesViewModel.predictivePrefetchEnabled.collectAsState()
+    val wifiOnlyPrefetch by preferencesViewModel.wifiOnlyPrefetch.collectAsState()
+    val behaviorRetentionDays by preferencesViewModel.behaviorRetentionDays.collectAsState()
     val useLiquidGlass by preferencesViewModel.useLiquidGlass.collectAsState()
     val courseReminderEnabled by preferencesViewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by preferencesViewModel.courseReminderLiveCountdownEnabled.collectAsState()
@@ -106,34 +111,58 @@ fun Preferences() {
             modifier = Modifier.padding(24.dp, 32.dp),
             style = MaterialTheme.typography.headlineLarge
         )
-        /*
-        Column(
-            modifier =
-                Modifier
-                    .clip(SmoothRoundedCornerShape(16.dp))
-                    .background(cardColor)
-                    .clickable { preferencesViewModel.setShowQRCode(!preferencesViewModel.showQRCode.value) }
-                    .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(text = "主页", style = MaterialTheme.typography.headlineSmall)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(SmoothRoundedCornerShape(8.dp))
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "主页默认显示支付二维码")
-                LiquidToggle(
-                    selected = { showQRCode },
-                    onSelect = { preferencesViewModel.setShowQRCode(!preferencesViewModel.showQRCode.value) },
-                    backdrop = backdrop
-                )
-            }
-        }
-        */
+
+        PreferenceToggleCard(
+            sectionTitle = "猜你想用",
+            settingTitle = "显示快捷建议",
+            description = "根据仅在本机学习的使用习惯，在合适时机显示快捷建议。关闭后只隐藏建议，不会停止本地学习、行为预测或智能预加载。",
+            selected = { personalizationEnabled },
+            onSelect = preferencesViewModel::setPersonalizationEnabled,
+            cardColor = cardColor,
+            backdrop = backdrop
+        )
+
+        PreferenceToggleCard(
+            sectionTitle = "智能预加载",
+            settingTitle = "提前加载预测内容",
+            description = "预测可能使用的只读内容并提前加载，命中后可以更快打开页面。",
+            selected = { predictivePrefetchEnabled },
+            onSelect = preferencesViewModel::setPredictivePrefetchEnabled,
+            cardColor = cardColor,
+            backdrop = backdrop
+        )
+
+        PreferenceToggleCard(
+            sectionTitle = "预加载网络",
+            settingTitle = "仅在 Wi-Fi 下智能预加载",
+            selected = { wifiOnlyPrefetch },
+            onSelect = preferencesViewModel::setWifiOnlyPrefetch,
+            cardColor = cardColor,
+            backdrop = backdrop
+        )
+
+        PreferenceToggleCard(
+            sectionTitle = "付款码",
+            settingTitle = "主页默认显示付款码",
+            selected = { showQRCode },
+            onSelect = preferencesViewModel::setShowQRCode,
+            cardColor = cardColor,
+            backdrop = backdrop
+        )
+
+        PreferenceRetentionCard(
+            selectedDays = behaviorRetentionDays,
+            cardColor = cardColor,
+            onSelect = preferencesViewModel::setBehaviorRetentionDays
+        )
+
+        PreferenceActionCard(
+            sectionTitle = "本地学习记录",
+            actionTitle = "清除本地学习记录",
+            description = "删除当前账号的行为统计、训练样本、模型和晋级状态。",
+            cardColor = cardColor,
+            onClick = { showClearLearningConfirm = true }
+        )
 
         Column(
             modifier =
@@ -360,6 +389,148 @@ fun Preferences() {
         }
 
         ThemeColorSelector(preferencesViewModel, cardColor)
+    }
+
+    if (showClearLearningConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearLearningConfirm = false },
+            title = { Text("清除本地学习记录？") },
+            text = { Text("将删除当前账号的行为统计、训练样本、模型与晋级状态，且无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    preferencesViewModel.clearPersonalizationLearning()
+                    showClearLearningConfirm = false
+                }) { Text("清除") }
+            },
+            dismissButton = { TextButton(onClick = { showClearLearningConfirm = false }) { Text("取消") } }
+        )
+    }
+}
+
+@Composable
+private fun PreferenceRetentionCard(
+    selectedDays: Int,
+    cardColor: Color,
+    onSelect: (Int) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(SmoothRoundedCornerShape(16.dp))
+            .background(cardColor)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(text = "本地学习记录保留期", style = MaterialTheme.typography.headlineSmall)
+        Text(
+            text = "只影响本机行为事件的保留时间；模型和聚合统计仍受清除记录操作控制。",
+            color = 50.n1 withNight 80.n1,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            listOf(7, 14, 30).forEach { days ->
+                TextButton(onClick = { onSelect(days) }) {
+                    Text(
+                        text = "$days 天",
+                        color = if (selectedDays == days) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        fontWeight = if (selectedDays == days) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreferenceToggleCard(
+    sectionTitle: String,
+    settingTitle: String,
+    selected: () -> Boolean,
+    onSelect: (Boolean) -> Unit,
+    cardColor: Color,
+    backdrop: Backdrop,
+    description: String? = null
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(SmoothRoundedCornerShape(16.dp))
+            .background(cardColor)
+            .clickable { onSelect(!selected()) }
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(text = sectionTitle, style = MaterialTheme.typography.headlineSmall)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(SmoothRoundedCornerShape(8.dp))
+                .padding(vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(text = settingTitle)
+                description?.let {
+                    Text(
+                        text = it,
+                        color = 50.n1 withNight 80.n1,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+            LiquidToggle(
+                selected = selected,
+                onSelect = onSelect,
+                backdrop = backdrop
+            )
+        }
+    }
+}
+
+@Composable
+private fun PreferenceActionCard(
+    sectionTitle: String,
+    actionTitle: String,
+    description: String,
+    cardColor: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(SmoothRoundedCornerShape(16.dp))
+            .background(cardColor)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(text = sectionTitle, style = MaterialTheme.typography.headlineSmall)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(SmoothRoundedCornerShape(8.dp))
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(text = actionTitle, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = description,
+                color = 50.n1 withNight 80.n1,
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }
 

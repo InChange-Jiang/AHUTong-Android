@@ -73,12 +73,16 @@ import android.widget.Toast
 import androidx.compose.ui.platform.LocalContext
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.context.ExamDistanceBucket
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Exam(
     examViewModel: ExamViewModel = viewModel()
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     LaunchedEffect(Unit) {
         examViewModel.loadExam()
     }
@@ -87,6 +91,23 @@ fun Exam(
     val errorMessage by examViewModel.errorMessage.collectAsState()
     val context = LocalContext.current
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
+
+    LaunchedEffect(exam) {
+        val now = LocalDateTime.now()
+        val hoursUntil = exam.orEmpty().mapNotNull { parseStartTime(it.time) }
+            .filter { !it.isBefore(now) }
+            .minOfOrNull { java.time.Duration.between(now, it).toHours() }
+        behaviorReporter.examDistance(
+            when {
+                exam.isNullOrEmpty() -> ExamDistanceBucket.NONE
+                hoursUntil == null -> ExamDistanceBucket.NONE
+                hoursUntil <= 24 -> ExamDistanceBucket.WITHIN_ONE_DAY
+                hoursUntil <= 72 -> ExamDistanceBucket.WITHIN_THREE_DAYS
+                hoursUntil <= 168 -> ExamDistanceBucket.WITHIN_SEVEN_DAYS
+                else -> ExamDistanceBucket.LATER
+            }
+        )
+    }
 
     LaunchedEffect(mockRefreshRevision) {
         if (mockRefreshRevision > 0 && AHUCache.getMockData()) {
@@ -387,6 +408,7 @@ private fun ExamCard(
 
 @Composable
 private fun RefreshButton(examViewModel: ExamViewModel) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val refreshState by examViewModel.refreshState.collectAsState()
     when (refreshState) {
         RefreshState.LOADING -> {
@@ -414,7 +436,10 @@ private fun RefreshButton(examViewModel: ExamViewModel) {
             }
         }
         RefreshState.IDLE -> {
-            IconButton(onClick = { examViewModel.loadExam(isRefresh = true) }) {
+            IconButton(onClick = {
+                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
+                examViewModel.loadExam(isRefresh = true)
+            }) {
                 Icon(Icons.Default.Refresh, "刷新", tint = 0.n1 withNight 100.n1)
             }
         }

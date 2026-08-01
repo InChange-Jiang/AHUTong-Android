@@ -104,7 +104,16 @@ val generateThirdPartyAssets by tasks.registering(Sync::class) {
 
 android.sourceSets.getByName("main").assets.srcDir(generatedThirdPartyAssets)
 
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }
+    .configureEach {
+        dependsOn(generateThirdPartyAssets)
+    }
+
+tasks.matching { it.name.contains("Lint", ignoreCase = true) }
     .configureEach {
         dependsOn(generateThirdPartyAssets)
     }
@@ -148,4 +157,17 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
     ksp(libs.hilt.android.compiler)
     implementation(libs.conscrypt)
+
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
+
+    testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.room.testing)
 }

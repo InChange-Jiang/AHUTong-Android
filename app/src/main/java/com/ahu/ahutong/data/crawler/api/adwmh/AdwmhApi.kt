@@ -81,6 +81,9 @@ interface AdwmhApi {
 
     companion object {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
             level = HttpLoggingInterceptor.Level.HEADERS
         }
 

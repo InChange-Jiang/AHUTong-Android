@@ -299,12 +299,10 @@ class ElectricityDepositViewModel: ViewModel() {
             .add("type", "select")
             .add("level", "0")
             .build()
-        Log.d("ElectricityDepositViewModel", "getCampus请求体: ${formBody.asString()}")
         try {
             val res = YcardApi.API.getFeeItemThirdData(formBody)
             Log.d("ElectricityDepositViewModel", "getCampus响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getCampus响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -377,13 +375,11 @@ class ElectricityDepositViewModel: ViewModel() {
             .add("level", "1")
             .add("campus", selectedCampusValue)
             .build()
-        Log.d("ElectricityDepositViewModel", "getBuildings请求体: ${formBody.asString()}")
 
         try {
             val res = YcardApi.API.getFeeItemThirdData(formBody)
             Log.d("ElectricityDepositViewModel", "getBuildings响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getBuildings响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -457,13 +453,11 @@ class ElectricityDepositViewModel: ViewModel() {
             .add("campus", selectedCampusValue)
             .add("building", selectedBuildingValue)
             .build()
-        Log.d("ElectricityDepositViewModel", "getFloor请求体: ${formBody.asString()}")
 
         try {
             val res = YcardApi.API.getFeeItemThirdData(formBody)
             Log.d("ElectricityDepositViewModel", "getFloor响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getFloor响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -541,13 +535,11 @@ class ElectricityDepositViewModel: ViewModel() {
             .add("building", selectedBuildingValue)
             .add("floor", selectedFloorValue)
             .build()
-        Log.d("ElectricityDepositViewModel", "getRoom请求体: ${formBody.asString()}")
 
         try {
             val res = YcardApi.API.getFeeItemThirdData(formBody)
             Log.d("ElectricityDepositViewModel", "getRoom响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getRoom响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -633,13 +625,11 @@ class ElectricityDepositViewModel: ViewModel() {
             .add("floor", selectedFloorValue)
             .add("room", selectedRoomValue)
             .build()
-        Log.d("ElectricityDepositViewModel", "getRoomInfo请求体: ${formBody.asString()}")
 
         try {
             val res = YcardApi.API.getFeeItemThirdData(formBody)
             Log.d("ElectricityDepositViewModel", "getRoomInfo响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getRoomInfo响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -701,12 +691,10 @@ class ElectricityDepositViewModel: ViewModel() {
                 "third_party" to thirdPartyJson
             )
         )
-        Log.d("ElectricityDepositViewModel", "getPaymentOrder请求体: ${formBody.asString()}")
         try {
             val res = YcardApi.API.pay(formBody)
             Log.d("ElectricityDepositViewModel", "getPaymentOrder响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getPaymentOrder响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -745,12 +733,10 @@ class ElectricityDepositViewModel: ViewModel() {
             )
         )
 
-        Log.d("ElectricityDepositViewModel", "getAccountPayInfo请求体: ${formBody.asString()}")
         try {
             val res = YcardApi.API.pay(formBody)
             Log.d("ElectricityDepositViewModel", "getAccountPayInfo响应码: ${res.code()}")
             val responseBody = res.body()?.string()
-            Log.d("ElectricityDepositViewModel", "getAccountPayInfo响应体: $responseBody")
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
@@ -794,7 +780,7 @@ class ElectricityDepositViewModel: ViewModel() {
 
         viewModelScope.launch {
             try {
-                Log.d("ElectricityDepositViewModel", "开始支付流程，金额: $amount")
+                Log.d("ElectricityDepositViewModel", "开始支付流程（金额与凭证已隐藏）")
 
                 val orderResult = getPaymentOrder(amount)
                 if (orderResult.code != 0 || orderResult.data == null) {
@@ -805,7 +791,7 @@ class ElectricityDepositViewModel: ViewModel() {
                     return@launch
                 }
                 val orderId = orderResult.data.orderid
-                Log.d("ElectricityDepositViewModel", "订单创建成功，orderId: $orderId")
+                Log.d("ElectricityDepositViewModel", "订单创建成功（订单标识已隐藏）")
 
                 val accountPayInfoResult = getAccountPayInfo(orderId)
                 val passwordMap = accountPayInfoResult.data?.passwordMap
@@ -823,12 +809,10 @@ class ElectricityDepositViewModel: ViewModel() {
                 val keymap = mapString.mapIndexed { index, c ->
                     c.toString() to plainDigits[index].toString()
                 }.toMap()
-                Log.d("ElectricityDepositViewModel", "密码哈希表: $keymap")
 
                 val cipherText = password.map { ch ->
                     keymap[ch.toString()] ?: ch.toString()
                 }.joinToString("")
-                Log.d("ElectricityDepositViewModel", "加密后密码: $cipherText")
 
                 val finalFormBody = buildSignedFormBody(
                     linkedMapOf(
@@ -845,11 +829,9 @@ class ElectricityDepositViewModel: ViewModel() {
                 )
 
                 Log.d("ElectricityDepositViewModel", "开始执行最终支付请求...")
-                Log.d("ElectricityDepositViewModel", "最终支付请求体: ${finalFormBody.asString()}")
                 val finalRes = YcardApi.API.pay(finalFormBody)
                 Log.d("ElectricityDepositViewModel", "最终支付请求完成，响应码: ${finalRes.code()}")
                 val responseBody = finalRes.body()?.string()
-                Log.d("ElectricityDepositViewModel", "最终支付响应体: $responseBody")
 
                 if (finalRes.isSuccessful) {
                     val parsedResponse = Gson().fromJson(responseBody, FinalPayResponse::class.java)

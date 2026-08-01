@@ -159,7 +159,7 @@ class LocalServiceClient(
             client.newCall(request).execute().use { response ->
                 val json = response.body?.string() ?: "{}"
                 if (json.contains("\"error\"")) {
-                    Result.failure(Exception(extractErrorMessage(json) ?: json))
+                    Result.failure(Exception(extractErrorMessage(json) ?: "QR code service returned an error"))
                 } else {
                     val user = gson.fromJson(json, User::class.java)
                     Result.success(user)
@@ -303,7 +303,7 @@ class LocalServiceClient(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Get QR code failed", e)
+            Log.e(TAG, "Get QR code failed (${e.javaClass.simpleName})")
             Result.failure(e)
         }
     }

@@ -62,12 +62,15 @@ import com.ahu.ahutong.ui.state.NetworkRechargeViewModel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 import kotlinx.coroutines.delay
 
 @Composable
 fun NetworkRecharge(
     viewModel: NetworkRechargeViewModel = viewModel()
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val pageState by viewModel.pageState.collectAsState()
     val payState by viewModel.payState.collectAsState()
     val focusManager = LocalFocusManager.current
@@ -209,6 +212,7 @@ fun NetworkRecharge(
                     onClick = {
                         if (password.length == 6) {
                             showDialog = false
+                            behaviorReporter.organic(AppActionId.SUBMIT_NETWORK_RECHARGE)
                             viewModel.pay(amount, password)
                             password = ""
                             passwordError = null

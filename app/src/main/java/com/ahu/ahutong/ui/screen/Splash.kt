@@ -15,31 +15,38 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.state.SplashViewModel
+import com.ahu.ahutong.ui.state.TelemetryOnboardingState
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 
 @Composable
-fun Splash(navController: NavController) {
-    var showAgreementDialog by remember { mutableStateOf(!AHUCache.isAgreementAccepted()) }
-    var showPrivacyDialog by remember { mutableStateOf(!AHUCache.isPrivacyAccepted()) }
-    var showBusinessDialog by remember { mutableStateOf(!AHUCache.isBusinessAccepted()) }
-
-
+fun Splash(
+    navController: NavController,
+    viewModel: SplashViewModel = hiltViewModel()
+) {
+    var dialogRevision by remember { mutableIntStateOf(0) }
+    val telemetryState by viewModel.telemetryOnboardingState.collectAsState()
     val activity = LocalActivity.current
 
+    val agreementAccepted = AHUCache.isAgreementAccepted()
+    val privacyAccepted = AHUCache.isPrivacyAccepted()
+    val businessAccepted = AHUCache.isBusinessAccepted()
+    val telemetryChoice = (telemetryState as? TelemetryOnboardingState.Ready)?.choice
 
-
-    LaunchedEffect(showAgreementDialog) {
-        if (AHUCache.isAgreementAccepted()) {
+    LaunchedEffect(dialogRevision, telemetryState) {
+        if (agreementAccepted && privacyAccepted && businessAccepted && telemetryChoice != null) {
             if (AHUCache.isLogin()) {
                 navController.navigate("home") {
                     popUpTo("splash") { inclusive = true }
@@ -52,40 +59,55 @@ fun Splash(navController: NavController) {
         }
     }
 
-
-    if (showAgreementDialog) {
-        AgreementDialog(
+    when {
+        !agreementAccepted -> AgreementDialog(
             onAgree = {
                 AHUCache.setAgreementAccepted()
-                showAgreementDialog = false
+                dialogRevision++
             },
-            onDisagree = {
-                activity?.finish()
-            }
+            onDisagree = { activity?.finish() }
         )
-    }
-    if (showPrivacyDialog) {
-        PrivacyDialog(
+        !privacyAccepted -> PrivacyDialog(
             onAgree = {
                 AHUCache.setPrivacyAccepted()
-                showPrivacyDialog = false
+                dialogRevision++
             },
-            onDisagree = {
-                activity?.finish()
-            }
+            onDisagree = { activity?.finish() }
         )
-    }
-    if (showBusinessDialog) {
-        BusinessDialog(
+        !businessAccepted -> BusinessDialog(
             onAgree = {
                 AHUCache.setBusinessAccepted()
-                showBusinessDialog = false
+                dialogRevision++
             },
-            onDisagree = {
-                activity?.finish()
-            }
+            onDisagree = { activity?.finish() }
         )
+        telemetryState is TelemetryOnboardingState.Ready && telemetryChoice == null ->
+            ModelQualityTelemetryOnboardingDialog(
+                onAgree = { viewModel.chooseModelQualityTelemetry(true) },
+                onSkip = { viewModel.chooseModelQualityTelemetry(false) }
+            )
     }
+}
+
+@Composable
+private fun ModelQualityTelemetryOnboardingDialog(
+    onAgree: () -> Unit,
+    onSkip: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onSkip,
+        title = { Text("帮助改进模型质量") },
+        text = {
+            Text("你可以选择帮助评估端侧模型效果。开启后，应用会在至少积累 64 个新有效配对样本时，每天最多一次上传统计模型与 Tiny MLP 的去标识化聚合计数、误差累加值、学习天数及应用/模型/schema 版本；单个功能累计至少 30 条时会附带该功能的聚合指标。不会上传原始行为、逐次标签、特征向量、逐次概率、回放样本、模型权重、学号、账号或硬件标识。服务端仅按版本聚合，初始保存期限最多 90 天。选择暂不开启不影响进入 App、本地预测、训练或原有功能。")
+        },
+        confirmButton = {
+            TextButton(onClick = onAgree) { Text("主动同意并开启") }
+        },
+        dismissButton = {
+            TextButton(onClick = onSkip) { Text("暂不开启") }
+        },
+        containerColor = 100.n1 withNight 20.n1
+    )
 }
 
 

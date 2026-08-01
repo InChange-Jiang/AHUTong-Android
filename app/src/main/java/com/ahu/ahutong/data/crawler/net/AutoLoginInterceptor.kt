@@ -13,7 +13,7 @@ class AutoLoginInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         val response = chain.proceed(originalRequest)
-        Log.e(TAG, "${originalRequest.url} ${response.code} ${response.headers["Location"]} ")
+        Log.d(TAG, "first-party request completed with status=${response.code}")
 
         val location = response.header("Location")
         if (response.code == 302 && location != null && (location.contains("tologin") || location.contains("refer"))) {

@@ -40,6 +40,8 @@ import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,6 +49,7 @@ fun Grade(
     gradeViewModel: GradeViewModel = viewModel(),
     onNavigateToEvaluation: () -> Unit = {}
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val grade = gradeViewModel.grade
     val gpaRankInfo = gradeViewModel.gpaRankInfo
     val errorMessage = gradeViewModel.errorMessage
@@ -152,7 +155,10 @@ fun Grade(
                             .background(100.n1 withNight 30.n1)
                     ) {
                         IconButton(
-                            onClick = { gradeViewModel.refreshGrade() }
+                            onClick = {
+                                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_GRADE)
+                                gradeViewModel.refreshGrade()
+                            }
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,

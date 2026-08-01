@@ -67,6 +67,8 @@ import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.platform.LocalFocusManager
@@ -78,6 +80,7 @@ import androidx.compose.ui.text.input.ImeAction
 fun ElectricityDeposit(
     viewModel: ElectricityDepositViewModel = viewModel()
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val payState = viewModel.payState.collectAsState()
     LaunchedEffect(payState.value) {
         when (payState.value) {
@@ -617,6 +620,7 @@ fun ElectricityDeposit(
                         if (password.length == 6) {
                             showDialog = false
                             // 调用 ViewModel 中的 pay 函数
+                            behaviorReporter.organic(AppActionId.CONFIRM_ELECTRICITY_PAYMENT)
                             viewModel.pay(amount, password)
                         } else {
                             errorMsg = "密码必须是6位数字"

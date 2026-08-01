@@ -73,6 +73,8 @@ import com.ahu.ahutong.ui.state.PaymentState
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 
 private const val ALIPAY_CAMPUS_CARD_SCHEME =
     "alipays://platformapi/startapp?appId=2019090967125695&page=pages%2Findex%2Findex&chInfo=ch_share__chsub_CopyLink"
@@ -85,6 +87,7 @@ fun CardBalanceDeposit(
     navController: NavController,
     viewModel: CardBalanceDepositViewModel = viewModel()
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
 
     var amount by remember { mutableStateOf("") }
 
@@ -409,6 +412,7 @@ fun CardBalanceDeposit(
                             text = "支付宝支付",
                             modifier = Modifier
                                 .clickable {
+                                    behaviorReporter.organic(AppActionId.SUBMIT_CARD_RECHARGE)
                                     val identityState = copyCampusCardIdentity(
                                         context = context,
                                         name = campusCardUserName,
@@ -431,6 +435,7 @@ fun CardBalanceDeposit(
                             modifier = Modifier
                                 .clickable {
                                     if (accountState is CardAccountState.Ready) {
+                                        behaviorReporter.organic(AppActionId.SUBMIT_CARD_RECHARGE)
                                         viewModel.charge(amount)
                                         showConfirmDialog = false
                                     } else {

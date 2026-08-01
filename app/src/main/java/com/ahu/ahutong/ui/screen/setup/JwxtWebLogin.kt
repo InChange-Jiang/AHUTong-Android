@@ -315,7 +315,7 @@ private fun captureWebLoginCookies(): String {
             )
         }
     }
-    Log.d("JwxtWebLogin", "Captured WebView cookies: ${cookies.keys.joinToString()}")
+    Log.d("JwxtWebLogin", "Captured ${cookies.size} WebView cookies; names and values suppressed")
     return Gson().toJson(cookies.values)
 }
 

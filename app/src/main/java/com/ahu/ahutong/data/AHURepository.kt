@@ -643,7 +643,7 @@ object AHURepository {
                 if (httpResult.isSuccess) {
                     return@withContext parseQrcodeResponse(httpResult.getOrThrow())
                 }
-                Log.w(TAG, "Rust HTTP qrcode failed, fallback to JNI", httpResult.exceptionOrNull())
+                Log.w(TAG, "Rust HTTP qrcode failed, fallback to JNI (details suppressed)")
             }
 
             val jniResult = RustSDK.getQrcodeSafe()
@@ -651,7 +651,7 @@ object AHURepository {
                 return@withContext jniResult
             }
 
-            Log.w(TAG, "Rust JNI qrcode failed, fallback to Android crawler", jniResult.exceptionOrNull())
+            Log.w(TAG, "Rust JNI qrcode failed, fallback to Android crawler (details suppressed)")
             try {
                 val response = AdwmhApi.API.getQrcode()
                 if (response.code == 10000 && response.`object`.isNotEmpty()) {

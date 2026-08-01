@@ -39,11 +39,20 @@ import com.ahu.ahutong.ui.state.MainViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.ui.theme.AHUTheme
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
+import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.action.ActionSource
 import java.io.File
 import java.security.MessageDigest
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject lateinit var behaviorRuntime: BehaviorPredictionRuntime
+    @Inject lateinit var diagnosticsContribution: DiagnosticsContribution
+    @Inject lateinit var paymentQrCommands: PaymentQrOpenCommandStore
 
     val TAG = "MainActivity"
 
@@ -60,6 +69,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         initializeActivityResultLauncher()
         init()
+        if (intent?.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
 
         setContent {
             AHUTheme {
@@ -134,6 +144,9 @@ class MainActivity : ComponentActivity() {
                     discoveryViewModel = discoveryViewModel,
                     scheduleViewModel = scheduleViewModel,
                     aboutViewModel = aboutViewModel,
+                    behaviorRuntime = behaviorRuntime,
+                    diagnosticsContribution = diagnosticsContribution,
+                    paymentQrCommands = paymentQrCommands,
                     isReLoginShown = isReLoginDialogShown,
                     onReLoginDismiss = { isReLoginDialogShown = false }
                 )
@@ -142,6 +155,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun init() {
+        lifecycleScope.launchSafe {
+            if (AHUCache.isPrivacyAccepted()) {
+                AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let { behaviorRuntime.startProfile(it) }
+            }
+        }
         lifecycleScope.launchSafe {
             mainViewModel.checkApkUpdate(this@MainActivity)
         }
@@ -166,6 +184,24 @@ class MainActivity : ComponentActivity() {
                 scheduleViewModel.refreshSchedule()
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        behaviorRuntime.setForeground(true, true)
+    }
+
+    override fun onStop() {
+        behaviorRuntime.setForeground(false, false)
+        paymentQrCommands.clear()
+        discoveryViewModel.clearQrCode()
+        super.onStop()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
     }
 //    private fun checkApkUpdateOnStartup() {
 //        Log.i("ApkUpdate", "start checkApkUpdateOnStartup")
@@ -401,10 +437,10 @@ class MainActivity : ComponentActivity() {
                 usedStorageStartup = false
                 RustSDK.startServer(0)
             }
-            Log.i("MainActivity", "startServer result: $result")
+            Log.i("MainActivity", "Local service startup completed (credentials suppressed)")
 
             if (result.contains("\"error\"")) {
-                Log.e("MainActivity", "Failed to start local server: $result")
+                Log.e("MainActivity", "Failed to start local server (response body suppressed)")
                 return false
             }
 

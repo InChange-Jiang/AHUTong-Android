@@ -86,9 +86,12 @@ import java.util.Locale
 
 import android.widget.Toast
 import com.ahu.ahutong.ui.screen.main.schedule.CourseCardSpec.cellSpacing
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 
 @Composable
 fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val scope = rememberCoroutineScope()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
     val currentWeekday = scheduleConfig?.weekDay ?: 1
@@ -270,6 +273,7 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                         if (isPreviewNextSemester) {
                             scheduleViewModel.refreshNextSchedule(true)
                         } else {
+                            behaviorReporter.organic(AppActionId.MANUAL_REFRESH_SCHEDULE)
                             scheduleViewModel.refreshSchedule(true)
                         }
                     }
@@ -395,7 +399,10 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                                     cellWidth = cellWidth,
                                     cellHeight = cellHeight,
                                     currentWeek = pageWeek,
-                                    onClick = { detailedCourse = it }
+                                    onClick = {
+                                        behaviorReporter.organic(AppActionId.OPEN_COURSE_DETAIL)
+                                        detailedCourse = it
+                                    }
                                 )
                             }
                         }
@@ -411,7 +418,10 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                                     cellWidth = cellWidth,
                                     cellHeight = cellHeight,
                                     isCurrentWeek = isCurrentWeek,
-                                    onClick = { detailedCourse = it }
+                                    onClick = {
+                                        behaviorReporter.organic(AppActionId.OPEN_COURSE_DETAIL)
+                                        detailedCourse = it
+                                    }
                                 )
                             }
                         }

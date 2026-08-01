@@ -78,6 +78,8 @@ import com.ahu.ahutong.ui.state.BathroomDepositViewModel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.action.AppActionId
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +89,7 @@ fun BathroomDeposit(
     viewmodel: BathroomDepositViewModel = viewModel()
 
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val payState = viewmodel.payState.collectAsState()
     LaunchedEffect(payState.value) {
         when (payState.value) {
@@ -507,6 +510,7 @@ fun BathroomDeposit(
                         TextButton(onClick = {
                             if (password.length == 6) {
                                 showDialog = false
+                                behaviorReporter.organic(AppActionId.CONFIRM_BATHROOM_PAYMENT)
                                 viewmodel.pay(
                                     bathroom = bathroom,
                                     amount = amount,

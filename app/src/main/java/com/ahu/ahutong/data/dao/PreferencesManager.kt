@@ -3,6 +3,8 @@ package com.ahu.ahutong.data.dao
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -19,11 +21,102 @@ object PreferencesKeys {
         booleanPreferencesKey("course_reminder_live_countdown_enabled")
     val THEME_COLOR = stringPreferencesKey("theme_color_hex")
     val REPOSITORY_ACCELERATION_SOURCE = stringPreferencesKey("repository_acceleration_source")
+    val PERSONALIZATION_ENABLED = booleanPreferencesKey("personalization_enabled")
+    val PREDICTIVE_PREFETCH_ENABLED = booleanPreferencesKey("predictive_prefetch_enabled")
+    val WIFI_ONLY_PREFETCH = booleanPreferencesKey("wifi_only_prefetch")
+    val MODEL_QUALITY_TELEMETRY_PROFILES = stringSetPreferencesKey("model_quality_telemetry_profiles")
+    val MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE =
+        booleanPreferencesKey("model_quality_telemetry_onboarding_choice")
+    val SUGGESTION_ACTION_SUPPRESSIONS = stringSetPreferencesKey("suggestion_action_suppressions")
+    val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
 private val Context.dataStore by preferencesDataStore(name = "user_pref")
 
-class PreferencesManager @Inject constructor(@ApplicationContext private val context: Context) {
+class PreferencesManager @Inject constructor(@param:ApplicationContext private val context: Context) {
+
+    val personalizationEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.PERSONALIZATION_ENABLED] ?: true
+    }
+
+    suspend fun setPersonalizationEnabled(value: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.PERSONALIZATION_ENABLED] = value }
+    }
+
+    val predictivePrefetchEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.PREDICTIVE_PREFETCH_ENABLED] ?: true
+    }
+
+    suspend fun setPredictivePrefetchEnabled(value: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.PREDICTIVE_PREFETCH_ENABLED] = value }
+    }
+
+    val wifiOnlyPrefetch: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.WIFI_ONLY_PREFETCH] ?: false
+    }
+
+    suspend fun setWifiOnlyPrefetch(value: Boolean) {
+        context.dataStore.edit { it[PreferencesKeys.WIFI_ONLY_PREFETCH] = value }
+    }
+
+    fun modelQualityTelemetryEnabled(profileKey: String): Flow<Boolean> = context.dataStore.data.map { prefs ->
+        profileKey in prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_PROFILES].orEmpty()
+    }
+
+    suspend fun setModelQualityTelemetryEnabled(profileKey: String, value: Boolean) {
+        context.dataStore.edit { prefs ->
+            val profiles = prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_PROFILES].orEmpty().toMutableSet()
+            if (value) profiles += profileKey else profiles -= profileKey
+            prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_PROFILES] = profiles
+        }
+    }
+
+    val modelQualityTelemetryOnboardingChoice: Flow<Boolean?> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE]
+    }
+
+    suspend fun setModelQualityTelemetryOnboardingChoice(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE] = value
+        }
+    }
+
+    fun suggestionActionSuppressedUntil(profileKey: String, actionId: String): Flow<Long?> =
+        context.dataStore.data.map { prefs ->
+            val prefix = "$profileKey|$actionId|"
+            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS]
+                .orEmpty()
+                .firstOrNull { it.startsWith(prefix) }
+                ?.substringAfterLast('|')
+                ?.toLongOrNull()
+        }
+
+    suspend fun suppressSuggestionActionUntil(profileKey: String, actionId: String, untilEpochMs: Long) {
+        context.dataStore.edit { prefs ->
+            val prefix = "$profileKey|$actionId|"
+            val entries = prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS].orEmpty()
+                .filterNotTo(mutableSetOf()) { it.startsWith(prefix) }
+            entries += "$prefix$untilEpochMs"
+            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS] = entries
+        }
+    }
+
+    suspend fun clearSuggestionActionSuppressions(profileKey: String) {
+        context.dataStore.edit { prefs ->
+            val prefix = "$profileKey|"
+            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS] =
+                prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS].orEmpty()
+                    .filterNotTo(mutableSetOf()) { it.startsWith(prefix) }
+        }
+    }
+
+    val behaviorRetentionDays: Flow<Int> = context.dataStore.data.map { prefs ->
+        (prefs[PreferencesKeys.BEHAVIOR_RETENTION_DAYS] ?: 30).coerceIn(7, 30)
+    }
+
+    suspend fun setBehaviorRetentionDays(value: Int) {
+        context.dataStore.edit { it[PreferencesKeys.BEHAVIOR_RETENTION_DAYS] = value.coerceIn(7, 30) }
+    }
 
     val themeColor: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[PreferencesKeys.THEME_COLOR]

@@ -32,7 +32,6 @@ public class AHUCookieJar implements ClearableCookieJar {
 
     @Override
     synchronized public void saveFromResponse(@NonNull HttpUrl url, @NonNull List<Cookie> cookies) {
-        Log.i(TAG, "saveFromResponse: " + url);
         cache.addAll(cookies);
         persistor.saveAll(filterPersistentCookies(cookies));
     }
@@ -41,7 +40,6 @@ public class AHUCookieJar implements ClearableCookieJar {
         List<Cookie> persistentCookies = new ArrayList<>();
 
         for (Cookie cookie : cookies) {
-            Log.i(TAG, "persistent: " + cookie.persistent());
             persistentCookies.add(cookie);
 
         }
@@ -51,7 +49,6 @@ public class AHUCookieJar implements ClearableCookieJar {
     @NonNull
     @Override
     synchronized public List<Cookie> loadForRequest(@NonNull HttpUrl url) {
-        Log.i(TAG, "loadForRequest: " + url);
         List<Cookie> cookiesToRemove = new ArrayList<>();
         List<Cookie> validCookies = new ArrayList<>();
 
@@ -68,7 +65,6 @@ public class AHUCookieJar implements ClearableCookieJar {
         }
 
         persistor.removeAll(cookiesToRemove);
-        Log.i(TAG, "validCookies: " + validCookies);
         return validCookies;
     }
 
@@ -91,20 +87,9 @@ public class AHUCookieJar implements ClearableCookieJar {
 
 
     public void logAllCookies() {
-        Log.i(TAG, "=== 当前 CookieJar 中的所有 cookie ===");
-        for (Cookie cookie : cache) {
-            Log.i(TAG, String.format(
-                    "name=%s; value=%s; domain=%s; path=%s; secure=%b; httponly=%b; expiresAt=%s",
-                    cookie.name(),
-                    cookie.value(),
-                    cookie.domain(),
-                    cookie.path(),
-                    cookie.secure(),
-                    cookie.httpOnly(),
-                    new java.util.Date(cookie.expiresAt()).toString()
-            ));
-        }
-        Log.i(TAG, "=== End of Cookie list ===");
+        int count = 0;
+        for (Cookie ignored : cache) count++;
+        Log.i(TAG, "CookieJar contains " + count + " entries (values suppressed)");
     }
 
 
@@ -112,7 +97,6 @@ public class AHUCookieJar implements ClearableCookieJar {
 
         HttpUrl urlToDelete = HttpUrl.get(url);
 
-        Log.i(TAG, "clearCookiesForUrl: " + url);
         List<Cookie> cookiesToRemove = new ArrayList<>();
 
         synchronized (this) {
@@ -122,7 +106,6 @@ public class AHUCookieJar implements ClearableCookieJar {
                 if (cookie.matches(urlToDelete)) {
                     cookiesToRemove.add(cookie);
                     it.remove();
-                    Log.i(TAG, "Removed cookie: " + cookie);
                 }
             }
 

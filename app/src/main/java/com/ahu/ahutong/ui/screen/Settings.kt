@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +65,8 @@ import com.ahu.ahutong.data.server.AhuTong
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import kotlinx.coroutines.launch
 import com.franmontiel.persistentcookiejar.cache.SetCookieCache
 import com.franmontiel.persistentcookiejar.persistence.SharedPrefsCookiePersistor
 import com.kyant.capsule.ContinuousCapsule
@@ -76,13 +79,15 @@ import com.kyant.monet.withNight
 fun Settings(
     navController: NavHostController,
     mainViewModel: MainViewModel = viewModel(),
-    aboutViewModel: AboutViewModel = viewModel()
+    aboutViewModel: AboutViewModel = viewModel(),
+    behaviorRuntime: BehaviorPredictionRuntime
 ) {
     val context = LocalContext.current as ComponentActivity
     var isClearCacheDialogShown by rememberSaveable { mutableStateOf(false) }
     var isUpdateLogDialogShown by rememberSaveable { mutableStateOf(false) }
     val tip by remember { aboutViewModel.tipState }
     var updateLog by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(tip) {
         tip?.let {
@@ -367,22 +372,24 @@ fun Settings(
                         .clip(ContinuousCapsule)
                         .background(90.a1 withNight 30.n1)
                         .clickable {
-                            mainViewModel.logout()
-                            AHUCache.clearAll()
-                            RustSDK.initSafe("")
+                            scope.launch {
+                                behaviorRuntime.logoutAndClear()
+                                mainViewModel.logout()
+                                AHUCache.clearAll()
+                                RustSDK.initSafe("")
 
-                            CookieManager.cookieJar.clear()
-                            CookieManager.cookieJar.clearSession()
+                                CookieManager.cookieJar.clear()
+                                CookieManager.cookieJar.clearSession()
 
-                            AHUApplication.sessionExpired = true
+                                AHUApplication.sessionExpired = true
 
+                                Toast
+                                    .makeText(context, "已清除所有数据", Toast.LENGTH_SHORT)
+                                    .show()
 
-                            Toast
-                                .makeText(context, "已清除所有数据", Toast.LENGTH_SHORT)
-                                .show()
-
-                            navController.navigate("login") {
-                                popUpTo(0)
+                                navController.navigate("login") {
+                                    popUpTo(0)
+                                }
                             }
                         }
                         .padding(16.dp, 8.dp),

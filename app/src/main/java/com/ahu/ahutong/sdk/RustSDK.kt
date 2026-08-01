@@ -222,7 +222,7 @@ object RustSDK {
                                 "contentLength=${conn.contentLengthLong} " +
                                 "contentType=${conn.contentType}"
                     )
-                    Log.d(TAG_HOTUPDATE, "checkUpdate response headers:\n$headers")
+                    Log.d(TAG_HOTUPDATE, "checkUpdate response headers received (values suppressed)")
 
                     // 只打印前 400 字符，避免日志爆炸
                     Log.d(
@@ -764,15 +764,15 @@ object RustSDK {
 
     fun loginSafe(username: String, password: String): Result<User> {
         if (!isLoaded) return Result.failure(IllegalStateException("Native library not loaded"))
-        Log.d("RustSDK", "Calling native login with username: $username, password length: ${password.length}")
+        Log.d("RustSDK", "Calling native login (credentials suppressed)")
         val json = try {
             login(username, password)
         } catch (t: Throwable) {
             return Result.failure(t)
         }
-        Log.d("RustSDK", "Native login returned: $json")
+        Log.d("RustSDK", "Native login completed (response body suppressed)")
         return if (json.contains("\"error\"")) {
-            Result.failure(Exception(json)) // 简单处理，实际可解析 error 字段
+            Result.failure(Exception("Native login failed"))
         } else {
             try {
                 val user = Gson().fromJson(json, User::class.java)
@@ -796,8 +796,8 @@ object RustSDK {
         }
         
         if (json.contains("\"error\"")) {
-            Log.e(TAG_HOTUPDATE, "getScheduleSafe: Server returned error: $json")
-            return Result.failure(Exception(json))
+            Log.e(TAG_HOTUPDATE, "getScheduleSafe: Server returned an error (body suppressed)")
+            return Result.failure(Exception("schedule service returned an error"))
         } else {
             return try {
                 val type = object : TypeToken<List<Course>>() {}.type
@@ -805,7 +805,7 @@ object RustSDK {
                 Log.d(TAG_HOTUPDATE, "getScheduleSafe: Success, parsed ${courses.size} courses")
                 Result.success(courses)
             } catch (e: Exception) {
-                Log.e(TAG_HOTUPDATE, "getScheduleSafe: JSON parse failed. JSON: $json", e)
+                Log.e(TAG_HOTUPDATE, "getScheduleSafe: JSON parse failed (body suppressed)", e)
                 Result.failure(e)
             }
         }
@@ -824,8 +824,8 @@ object RustSDK {
         }
         
         if (json.contains("\"error\"")) {
-            Log.e(TAG_HOTUPDATE, "getExamInfoSafe: Server returned error: $json")
-            return Result.failure(Exception(json))
+            Log.e(TAG_HOTUPDATE, "getExamInfoSafe: Server returned an error (body suppressed)")
+            return Result.failure(Exception("exam service returned an error"))
         } else {
             return try {
                 val type = object : TypeToken<List<Exam>>() {}.type
@@ -833,7 +833,7 @@ object RustSDK {
                 Log.d(TAG_HOTUPDATE, "getExamInfoSafe: Success, parsed ${exams.size} exams")
                 Result.success(exams)
             } catch (e: Exception) {
-                Log.e(TAG_HOTUPDATE, "getExamInfoSafe: JSON parse failed. JSON: $json", e)
+                Log.e(TAG_HOTUPDATE, "getExamInfoSafe: JSON parse failed (body suppressed)", e)
                 Result.failure(e)
             }
         }
@@ -852,15 +852,15 @@ object RustSDK {
         }
         
         if (json.contains("\"error\"")) {
-            Log.e(TAG_HOTUPDATE, "getGradeSafe: Server returned error: $json")
-            return Result.failure(Exception(json))
+            Log.e(TAG_HOTUPDATE, "getGradeSafe: Server returned an error (body suppressed)")
+            return Result.failure(Exception("grade service returned an error"))
         } else {
             return try {
                 val response = Gson().fromJson(json, GradeResponse::class.java)
                 Log.d(TAG_HOTUPDATE, "getGradeSafe: Success, parsed data. semester map size: ${response.semesterId2studentGrades?.size}")
                 Result.success(response)
             } catch (e: Exception) {
-                Log.e(TAG_HOTUPDATE, "getGradeSafe: JSON parse failed. JSON: $json", e)
+                Log.e(TAG_HOTUPDATE, "getGradeSafe: JSON parse failed (body suppressed)", e)
                 Result.failure(e)
             }
         }
@@ -879,8 +879,8 @@ object RustSDK {
         }
 
         if (json.contains("\"error\"")) {
-            Log.e(TAG_HOTUPDATE, "getBalanceSafe: Server returned error: $json")
-            return Result.failure(Exception(json))
+            Log.e(TAG_HOTUPDATE, "getBalanceSafe: Server returned an error (body suppressed)")
+            return Result.failure(Exception("balance service returned an error"))
         }
 
         return try {
@@ -893,7 +893,7 @@ object RustSDK {
                 })
             }
         } catch (e: Exception) {
-            Log.e(TAG_HOTUPDATE, "getBalanceSafe: JSON parse failed. JSON: $json", e)
+            Log.e(TAG_HOTUPDATE, "getBalanceSafe: JSON parse failed (body suppressed)", e)
             Result.failure(e)
         }
     }
@@ -906,13 +906,13 @@ object RustSDK {
         val json = try {
             getQrcode() ?: return Result.failure(Exception("empty qrcode response"))
         } catch (t: Throwable) {
-            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: Native call failed", t)
+            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: Native call failed (${t.javaClass.simpleName})")
             return Result.failure(t)
         }
 
         if (json.contains("\"error\"")) {
-            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: Server returned error: $json")
-            return Result.failure(Exception(json))
+            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: Server returned an error (body suppressed)")
+            return Result.failure(Exception("QR code service returned an error"))
         }
 
         return try {
@@ -926,7 +926,7 @@ object RustSDK {
                 Result.failure(Exception(msg))
             }
         } catch (e: Exception) {
-            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: JSON parse failed. JSON: $json", e)
+            Log.e(TAG_HOTUPDATE, "getQrcodeSafe: JSON parse failed (body suppressed)", e)
             Result.failure(e)
         }
     }

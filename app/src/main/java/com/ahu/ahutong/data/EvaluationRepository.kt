@@ -106,7 +106,7 @@ object EvaluationRepository {
             if (cached.isNotBlank()) {
                 val renewed = renewToken(cached)
                 renewed.getOrNull()?.let { return it }
-                Log.i(TAG, "cached eval token is not reusable: ${renewed.exceptionOrNull()?.message}")
+                Log.i(TAG, "cached eval token is not reusable (details suppressed)")
                 AHUCache.saveEvalToken("")
             }
         }

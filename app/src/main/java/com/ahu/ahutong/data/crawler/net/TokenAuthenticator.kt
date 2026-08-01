@@ -37,7 +37,7 @@ class TokenAuthenticator : Authenticator {
 
 
             //
-            Log.e(TAG, "authenticate: ${response.request.url} 尝试重新登录", )
+            Log.e(TAG, "authenticate: 第一方会话过期，尝试重新登录", )
             return runBlocking {
                 CookieManager.cookieJar.clear()
                 TokenManager.clear()

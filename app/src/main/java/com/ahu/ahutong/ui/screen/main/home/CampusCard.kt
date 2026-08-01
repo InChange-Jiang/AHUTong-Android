@@ -47,13 +47,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.view.WindowManager
+import dagger.hilt.android.EntryPointAccessors
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
+import com.ahu.ahutong.personalization.prefetch.PaymentQrCommandEntryPoint
+import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.action.ActionSource
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
@@ -69,13 +78,38 @@ fun RowScope.CampusCard(
 ) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context = context) }
+    val paymentQrCommands = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            PaymentQrCommandEntryPoint::class.java
+        ).paymentQrOpenCommandStore()
+    }
+    val behaviorRuntime = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            BehaviorRuntimeEntryPoint::class.java
+        ).behaviorPredictionRuntime()
+    }
 
     val pref by preferencesManager.showQRCode.collectAsState(initial = false)
+    val behaviorDiagnostics by behaviorRuntime.diagnostics.collectAsState()
 
-    var isQrcode by remember { mutableStateOf(pref) }
+    var isQrcode by remember { mutableStateOf(false) }
+    val paymentQrCommand by paymentQrCommands.command.collectAsState()
 
     LaunchedEffect(pref) {
-        isQrcode = pref
+        if (!pref) isQrcode = false
+    }
+
+    LaunchedEffect(pref, behaviorDiagnostics.profileActive) {
+        if (pref && behaviorDiagnostics.profileActive) {
+            isQrcode = behaviorRuntime.authorizeUserPreferencePaymentQr()
+        }
+    }
+
+    LaunchedEffect(paymentQrCommand?.commandId) {
+        val command = paymentQrCommand ?: return@LaunchedEffect
+        if (paymentQrCommands.consume(command.commandId) != null) isQrcode = true
     }
 
     LaunchedEffect(isQrcode) {
@@ -101,6 +135,7 @@ fun RowScope.CampusCard(
                 balance = balance,
                 transitionBalance = transitionBalance,
                 onClick = {
+                    behaviorRuntime.recordActionIntentAsync(AppActionId.OPEN_PAYMENT_QR, ActionSource.ORGANIC)
                     isQrcode = true
                 },
                 navController = navController,
@@ -237,6 +272,38 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
     }
 
     val activity = androidx.activity.compose.LocalActivity.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+    val behaviorRuntime = remember {
+        EntryPointAccessors.fromApplication(
+            context.applicationContext,
+            BehaviorRuntimeEntryPoint::class.java
+        ).behaviorPredictionRuntime()
+    }
+
+    DisposableEffect(activity) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        behaviorRuntime.setSensitiveUiVisible(true)
+        onDispose {
+            behaviorRuntime.setSensitiveUiVisible(false)
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> discoveryViewModel.clearQrCode()
+                Lifecycle.Event.ON_START -> if (AHUCache.isLogin()) discoveryViewModel.loadQrCode()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            discoveryViewModel.clearQrCode()
+        }
+    }
 
     if (AHUCache.isLogin()) {
         LaunchedEffect(Unit) {
@@ -288,6 +355,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
             // 左侧返回
             IconButton(
                 onClick = {
+                    discoveryViewModel.clearQrCode()
                     onBack()
                 },
                 modifier = Modifier.align(Alignment.CenterStart)
@@ -301,7 +369,6 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
             // 右侧全屏
             IconButton(
                 onClick = {
-                    discoveryViewModel.loadQrCode()
                     showFullScreen = true
                 },
                 modifier = Modifier.align(Alignment.CenterEnd)
@@ -332,7 +399,8 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                         modifier = Modifier
                             .fillMaxSize()
                             .clickable {
-                                discoveryViewModel.loadQrCode()
+                                behaviorRuntime.recordActionIntentAsync(AppActionId.REFRESH_PAYMENT_QR, ActionSource.ORGANIC)
+                                discoveryViewModel.loadQrCode(forceRefresh = true)
                                 discoveryViewModel.refreshCardBalance()
                             }
                             .padding(8.dp)
@@ -383,7 +451,8 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                                     SmoothRoundedCornerShape(24.dp)
                                 )
                                 .clickable {
-                                    discoveryViewModel.loadQrCode()
+                                    behaviorRuntime.recordActionIntentAsync(AppActionId.REFRESH_PAYMENT_QR, ActionSource.ORGANIC)
+                                    discoveryViewModel.loadQrCode(forceRefresh = true)
                                     discoveryViewModel.refreshCardBalance()
                                 }
                                 .padding(20.dp)

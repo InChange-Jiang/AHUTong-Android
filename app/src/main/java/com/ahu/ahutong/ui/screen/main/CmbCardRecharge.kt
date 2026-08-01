@@ -5,8 +5,10 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.widget.Toast
 import android.webkit.WebChromeClient
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -42,6 +44,8 @@ import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.data.crawler.manager.CookieManager as YcardCookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.Dispatchers
@@ -77,9 +81,31 @@ private const val CMB_RECHARGE_STYLE_SCRIPT = """
 })();
 """
 
+private const val CMB_SUBMIT_OBSERVER_SCRIPT = """
+(function(){
+  if (window.__ahutongSubmitObserverInstalled) return;
+  window.__ahutongSubmitObserverInstalled = true;
+  var lastNotice = 0;
+  function notify(){
+    var now = Date.now();
+    if (now - lastNotice < 1000) return;
+    lastNotice = now;
+    window.AhuTongBehaviorBridge.onSubmitIntent();
+  }
+  document.addEventListener('submit', notify, true);
+  document.addEventListener('click', function(event){
+    var target = event.target && event.target.closest
+      ? event.target.closest('button[type="submit"],input[type="submit"]')
+      : null;
+    if (target) notify();
+  }, true);
+})();
+"""
+
 @Composable
 fun CmbCardRecharge() {
     val context = LocalContext.current
+    val behaviorReporter = rememberBehaviorActionReporter()
     var entryUrl by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var progress by remember { mutableIntStateOf(0) }
@@ -197,6 +223,9 @@ fun CmbCardRecharge() {
                             },
                             onExternalLink = { externalUrl ->
                                 openExternalLink(context, externalUrl)
+                            },
+                            onSubmitIntent = {
+                                behaviorReporter.organic(AppActionId.SUBMIT_CMB_CARD_RECHARGE)
                             }
                         ).also { created ->
                             syncYcardCookiesToWebView(created)
@@ -233,22 +262,26 @@ private fun createCmbRechargeWebView(
     onProgressChanged: (Int) -> Unit,
     onNavigationChanged: (Boolean) -> Unit,
     onMainFrameError: (String) -> Unit,
-    onExternalLink: (String) -> Unit
+    onExternalLink: (String) -> Unit,
+    onSubmitIntent: () -> Unit
 ): WebView {
     return WebView(context).apply {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
-        settings.databaseEnabled = true
         settings.loadsImagesAutomatically = true
-        settings.javaScriptCanOpenWindowsAutomatically = true
+        settings.javaScriptCanOpenWindowsAutomatically = false
+        settings.allowFileAccess = false
+        settings.allowContentAccess = false
+        settings.saveFormData = false
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.cacheMode = WebSettings.LOAD_NO_CACHE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
         }
         android.webkit.CookieManager.getInstance().setAcceptCookie(true)
+        addJavascriptInterface(CmbBehaviorBridge(this, onSubmitIntent), "AhuTongBehaviorBridge")
 
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -288,8 +321,9 @@ private fun createCmbRechargeWebView(
             override fun onPageFinished(view: WebView?, url: String?) {
                 onLoadingChanged(false)
                 onNavigationChanged(view?.canGoBack() == true)
-                if (url?.contains("/cashier-mobile/charge") == true || url?.contains("/charge-app") == true) {
+                if (url?.let(Uri::parse)?.let(::isAuditedCmbSubmitPage) == true) {
                     view?.evaluateJavascript(CMB_RECHARGE_STYLE_SCRIPT, null)
+                    view?.evaluateJavascript(CMB_SUBMIT_OBSERVER_SCRIPT, null)
                 }
                 super.onPageFinished(view, url)
             }
@@ -307,6 +341,29 @@ private fun createCmbRechargeWebView(
             }
         }
     }
+}
+
+private class CmbBehaviorBridge(
+    private val webView: WebView,
+    private val onSubmitIntent: () -> Unit
+) {
+    private var lastAcceptedAtElapsedMs = 0L
+
+    @JavascriptInterface
+    fun onSubmitIntent() {
+        webView.post {
+            val current = webView.url?.let(Uri::parse)
+            val now = SystemClock.elapsedRealtime()
+            if (current?.let(::isAuditedCmbSubmitPage) == true &&
+                now - lastAcceptedAtElapsedMs >= NATIVE_SUBMIT_DEBOUNCE_MS
+            ) {
+                lastAcceptedAtElapsedMs = now
+                onSubmitIntent()
+            }
+        }
+    }
+
+    private companion object { const val NATIVE_SUBMIT_DEBOUNCE_MS = 1_000L }
 }
 
 private fun buildCmbRechargeEntryUrl(token: String): String {
@@ -328,6 +385,9 @@ private fun isInternalCmbRechargeUrl(url: Uri): Boolean {
     val host = url.host.orEmpty().lowercase()
     return host == "ahu.edu.cn" || host.endsWith(".ahu.edu.cn")
 }
+
+private fun isAuditedCmbSubmitPage(url: Uri): Boolean = isInternalCmbRechargeUrl(url) &&
+    (url.path.orEmpty().contains("/cashier-mobile/charge") || url.path.orEmpty().contains("/charge-app"))
 
 private fun openExternalLink(context: android.content.Context, url: String) {
     val targetUri = runCatching { Uri.parse(url) }.getOrNull()
@@ -362,7 +422,7 @@ private fun syncYcardCookiesToWebView(webView: WebView) {
     }
     webCookieManager.flush()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-        webCookieManager.setAcceptThirdPartyCookies(webView, true)
+        webCookieManager.setAcceptThirdPartyCookies(webView, false)
     }
 }
 

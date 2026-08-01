@@ -83,10 +83,10 @@ public class AHUApplication extends Application {
         try {
             // 启动服务，端口 0 表示随机分配
             String result = RustSDK.INSTANCE.startServer(0);
-            Log.i(TAG, "startServer result: " + result);
+            Log.i(TAG, "Local service startup completed (credentials suppressed)");
 
             if (result.contains("\"error\"")) {
-                Log.e(TAG, "Failed to start local server: " + result);
+                Log.e(TAG, "Failed to start local server (response body suppressed)");
                 return;
             }
 

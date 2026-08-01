@@ -70,12 +70,15 @@ import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import io.noties.markwon.Markwon
 import kotlinx.coroutines.flow.collect
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 
 @Composable
 fun Repository(
     navController: NavHostController,
     path: String
 ) {
+    val behaviorReporter = rememberBehaviorActionReporter()
     val activity = LocalContext.current as androidx.activity.ComponentActivity
     val viewModel: RepositoryViewModel = viewModel(viewModelStoreOwner = activity)
     val directoryStates by viewModel.directoryStates.collectAsState()
@@ -127,7 +130,13 @@ fun Repository(
             )
             RepositoryRefreshButton(
                 loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
-                onRefresh = { viewModel.refreshDirectory(path) }
+                onRefresh = {
+                    behaviorReporter.organic(
+                        if (state.error == null) AppActionId.MANUAL_REFRESH_REPOSITORY
+                        else AppActionId.RETRY_REPOSITORY
+                    )
+                    viewModel.refreshDirectory(path)
+                }
             )
             IconButton(onClick = { navController.navigate("repository_downloads") }) {
                 Icon(
@@ -226,8 +235,14 @@ fun Repository(
                                     navController.navigateRepository(item.path)
                                 }
                             },
-                            onDownload = { viewModel.downloadFile(item) },
-                            onOpen = { viewModel.openFile(item) }
+                            onDownload = {
+                                behaviorReporter.organic(AppActionId.DOWNLOAD_REPOSITORY_ITEM)
+                                viewModel.downloadFile(item)
+                            },
+                            onOpen = {
+                                behaviorReporter.organic(AppActionId.OPEN_REPOSITORY_ITEM)
+                                viewModel.openFile(item)
+                            }
                         )
                     }
 

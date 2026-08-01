@@ -7,8 +7,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,7 +55,7 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.tanh
-import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 @Composable
 fun SmartSuggestionHost(
@@ -74,12 +72,24 @@ fun SmartSuggestionHost(
     if (blocked) return
     val suggestion = state as? PredictionUiState.Suggestion ?: return
     val suggestionShape = ContinuousCapsule
+    val lifetimeOpacity = remember(suggestion.executionId) { Animatable(1f) }
     val animationScope = rememberCoroutineScope()
-    val pressInteractions = remember(suggestion.executionId) { MutableInteractionSource() }
     val interactiveHighlight = remember(animationScope, suggestion.executionId) {
         InteractiveHighlight(
             animationScope = animationScope,
-            highlightRadiusMultiplier = 0.9f
+            highlightRadiusMultiplier = 0.9f,
+            fixedHighlightPressProgress = 0.8f,
+            drawGlobalPressOverlay = false,
+            holdHighlightPositionOnRelease = true,
+            positionReturnDampingRatio = 0.75f,
+            releaseAnimationDurationMillis = 120,
+            onPressStart = {
+                runtime.pauseSuggestionVisibility(suggestion.executionId)
+                animationScope.launch { lifetimeOpacity.snapTo(1f) }
+            },
+            onPressEnd = {
+                runtime.restartSuggestionVisibility(suggestion.executionId)
+            }
         )
     }
     val isLiquidGlass = LocalIsLiquidGlassEnabled.current
@@ -89,7 +99,6 @@ fun SmartSuggestionHost(
     } else {
         Color(0xFF121212).copy(alpha = 0.4f)
     }
-    val lifetimeOpacity = remember(suggestion.executionId) { Animatable(1f) }
     val accentContentColor = MaterialTheme.colorScheme.primary.copy(alpha = lifetimeOpacity.value)
     val primaryContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = lifetimeOpacity.value)
     val secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = lifetimeOpacity.value)
@@ -121,30 +130,6 @@ fun SmartSuggestionHost(
                     easing = LinearEasing
                 )
             )
-        }
-    }
-
-    LaunchedEffect(pressInteractions, suggestion.executionId) {
-        var activePress: PressInteraction.Press? = null
-        pressInteractions.interactions.collect { interaction ->
-            when (interaction) {
-                is PressInteraction.Press -> {
-                    activePress = interaction
-                    runtime.pauseSuggestionVisibility(suggestion.executionId)
-                }
-                is PressInteraction.Release -> {
-                    if (interaction.press == activePress) {
-                        activePress = null
-                        runtime.restartSuggestionVisibility(suggestion.executionId)
-                    }
-                }
-                is PressInteraction.Cancel -> {
-                    if (interaction.press == activePress) {
-                        activePress = null
-                        runtime.restartSuggestionVisibility(suggestion.executionId)
-                    }
-                }
-            }
         }
     }
 
@@ -204,7 +189,7 @@ fun SmartSuggestionHost(
                 }
             )
             .clickable(
-                interactionSource = pressInteractions,
+                interactionSource = null,
                 indication = null,
                 role = Role.Button,
                 onClick = { onSuggestionClick(suggestion) }

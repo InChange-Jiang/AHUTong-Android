@@ -3,9 +3,11 @@ package com.ahu.ahutong.ui.utils
 import android.graphics.RuntimeShader
 import android.os.Build
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -23,13 +25,20 @@ class InteractiveHighlight(
     val animationScope: CoroutineScope,
     val userDragEnabled: Boolean = true,
     val highlightRadiusMultiplier: Float = 1.5f,
+    val fixedHighlightPressProgress: Float? = null,
+    val drawGlobalPressOverlay: Boolean = true,
+    val holdHighlightPositionOnRelease: Boolean = false,
+    val positionReturnDampingRatio: Float = 0.5f,
+    val releaseAnimationDurationMillis: Int? = null,
+    val onPressStart: () -> Unit = {},
+    val onPressEnd: () -> Unit = {},
     val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset }
 ) {
 
     private val pressProgressAnimationSpec =
         spring(0.5f, 300f, 0.001f)
     private val positionAnimationSpec =
-        spring(0.5f, 300f, Offset.VisibilityThreshold)
+        spring(positionReturnDampingRatio, 300f, Offset.VisibilityThreshold)
 
     private val pressProgressAnimation =
         Animatable(0f, 0.001f)
@@ -37,6 +46,7 @@ class InteractiveHighlight(
         Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
 
     private var startPosition = Offset.Zero
+    private var releasedHighlightPosition: Offset? = null
     val pressProgress: Float get() = pressProgressAnimation.value
     val offset: Offset get() = positionAnimation.value - startPosition
 
@@ -65,19 +75,25 @@ half4 main(float2 coord) {
                 val progress = pressProgressAnimation.value
                 if (progress > 0f) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null) {
-                        drawRect(
-                            Color.White.copy(0.08f * progress),
-                            blendMode = BlendMode.Plus
-                        )
+                        if (drawGlobalPressOverlay) {
+                            drawRect(
+                                Color.White.copy(0.08f * progress),
+                                blendMode = BlendMode.Plus
+                            )
+                        }
                         shader.apply {
-                            val position = position(size, positionAnimation.value)
+                            val highlightPosition = position(
+                                size,
+                                releasedHighlightPosition ?: positionAnimation.value
+                            )
+                            val highlightProgress = fixedHighlightPressProgress ?: progress
                             setFloatUniform("size", size.width, size.height)
-                            setColorUniform("color", Color.White.copy(0.15f * progress).toArgb())
+                            setColorUniform("color", Color.White.copy(0.15f * highlightProgress).toArgb())
                             setFloatUniform("radius", size.minDimension * highlightRadiusMultiplier)
                             setFloatUniform(
                                 "position",
-                                position.x.fastCoerceIn(0f, size.width),
-                                position.y.fastCoerceIn(0f, size.height)
+                                highlightPosition.x.fastCoerceIn(0f, size.width),
+                                highlightPosition.y.fastCoerceIn(0f, size.height)
                             )
                         }
                         drawRect(
@@ -85,10 +101,27 @@ half4 main(float2 coord) {
                             blendMode = BlendMode.Plus
                         )
                     } else {
-                        drawRect(
-                            Color.White.copy(0.25f * progress),
-                            blendMode = BlendMode.Plus
-                        )
+                        val highlightProgress = fixedHighlightPressProgress ?: progress
+                        if (drawGlobalPressOverlay) {
+                            drawRect(
+                                Color.White.copy(0.25f * highlightProgress),
+                                blendMode = BlendMode.Plus
+                            )
+                        } else {
+                            val center = position(
+                                size,
+                                releasedHighlightPosition ?: positionAnimation.value
+                            )
+                            drawCircle(
+                                color = Color.White.copy(0.25f * highlightProgress),
+                                radius = size.minDimension * highlightRadiusMultiplier,
+                                center = Offset(
+                                    center.x.fastCoerceIn(0f, size.width),
+                                    center.y.fastCoerceIn(0f, size.height)
+                                ),
+                                blendMode = BlendMode.Plus
+                            )
+                        }
                     }
                 }
 
@@ -103,21 +136,37 @@ half4 main(float2 coord) {
             Modifier.pointerInput(animationScope) {
                 inspectDragGestures(
                     onDragStart = { down ->
+                        onPressStart()
+                        releasedHighlightPosition = null
                         startPosition = down.position
                         animationScope.launch {
                             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
                             launch { positionAnimation.snapTo(startPosition) }
                         }
                     },
-                    onDragEnd = {
+                    onDragEnd = { up ->
+                        onPressEnd()
+                        if (holdHighlightPositionOnRelease) {
+                            releasedHighlightPosition = up.position
+                        }
                         animationScope.launch {
-                            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+                            launch {
+                                releasePressProgress()
+                                releasedHighlightPosition = null
+                            }
                             launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                         }
                     },
                     onDragCancel = {
+                        onPressEnd()
+                        if (holdHighlightPositionOnRelease) {
+                            releasedHighlightPosition = positionAnimation.value
+                        }
                         animationScope.launch {
-                            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+                            launch {
+                                releasePressProgress()
+                                releasedHighlightPosition = null
+                            }
                             launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                         }
                     }
@@ -128,4 +177,19 @@ half4 main(float2 coord) {
         } else {
             Modifier
         }
+
+    private suspend fun releasePressProgress() {
+        val durationMillis = releaseAnimationDurationMillis
+        if (durationMillis != null) {
+            pressProgressAnimation.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = durationMillis,
+                    easing = LinearEasing
+                )
+            )
+        } else {
+            pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec)
+        }
+    }
 }

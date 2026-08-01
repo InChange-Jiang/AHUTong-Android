@@ -172,8 +172,8 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val recentActionSources = ArrayDeque<ActionSource>()
     private val organicActionHistory = ArrayDeque<AppActionId>()
     private val gson = Gson()
-    private val suggestionSuppressedUntilElapsedMs = ConcurrentHashMap<String, Long>()
     @Volatile private var suggestionExpiryJob: Job? = null
+    @Volatile private var lastSuggestionElapsedMs = 0L
 
     val diagnostics: StateFlow<RuntimeDiagnosticsState> = _diagnostics.asStateFlow()
     val uiState: StateFlow<PredictionUiState> = _uiState.asStateFlow()
@@ -213,6 +213,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         activeAccountIdentifier = accountIdentifier
         sessionId = UUID.randomUUID().toString()
         sessionStartedElapsedMs = SystemClock.elapsedRealtime()
+        lastSuggestionElapsedMs = 0L
         val persistedMaxSequence = dao.maxEventSequence(nextProfile)
         sequence.updateAndGet { current -> maxOf(current, persistedMaxSequence) }
         val activeProfileGeneration = profileGeneration.incrementAndGet()
@@ -581,24 +582,6 @@ class BehaviorPredictionRuntime @Inject constructor(
         hideSuggestion()
     }
 
-    fun suppressSuggestedActionByUser() {
-        val current = _uiState.value as? PredictionUiState.Suggestion
-        if (current != null) {
-            suggestionSuppressedUntilElapsedMs[current.action.stableId] =
-                SystemClock.elapsedRealtime() + ACTION_SUPPRESS_COOLDOWN_MS
-            profileKey?.let { activeProfile ->
-                scope.launch {
-                    preferencesManager.suppressSuggestionActionUntil(
-                        activeProfile,
-                        current.action.stableId,
-                        System.currentTimeMillis() + ACTION_SUPPRESS_COOLDOWN_MS
-                    )
-                }
-            }
-        }
-        hideSuggestion()
-    }
-
     suspend fun acceptSuggestion(executionId: String): AppActionId? {
         val state = _uiState.value as? PredictionUiState.Suggestion ?: return null
         if (state.executionId != executionId) return null
@@ -672,7 +655,6 @@ class BehaviorPredictionRuntime @Inject constructor(
         paymentQrCommands.clear()
         insertLifecycleEvent("SESSION_ENDED", ActionSource.SYSTEM)
         if (clearProfile) {
-            preferencesManager.clearSuggestionActionSuppressions(activeProfile)
             dao.deleteProfileLearningState(activeProfile)
             modelStateStore.reset(activeProfile)
         }
@@ -1049,18 +1031,26 @@ class BehaviorPredictionRuntime @Inject constructor(
         if (pending.isPromotionHoldout || _sensitiveUiVisible.value || !isSuggestionSurfaceAllowed(lastRoute) ||
             !preferencesManager.personalizationEnabled.first()
         ) return
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (!SuggestionPolicy.isDisplayIntervalElapsed(
+                lastShownElapsedMs = lastSuggestionElapsedMs,
+                nowElapsedMs = nowElapsed,
+                minimumIntervalMs = SUGGESTION_MIN_INTERVAL_MS
+            )
+        ) return
         val candidates = SuggestionPolicy.rankedCandidates(
             effective,
             dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet()
         )
-        val nowElapsed = SystemClock.elapsedRealtime()
-        val nowEpoch = System.currentTimeMillis()
-        val candidate = candidates.firstOrNull { candidate ->
-            val outputId = candidate.action.stableId
-            (suggestionSuppressedUntilElapsedMs[outputId] ?: 0L) <= nowElapsed &&
-                (preferencesManager.suggestionActionSuppressedUntil(pending.profileKey, outputId).first() ?: 0L) <= nowEpoch
-        } ?: return
-        showSuggestion(pending.decisionId, candidate.action, candidate.probability)
+        val candidate = candidates.firstOrNull() ?: return
+        if (showSuggestion(pending.decisionId, candidate.action, candidate.probability)) {
+            lastSuggestionElapsedMs = nowElapsed
+            prefetchCoordinator.prefetchSuggestedAction(
+                action = candidate.action,
+                holdout = pending.isPromotionHoldout,
+                foreground = foreground
+            )
+        }
     }
 
     private suspend fun composeDecision(
@@ -1231,7 +1221,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         const val DEADLINE_RACE_GRACE_MS = 250L
         const val HOLDOUT_PERCENT = 15
         const val CANDIDATE_HOLDOUT_PERCENT = 20
-        const val ACTION_SUPPRESS_COOLDOWN_MS = 30L * 24 * 60 * 60_000L
+        const val SUGGESTION_MIN_INTERVAL_MS = 30_000L
         const val SUGGESTION_VISIBLE_TTL_MS = 12_000L
         const val TRAINING_IDLE_GRACE_MS = 1_500L
         const val MAX_BEHAVIOR_EVENTS = 20_000

@@ -27,7 +27,6 @@ object PreferencesKeys {
     val MODEL_QUALITY_TELEMETRY_PROFILES = stringSetPreferencesKey("model_quality_telemetry_profiles")
     val MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE =
         booleanPreferencesKey("model_quality_telemetry_onboarding_choice")
-    val SUGGESTION_ACTION_SUPPRESSIONS = stringSetPreferencesKey("suggestion_action_suppressions")
     val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
@@ -78,35 +77,6 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
     suspend fun setModelQualityTelemetryOnboardingChoice(value: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE] = value
-        }
-    }
-
-    fun suggestionActionSuppressedUntil(profileKey: String, actionId: String): Flow<Long?> =
-        context.dataStore.data.map { prefs ->
-            val prefix = "$profileKey|$actionId|"
-            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS]
-                .orEmpty()
-                .firstOrNull { it.startsWith(prefix) }
-                ?.substringAfterLast('|')
-                ?.toLongOrNull()
-        }
-
-    suspend fun suppressSuggestionActionUntil(profileKey: String, actionId: String, untilEpochMs: Long) {
-        context.dataStore.edit { prefs ->
-            val prefix = "$profileKey|$actionId|"
-            val entries = prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS].orEmpty()
-                .filterNotTo(mutableSetOf()) { it.startsWith(prefix) }
-            entries += "$prefix$untilEpochMs"
-            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS] = entries
-        }
-    }
-
-    suspend fun clearSuggestionActionSuppressions(profileKey: String) {
-        context.dataStore.edit { prefs ->
-            val prefix = "$profileKey|"
-            prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS] =
-                prefs[PreferencesKeys.SUGGESTION_ACTION_SUPPRESSIONS].orEmpty()
-                    .filterNotTo(mutableSetOf()) { it.startsWith(prefix) }
         }
     }
 

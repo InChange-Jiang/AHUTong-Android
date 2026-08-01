@@ -11,6 +11,17 @@ internal data class SuggestionCandidate(
 )
 
 internal object SuggestionPolicy {
+    fun isDisplayIntervalElapsed(
+        lastShownElapsedMs: Long,
+        nowElapsedMs: Long,
+        minimumIntervalMs: Long
+    ): Boolean {
+        require(minimumIntervalMs >= 0L)
+        if (lastShownElapsedMs == 0L) return true
+        return nowElapsedMs >= lastShownElapsedMs &&
+            nowElapsedMs - lastShownElapsedMs >= minimumIntervalMs
+    }
+
     fun rankedCandidates(
         prediction: NextActionProbabilityVector,
         organicActionIds: Set<String>

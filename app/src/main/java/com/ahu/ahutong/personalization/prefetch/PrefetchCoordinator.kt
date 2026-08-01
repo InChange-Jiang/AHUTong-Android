@@ -13,6 +13,7 @@ import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.PrefetchPolicy
 import com.ahu.ahutong.data.dao.PreferencesManager
+import com.ahu.ahutong.utils.FileUtils
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,13 +73,23 @@ class PrefetchCoordinator @Inject constructor(
     }
 
     suspend fun consider(probabilities: Map<String, Float>, holdout: Boolean, foreground: Boolean) {
-        if (holdout || !foreground || !preferencesManager.predictivePrefetchEnabled.first() || !resourcePolicyAllowsPrefetch()) return
-        if (preferencesManager.wifiOnlyPrefetch.first() && !isWifiConnected()) return
+        if (!canPrefetch(holdout, foreground)) return
         probabilities.entries.sortedByDescending(Map.Entry<String, Float>::value)
             .mapNotNull { (id, probability) -> AppActionId.fromStableId(id)?.let { Triple(it, probability, AppActionCatalog.spec(it)) } }
             .filter { (_, probability, spec) -> probability >= threshold(spec.prefetchPolicy) && spec.prefetchPolicy != PrefetchPolicy.NONE }
             .take(2)
             .forEach { (action, _, spec) -> launchSingleFlight(action, spec.prefetchPolicy) }
+    }
+
+    /**
+     * A visible suggestion is a stronger product signal than a background probability candidate.
+     * It may bypass the generic probability threshold, but never the user's prefetch setting,
+     * holdout isolation, resource policy, budgets, TTL or single-flight protection.
+     */
+    suspend fun prefetchSuggestedAction(action: AppActionId, holdout: Boolean, foreground: Boolean) {
+        if (!canPrefetch(holdout, foreground)) return
+        val policy = AppActionCatalog.spec(action).prefetchPolicy
+        if (policy != PrefetchPolicy.NONE) launchSingleFlight(action, policy)
     }
 
     suspend fun cancelAll() = mutex.withLock {
@@ -181,14 +192,22 @@ class PrefetchCoordinator @Inject constructor(
                 AHURepository.getExamInfo(false, studentId, name).map { Unit }
             }
         }
-        AppActionId.VIEW_SCHOOL_CALENDAR -> runCatching { AHURepository.getSchoolCalendar() }.fold(
-            onSuccess = { if (it.isSuccessful) Result.success(Unit) else Result.failure(IllegalStateException("calendar prefetch rejected")) },
-            onFailure = { Result.failure(it) }
-        )
-        AppActionId.OPEN_LOST_FOUND -> runCatching { AHURepository.getLostFoundList(1, 20, 1) }.fold(
-            onSuccess = { if (it.isSuccessful) Result.success(Unit) else Result.failure(IllegalStateException("lost-found prefetch rejected")) },
-            onFailure = { Result.failure(it) }
-        )
+        AppActionId.VIEW_SCHOOL_CALENDAR -> runCatching {
+            val result = AHURepository.getSchoolCalendar()
+            check(result.isSuccessful) { "calendar prefetch rejected" }
+            val response = checkNotNull(result.data) { "calendar response is missing" }
+            check(response.isSuccessful) { "calendar download failed" }
+            val body = checkNotNull(response.body()) { "calendar body is missing" }
+            val file = FileUtils.saveResponseBodyToFile(context, body, "xiaoli.jpg")
+            check(file != null && file.length() > 0L) { "calendar cache write failed" }
+        }
+        AppActionId.OPEN_LOST_FOUND -> runCatching {
+            val result = AHURepository.getLostFoundList(1, 20, 1)
+            check(result.isSuccessful) { "lost-found prefetch rejected" }
+            val response = checkNotNull(result.data) { "lost-found response is missing" }
+            check(response.code == 0) { "lost-found response failed" }
+            AHUCache.saveLostFoundList(1, response.data.list)
+        }
         AppActionId.OPEN_PAYMENT_QR -> paymentQrRepository.prefetchPredictively()
         else -> Result.failure(IllegalStateException("no audited prefetcher for ${action.stableId}"))
     }
@@ -198,6 +217,12 @@ class PrefetchCoordinator @Inject constructor(
         PrefetchPolicy.NETWORK_READ_ONLY -> 0.38f
         PrefetchPolicy.SENSITIVE_MEMORY_ONLY -> 0.65f
         PrefetchPolicy.NONE -> 1f
+    }
+
+    private suspend fun canPrefetch(holdout: Boolean, foreground: Boolean): Boolean {
+        if (holdout || !foreground || !preferencesManager.predictivePrefetchEnabled.first()) return false
+        if (!resourcePolicyAllowsPrefetch()) return false
+        return !preferencesManager.wifiOnlyPrefetch.first() || isWifiConnected()
     }
 
     private fun isWifiConnected(): Boolean {

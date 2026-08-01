@@ -57,6 +57,14 @@ class SuggestionPolicyTest {
     }
 
     @Test
+    fun suggestionDisplayIntervalIsInclusiveAndHandlesClockRegression() {
+        assertTrue(SuggestionPolicy.isDisplayIntervalElapsed(0L, 1L, 30_000L))
+        assertFalse(SuggestionPolicy.isDisplayIntervalElapsed(10_000L, 39_999L, 30_000L))
+        assertTrue(SuggestionPolicy.isDisplayIntervalElapsed(10_000L, 40_000L, 30_000L))
+        assertFalse(SuggestionPolicy.isDisplayIntervalElapsed(40_000L, 10_000L, 30_000L))
+    }
+
+    @Test
     fun suggestionClickIsOwnedByParentAndDismissHasNoPenalty() {
         val sourceRoot = File(repositoryRoot(), "app/src/main/java")
         val host = File(
@@ -68,9 +76,24 @@ class SuggestionPolicyTest {
             sourceRoot,
             "com/ahu/ahutong/personalization/runtime/PredictionRuntime.kt"
         ).readText()
+        val prefetch = File(
+            sourceRoot,
+            "com/ahu/ahutong/personalization/prefetch/PrefetchCoordinator.kt"
+        ).readText()
+        val preferences = File(
+            sourceRoot,
+            "com/ahu/ahutong/data/dao/PreferencesManager.kt"
+        ).readText()
 
         assertFalse(host.contains("rememberCoroutineScope"))
         assertTrue(host.contains("onClick = { onSuggestionClick(suggestion) }"))
+        assertTrue(host.contains("interaction.pressPosition"))
+        assertTrue(host.contains("drawCircle("))
+        assertTrue(host.contains(".clip(suggestionShape)"))
+        assertTrue(host.contains("waveVisible = false"))
+        assertFalse(host.contains("LocalIndication"))
+        assertFalse(host.contains("DoNotDisturbOn"))
+        assertFalse(host.contains("suppressSuggestedActionByUser"))
         assertTrue(
             Regex("onSuggestionClick\\s*=\\s*\\{ suggestion ->[\\s\\S]*?scope\\.launch[\\s\\S]*?acceptSuggestion")
                 .containsMatchIn(main)
@@ -85,6 +108,12 @@ class SuggestionPolicyTest {
             Regex("acceptSuggestion[\\s\\S]*?recordActionIntent\\([\\s\\S]*?deferNextOpportunity = true")
                 .containsMatchIn(runtime)
         )
+        assertTrue(runtime.contains("SUGGESTION_MIN_INTERVAL_MS = 30_000L"))
+        assertTrue(runtime.contains("prefetchCoordinator.prefetchSuggestedAction"))
+        assertTrue(prefetch.contains("suspend fun prefetchSuggestedAction"))
+        assertTrue(prefetch.contains("FileUtils.saveResponseBodyToFile(context, body, \"xiaoli.jpg\")"))
+        assertTrue(prefetch.contains("AHUCache.saveLostFoundList(1, response.data.list)"))
+        assertFalse(preferences.contains("SUGGESTION_ACTION_SUPPRESSIONS"))
     }
 
     private fun vector(vararg actionProbabilities: Pair<AppActionId, Float>): NextActionProbabilityVector {

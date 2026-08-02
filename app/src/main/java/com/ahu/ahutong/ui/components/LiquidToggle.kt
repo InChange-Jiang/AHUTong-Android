@@ -186,13 +186,12 @@ fun LiquidToggle(
                 dampedDragAnimation.updateValue(fraction)
             }
     }
-    LaunchedEffect(selected) {
-        snapshotFlow { selected() }
+    LaunchedEffect(dampedDragAnimation) {
+        snapshotFlow { currentSelected.value() }
             .collectLatest { isSelected ->
                 val target = if (isSelected) 1f else 0f
                 if (target != fraction) {
                     fraction = target
-                    dampedDragAnimation.animateToValue(target)
                 }
             }
     }

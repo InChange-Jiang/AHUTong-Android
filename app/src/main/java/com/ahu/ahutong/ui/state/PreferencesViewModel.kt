@@ -3,6 +3,7 @@ package com.ahu.ahutong.ui.state
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ahu.ahutong.data.dao.PreferencesManager
+import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,14 +18,14 @@ class PreferencesViewModel @Inject constructor(
     private val behaviorRuntime: BehaviorPredictionRuntime
 ) : ViewModel() {
 
-    private val _personalizationEnabled = MutableStateFlow(true)
-    val personalizationEnabled: StateFlow<Boolean> = _personalizationEnabled.asStateFlow()
+    private val _personalizationEnabled = MutableStateFlow<Boolean?>(null)
+    val personalizationEnabled: StateFlow<Boolean?> = _personalizationEnabled.asStateFlow()
 
-    private val _predictivePrefetchEnabled = MutableStateFlow(true)
-    val predictivePrefetchEnabled: StateFlow<Boolean> = _predictivePrefetchEnabled.asStateFlow()
+    private val _predictivePrefetchEnabled = MutableStateFlow<Boolean?>(null)
+    val predictivePrefetchEnabled: StateFlow<Boolean?> = _predictivePrefetchEnabled.asStateFlow()
 
-    private val _wifiOnlyPrefetch = MutableStateFlow(false)
-    val wifiOnlyPrefetch: StateFlow<Boolean> = _wifiOnlyPrefetch.asStateFlow()
+    private val _wifiOnlyPrefetch = MutableStateFlow<Boolean?>(null)
+    val wifiOnlyPrefetch: StateFlow<Boolean?> = _wifiOnlyPrefetch.asStateFlow()
 
     private val _behaviorRetentionDays = MutableStateFlow(30)
     val behaviorRetentionDays: StateFlow<Int> = _behaviorRetentionDays.asStateFlow()
@@ -40,6 +41,9 @@ class PreferencesViewModel @Inject constructor(
 
     private val _themeColor = MutableStateFlow<String?>(null)
     val themeColor: StateFlow<String?> = _themeColor.asStateFlow()
+
+    private val _appThemeMode = MutableStateFlow(AppThemeMode.FOLLOW_SYSTEM)
+    val appThemeMode: StateFlow<AppThemeMode> = _appThemeMode.asStateFlow()
 
     private val _courseReminderEnabled = MutableStateFlow(false)
     val courseReminderEnabled: StateFlow<Boolean> = _courseReminderEnabled.asStateFlow()
@@ -57,6 +61,7 @@ class PreferencesViewModel @Inject constructor(
         viewModelScope.launch { preferencesManager.predictivePrefetchEnabled.collect { _predictivePrefetchEnabled.value = it } }
         viewModelScope.launch { preferencesManager.wifiOnlyPrefetch.collect { _wifiOnlyPrefetch.value = it } }
         viewModelScope.launch { preferencesManager.behaviorRetentionDays.collect { _behaviorRetentionDays.value = it } }
+        viewModelScope.launch { preferencesManager.themeMode.collect { _appThemeMode.value = it } }
         viewModelScope.launch {
             preferencesManager.themeColor.collect {
                 _themeColor.value = it
@@ -104,12 +109,19 @@ class PreferencesViewModel @Inject constructor(
     fun setPredictivePrefetchEnabled(value: Boolean) {
         viewModelScope.launch {
             preferencesManager.setPredictivePrefetchEnabled(value)
-            if (!value) behaviorRuntime.cancelPredictivePrefetch()
+            if (!value) {
+                preferencesManager.setWifiOnlyPrefetch(false)
+                behaviorRuntime.cancelPredictivePrefetch()
+            }
         }
     }
 
     fun setWifiOnlyPrefetch(value: Boolean) {
-        viewModelScope.launch { preferencesManager.setWifiOnlyPrefetch(value) }
+        viewModelScope.launch {
+            preferencesManager.setWifiOnlyPrefetch(
+                value && _predictivePrefetchEnabled.value == true
+            )
+        }
     }
 
     fun clearPersonalizationLearning() {
@@ -153,6 +165,12 @@ class PreferencesViewModel @Inject constructor(
     fun setThemeColor(value: String?) {
         viewModelScope.launch {
             preferencesManager.setThemeColor(value)
+        }
+    }
+
+    fun setAppThemeMode(value: AppThemeMode) {
+        viewModelScope.launch {
+            preferencesManager.setThemeMode(value)
         }
     }
 

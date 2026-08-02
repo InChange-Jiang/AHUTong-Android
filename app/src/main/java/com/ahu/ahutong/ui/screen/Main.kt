@@ -292,7 +292,7 @@ fun Main(
             }
 
             animatedComposable("preferences") {
-                Preferences()
+                Preferences(onBack = { navController.popBackStack() })
             }
 
             animatedComposable("electricity_pay") {
@@ -308,7 +308,18 @@ fun Main(
             }
 
             animatedComposable("cmb_card_recharge") {
-                CmbCardRecharge()
+                CmbCardRecharge(
+                    onExit = { navController.popBackStack() },
+                    onRechargeSuccessExit = {
+                        val returnedHome = navController.popBackStack("home", inclusive = false)
+                        if (!returnedHome) {
+                            navController.navigate("home") {
+                                popUpTo("cmb_card_recharge") { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                )
             }
 
             animatedComposable("network_recharge") {

@@ -1,31 +1,38 @@
 package com.ahu.ahutong.ui.components
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
@@ -45,39 +52,43 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
-import com.kyant.monet.a1
-import com.kyant.monet.a2
-import com.kyant.monet.n1
-import com.kyant.monet.n2
-import com.kyant.monet.withNight
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.abs
 
 @Composable
 fun LiquidToggle(
     selected: () -> Boolean,
     onSelect: (Boolean) -> Unit,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userInputEnabled: Boolean = true,
+    toggleOnTap: Boolean = true,
+    onHorizontalDragActiveChange: (Boolean) -> Unit = {}
 ) {
     val isLiquid = LocalIsLiquidGlassEnabled.current
     if (!isLiquid) {
+        val colorScheme = MaterialTheme.colorScheme
         val switchColor = SwitchDefaults.colors(
-            checkedThumbColor = 80.a1 withNight 80.n1,
-            uncheckedThumbColor = 80.a2 withNight 40.n2,
-            checkedTrackColor = (80.a1 withNight 80.n1).copy(alpha = 0.5f),
-            uncheckedTrackColor = (80.a2 withNight 40.n2).copy(alpha = 0.5f),
-            uncheckedBorderColor = 80.n1 withNight 40.n1
+            checkedThumbColor = colorScheme.onPrimary,
+            checkedTrackColor = colorScheme.primary,
+            checkedBorderColor = colorScheme.primary,
+            disabledCheckedThumbColor = colorScheme.onPrimary,
+            disabledCheckedTrackColor = colorScheme.primary,
+            disabledCheckedBorderColor = colorScheme.primary,
+            uncheckedThumbColor = colorScheme.outline,
+            uncheckedTrackColor = colorScheme.surfaceContainerHighest,
+            uncheckedBorderColor = colorScheme.outline
         )
         Switch(
             checked = selected(),
-            onCheckedChange = onSelect,
+            onCheckedChange = onSelect.takeIf { userInputEnabled && toggleOnTap },
             modifier = modifier.height(28f.dp),
             colors = switchColor
         )
         return
     }
 
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val accentColor =
         if (isLightTheme) Color(0xFF34C759)
         else Color(0xFF30D158)
@@ -87,11 +98,25 @@ fun LiquidToggle(
 
     val density = LocalDensity.current
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
+    val touchSlop = LocalViewConfiguration.current.touchSlop
     val dragWidth = with(density) { 20f.dp.toPx() }
     val animationScope = rememberCoroutineScope()
-    var didDrag by remember { mutableStateOf(false) }
+    val currentSelected = rememberUpdatedState(selected)
+    val currentOnSelect = rememberUpdatedState(onSelect)
+    val currentOnHorizontalDragActiveChange =
+        rememberUpdatedState(onHorizontalDragActiveChange)
+    var accumulatedDrag by remember { mutableStateOf(Offset.Zero) }
+    var gestureMoved by remember { mutableStateOf(false) }
+    var horizontalDragActive by remember { mutableStateOf(false) }
     var fraction by remember { mutableFloatStateOf(if (selected()) 1f else 0f) }
-    val dampedDragAnimation = remember(animationScope) {
+    val dampedDragAnimation = remember(
+        animationScope,
+        userInputEnabled,
+        toggleOnTap,
+        touchSlop,
+        dragWidth,
+        isLtr
+    ) {
         DampedDragAnimation(
             animationScope = animationScope,
             initialValue = fraction,
@@ -99,27 +124,61 @@ fun LiquidToggle(
             visibilityThreshold = 0.001f,
             initialScale = 1f,
             pressedScale = 1.5f,
-            onDragStarted = {},
+            userDragEnabled = userInputEnabled,
+            onDragStarted = {
+                accumulatedDrag = Offset.Zero
+                gestureMoved = false
+                horizontalDragActive = false
+            },
             onDragStopped = {
-                if (didDrag) {
+                if (horizontalDragActive) {
                     fraction = if (targetValue >= 0.5f) 1f else 0f
-                    onSelect(fraction == 1f)
-                    didDrag = false
-                } else {
-                    fraction = if (selected()) 0f else 1f
-                    onSelect(fraction == 1f)
+                    currentOnSelect.value(fraction == 1f)
+                    currentOnHorizontalDragActiveChange.value(false)
+                } else if (!gestureMoved && toggleOnTap) {
+                    fraction = if (currentSelected.value()) 0f else 1f
+                    currentOnSelect.value(fraction == 1f)
                 }
+                accumulatedDrag = Offset.Zero
+                gestureMoved = false
+                horizontalDragActive = false
             },
             onDrag = { _, dragAmount ->
-                if (!didDrag) {
-                    didDrag = dragAmount.x != 0f
+                accumulatedDrag += dragAmount
+                if (!gestureMoved && accumulatedDrag.getDistance() >= touchSlop) {
+                    gestureMoved = true
+                    if (abs(accumulatedDrag.x) > abs(accumulatedDrag.y)) {
+                        horizontalDragActive = true
+                        currentOnHorizontalDragActiveChange.value(true)
+                    }
                 }
-                val delta = dragAmount.x / dragWidth
-                fraction =
-                    if (isLtr) (fraction + delta).fastCoerceIn(0f, 1f)
-                    else (fraction - delta).fastCoerceIn(0f, 1f)
-            }
+                if (horizontalDragActive) {
+                    val delta = dragAmount.x / dragWidth
+                    fraction =
+                        if (isLtr) (fraction + delta).fastCoerceIn(0f, 1f)
+                        else (fraction - delta).fastCoerceIn(0f, 1f)
+                }
+            },
+            onDragCancelled = {
+                if (horizontalDragActive) {
+                    currentOnHorizontalDragActiveChange.value(false)
+                }
+                fraction = if (currentSelected.value()) 1f else 0f
+                animateToValue(fraction)
+                accumulatedDrag = Offset.Zero
+                gestureMoved = false
+                horizontalDragActive = false
+            },
+            pointerEventPass = PointerEventPass.Initial,
+            shouldConsumeDrag = { horizontalDragActive }
         )
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (horizontalDragActive) {
+                currentOnHorizontalDragActiveChange.value(false)
+            }
+        }
     }
     LaunchedEffect(dampedDragAnimation) {
         snapshotFlow { fraction }
@@ -164,10 +223,15 @@ fun LiquidToggle(
                         if (isLtr) lerp(padding, padding + dragWidth, fraction)
                         else lerp(-padding, -(padding + dragWidth), fraction)
                 }
-                .semantics {
-                    role = Role.Switch
-                }
-                .then(dampedDragAnimation.modifier)
+                .then(
+                    if (userInputEnabled) {
+                        Modifier
+                            .semantics { role = Role.Switch }
+                            .then(dampedDragAnimation.modifier)
+                    } else {
+                        Modifier.clearAndSetSemantics { }
+                    }
+                )
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(
                         backdrop,

@@ -284,6 +284,33 @@ object AHUCache {
         kv.encode("startTime-$schoolYear-$schoolTerm", startTime)
     }
 
+    fun getSchoolTermInSemester(schoolYear: String, schoolTerm: String): Boolean? {
+        val key = "inSemester-$schoolYear-$schoolTerm"
+        return userGetStringOrMigrate(key) { kv.decodeString(key) }
+            ?.toBooleanStrictOrNull()
+    }
+
+    fun getSchoolTermInSemesterObservedOn(schoolYear: String, schoolTerm: String): String? {
+        val key = "inSemesterObservedOn-$schoolYear-$schoolTerm"
+        return userGetStringOrMigrate(key) { kv.decodeString(key) }
+    }
+
+    fun saveSchoolTermInSemester(
+        schoolYear: String,
+        schoolTerm: String,
+        isInSemester: Boolean,
+        observedOn: String
+    ) {
+        val key = "inSemester-$schoolYear-$schoolTerm"
+        val value = isInSemester.toString()
+        userPutString(key, value)
+        kv.encode(key, value)
+
+        val observedOnKey = "inSemesterObservedOn-$schoolYear-$schoolTerm"
+        userPutString(observedOnKey, observedOn)
+        kv.encode(observedOnKey, observedOn)
+    }
+
     /**
      * 获取默认的学年
      * @return String?

@@ -118,9 +118,15 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
         )
     }
 
-    LaunchedEffect(scheduleConfig?.week) {
+    LaunchedEffect(scheduleConfig?.week, isPreviewNextSemester) {
         if (!isPreviewNextSemester) {
-            scheduleConfig?.week?.let { currentWeek = it }
+            scheduleConfig?.week?.let { resolvedWeek ->
+                currentWeek = resolvedWeek
+                val targetPage = (resolvedWeek - 1).coerceIn(0, 19)
+                if (pagerState.currentPage != targetPage) {
+                    pagerState.scrollToPage(targetPage)
+                }
+            }
         }
     }
 
@@ -326,7 +332,10 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
 
                 weekDates.forEachIndexed { index, date ->
                     val isCurrentWeekday =
-                        !isPreviewNextSemester && pageWeek == scheduleConfig?.week && index + 1 == currentWeekday
+                        !isPreviewNextSemester &&
+                            scheduleConfig?.isInSemester == true &&
+                            pageWeek == scheduleConfig?.week &&
+                            index + 1 == currentWeekday
                     Column(
                         modifier = with(CourseCardSpec) {
                             Modifier

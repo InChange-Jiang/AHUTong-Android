@@ -7,6 +7,7 @@ public class ScheduleConfigBean {
     private int week; // 当前周
     private int weekDay; // 周几
     private boolean isShowAll; // 是否显示非本周
+    private boolean isInSemester = true; // 是否处于教学周
 
     public Date getStartTime() {
         return startTime;
@@ -38,5 +39,13 @@ public class ScheduleConfigBean {
 
     public void setShowAll(boolean showAll) {
         isShowAll = showAll;
+    }
+
+    public boolean isInSemester() {
+        return isInSemester;
+    }
+
+    public void setInSemester(boolean inSemester) {
+        isInSemester = inSemester;
     }
 }

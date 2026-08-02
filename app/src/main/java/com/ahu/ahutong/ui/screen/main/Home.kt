@@ -96,20 +96,25 @@ fun Home(
     val density = LocalDensity.current
     val schedule = scheduleViewModel.schedule.observeAsState().value?.getOrNull() ?: emptyList()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
-    val effectiveScheduleConfig = CurrentWeekResolver.resolveLocalConfig()?.config ?: scheduleConfig
+    val effectiveScheduleConfig = scheduleConfig ?: CurrentWeekResolver.resolveLocalConfig()?.config
+    val isInSemester = effectiveScheduleConfig?.isInSemester != false
     val currentWeek = effectiveScheduleConfig?.week ?: 1
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
-    val todayCourses = schedule
-        .filter { effectiveScheduleConfig?.week in it.startWeek..it.endWeek }
-        .filter { it.weekday == (effectiveScheduleConfig?.weekDay ?: 1) }
-        .filter {
-            if (currentWeek in it.weekIndexes) {
-                true
-            } else {
-                currentWeek % 2 == it.startWeek % 2
+    val todayCourses = if (isInSemester) {
+        schedule
+            .filter { effectiveScheduleConfig?.week in it.startWeek..it.endWeek }
+            .filter { it.weekday == (effectiveScheduleConfig?.weekDay ?: 1) }
+            .filter {
+                if (currentWeek in it.weekIndexes) {
+                    true
+                } else {
+                    currentWeek % 2 == it.startWeek % 2
+                }
             }
-        }
-        .sortedBy { it.startTime }
+            .sortedBy { it.startTime }
+    } else {
+        emptyList()
+    }
     var currentMinutes by remember { mutableIntStateOf(DebugClock.currentMinutes()) }
     var isEditingHome by remember { mutableStateOf(false) }
     var homeWidgetSlots by remember {
@@ -312,6 +317,7 @@ fun Home(
                 todayCourses = todayCourses,
                 currentMinutes = currentMinutes,
                 navController = navController,
+                isInSemester = isInSemester,
                 enabled = !isEditingHome,
                 trailingContent = {
                     if (BuildConfig.DEBUG) {

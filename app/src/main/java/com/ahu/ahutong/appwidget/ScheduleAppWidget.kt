@@ -66,17 +66,21 @@ class ScheduleAppWidget : GlanceAppWidget() {
         val schedule =
             runCatching { AHURepository.getSchedule(false) }.getOrNull()?.getOrNull().orEmpty()
         val currentMinutes = DebugClock.currentMinutes()
-        val todayCourses = schedule
-            .filter { currentWeek in it.startWeek..it.endWeek }
-            .filter { it.weekday == weekDay }
-            .filter {
-                if (currentWeek in it.weekIndexes) {
-                    true
-                } else {
-                    currentWeek % 2 == it.startWeek % 2
+        val todayCourses = if (scheduleConfig.isInSemester) {
+            schedule
+                .filter { currentWeek in it.startWeek..it.endWeek }
+                .filter { it.weekday == weekDay }
+                .filter {
+                    if (currentWeek in it.weekIndexes) {
+                        true
+                    } else {
+                        currentWeek % 2 == it.startWeek % 2
+                    }
                 }
-            }
-            .sortedBy { it.startTime }
+                .sortedBy { it.startTime }
+        } else {
+            emptyList()
+        }
         val keyColor = resolveWidgetKeyColor(context)
         provideContent {
             ScheduleWidgetContent(

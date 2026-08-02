@@ -13,11 +13,10 @@ import android.view.View
 import android.widget.RemoteViews
 import androidx.compose.ui.graphics.toArgb
 import com.ahu.ahutong.R
-import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.debug.DebugClock
+import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import com.ahu.ahutong.ui.state.ScheduleViewModel
-import kotlinx.coroutines.runBlocking
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -114,12 +113,15 @@ class ScheduleAdaptiveWidgetProvider : AppWidgetProvider() {
         } else {
             R.id.adaptive_test_items_small
         }
-        val scheduleConfig = runBlocking { CurrentWeekResolver.resolveLocalFirst().config }
+        // AppWidgetProvider callbacks run on the broadcast thread. Keep this path cache-only;
+        // remote semester synchronization is handled by the app and the suspend Glance widget.
+        val scheduleConfig = CurrentWeekResolver.resolveLocalConfig()?.config
+            ?: CurrentWeekResolver.defaultConfig().config
         val currentWeek = scheduleConfig.week
         val weekDay = scheduleConfig.weekDay
-        val schedule = runCatching {
-            runBlocking { AHURepository.getSchedule(false) }
-        }.getOrNull()?.getOrNull().orEmpty()
+        val schedule = AHUCache.getSchoolTerm()
+            ?.let(AHUCache::getSchedule)
+            .orEmpty()
         val currentMinutes = DebugClock.currentMinutes()
         val todayCourses = if (scheduleConfig.isInSemester) {
             schedule

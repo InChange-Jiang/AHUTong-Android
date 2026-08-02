@@ -52,8 +52,10 @@ import androidx.navigation.NavHostController
 import com.ahu.ahutong.AHUApplication
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.server.AhuTong
+import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.components.SettingsActionRow
@@ -79,6 +81,9 @@ fun Settings(
 ) {
     val context = LocalContext.current as ComponentActivity
     val scope = rememberCoroutineScope()
+    val preferencesManager = remember(context) {
+        PreferencesManager(context.applicationContext)
+    }
     var isClearDataDialogShown by rememberSaveable { mutableStateOf(false) }
     var isUpdateLogDialogShown by rememberSaveable { mutableStateOf(false) }
     var updateLog by remember { mutableStateOf("") }
@@ -255,6 +260,8 @@ fun Settings(
                 TextButton(
                     onClick = {
                         scope.launch {
+                            CourseReminderScheduler.cancel(context)
+                            preferencesManager.clearAll()
                             behaviorRuntime.logoutAndClear()
                             mainViewModel.logout()
                             AHUCache.clearAll()

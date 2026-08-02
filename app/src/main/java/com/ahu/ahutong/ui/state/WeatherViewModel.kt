@@ -236,12 +236,14 @@ class WeatherViewModel @Inject constructor(
     fun updateHomeConfig(config: WeatherHomeConfig) {
         val previous = homeConfig
         if (previous == config) return
-        homeConfig = config
         config.saveToCache()
+        val committed = WeatherHomeConfig.fromCache()
+        homeConfig = committed
+        if (committed != config) return
         behaviorRuntime.recordCommittedMutationAsync(
             MutationId.WEATHER_HOME_CONFIG_CHANGED,
             previous,
-            config,
+            committed,
             coarseValueBucket = "CONFIG_CHANGED"
         )
     }

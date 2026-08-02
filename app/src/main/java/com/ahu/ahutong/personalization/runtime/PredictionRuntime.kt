@@ -73,6 +73,9 @@ import com.ahu.ahutong.personalization.ui.ActionPredictionProposal
 import com.ahu.ahutong.personalization.ui.ArbitratedPrediction
 import com.ahu.ahutong.personalization.ui.PredictionArbiter
 import com.ahu.ahutong.personalization.ui.PredictionTask
+import com.ahu.ahutong.personalization.ui.PendingSuggestionOffer
+import com.ahu.ahutong.personalization.ui.SuggestionDeliveryBlockReason
+import com.ahu.ahutong.personalization.ui.SuggestionDeliveryLane
 import com.ahu.ahutong.data.dao.PreferencesManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.EntryPoint
@@ -120,6 +123,8 @@ sealed interface PredictionUiState {
     data class Suggestion(
         val executionId: String,
         val decisionId: String,
+        val contextGeneration: Long,
+        val deliveryLane: SuggestionDeliveryLane,
         val action: AppActionId,
         val title: String,
         val reason: String,
@@ -148,6 +153,10 @@ data class RuntimeDiagnosticsState(
     val effectiveProbabilities: Map<String, Float> = emptyMap(),
     val candidateScope: String = "ORDINARY",
     val targetedActions: Set<String> = emptySet(),
+    val suggestionDeliveryLane: String = "NONE",
+    val contextGeneration: Long = 0L,
+    val suggestionIntervalRemainingMs: Long = 0L,
+    val suggestionRetryAtElapsedMs: Long? = null,
     val candidateRejectionReason: String? = null,
     val lastResolution: String? = null,
     val lastFailure: String? = null,
@@ -211,6 +220,10 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val sequence = AtomicLong(0)
     private val executionEpoch = AtomicLong(0)
     private val suggestionVisibilityGeneration = AtomicLong(0)
+    private val suggestionRetryGeneration = AtomicLong(0)
+    private val contextGeneration = AtomicLong(0)
+    private val settingSubmissionSequence = AtomicLong(0)
+    private val latestAppliedSettingSubmission = AtomicLong(0)
     private val profileGeneration = AtomicLong(0)
     private val loginGeneration = AtomicLong(0)
     private val _diagnostics = MutableStateFlow(RuntimeDiagnosticsState())
@@ -222,7 +235,13 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val recentActionSources = ArrayDeque<ActionSource>()
     private val organicActionHistory = ArrayDeque<AppActionId>()
     @Volatile private var suggestionExpiryJob: Job? = null
-    @Volatile private var lastSuggestionElapsedMs = 0L
+    @Volatile private var suggestionRetryJob: Job? = null
+    @Volatile private var pendingSuggestionOffer: PendingSuggestionOffer? = null
+    @Volatile private var activeTargetedContext: ActiveTargetedContext? = null
+    @Volatile private var externalSuggestionHostBlocked = false
+    @Volatile private var lastTargetedSuggestionElapsedMs = 0L
+    @Volatile private var lastOrdinarySuggestionElapsedMs = 0L
+    private val exposedTargetedChangeSets = ConcurrentHashMap.newKeySet<String>()
 
     val diagnostics: StateFlow<RuntimeDiagnosticsState> = _diagnostics.asStateFlow()
     val uiState: StateFlow<PredictionUiState> = _uiState.asStateFlow()
@@ -273,7 +292,13 @@ class BehaviorPredictionRuntime @Inject constructor(
         activeAccountIdentifier = accountIdentifier
         sessionId = UUID.randomUUID().toString()
         sessionStartedElapsedMs = SystemClock.elapsedRealtime()
-        lastSuggestionElapsedMs = 0L
+        contextGeneration.set(0L)
+        latestAppliedSettingSubmission.set(0L)
+        lastTargetedSuggestionElapsedMs = 0L
+        lastOrdinarySuggestionElapsedMs = 0L
+        pendingSuggestionOffer = null
+        activeTargetedContext = null
+        exposedTargetedChangeSets.clear()
         val persistedMaxSequence = dao.maxEventSequence(nextProfile)
         sequence.updateAndGet { current -> maxOf(current, persistedMaxSequence) }
         recentActions.clear()
@@ -346,11 +371,11 @@ class BehaviorPredictionRuntime @Inject constructor(
         interactive = isInteractive
         _diagnostics.value = _diagnostics.value.copy(foreground = value)
         if (!value || !isInteractive) {
+            cancelSuggestionDeliveryState("BACKGROUND_OR_NON_INTERACTIVE")
             scope.launch { censorActive("CENSORED_BACKGROUND") }
             profileKey?.let { activeProfile -> scope.launch { journeyEngine.censorProfile(activeProfile, "CENSORED_BACKGROUND") } }
             scope.launch { prefetchCoordinator.cancelAll() }
             profileKey?.let { activeProfile -> scope.launch { trainer.cancelProfile(activeProfile) } }
-            hideSuggestion()
         } else {
             scope.launch {
                 val activeProfile = profileKey ?: return@launch
@@ -368,7 +393,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         if (route == null) return
         val externallyMarkedSource = nextNavigationSource.also { nextNavigationSource = null }
         if (route == lastRoute) return
-        hideSuggestion()
+        cancelSuggestionDeliveryState("ROUTE_CHANGED")
         lastRoute = route
         routeChangedElapsedMs = SystemClock.elapsedRealtime()
         if (suppressedRoute == route) {
@@ -497,6 +522,7 @@ class BehaviorPredictionRuntime @Inject constructor(
                 organicActionHistory.addLast(action)
                 while (organicActionHistory.size > 64) organicActionHistory.removeFirst()
             }
+            cancelSuggestionDeliveryState("ACTION_OBSERVED")
             // Semantic/content scopes are single-opportunity product constraints. The immutable
             // pending rows keep their full context for labels and journey evaluation.
             latestSemanticContext = null
@@ -576,7 +602,8 @@ class BehaviorPredictionRuntime @Inject constructor(
         source: ActionSource = ActionSource.ORGANIC,
         coarseValueBucket: String? = null,
         domainOverride: SemanticDomain? = null,
-        familyOverride: SemanticEventFamily? = null
+        familyOverride: SemanticEventFamily? = null,
+        settingSubmissionOrder: Long = settingSubmissionSequence.incrementAndGet()
     ): Boolean {
         if (!profileReady) return false
         val activeProfile = profileKey ?: return false
@@ -597,10 +624,39 @@ class BehaviorPredictionRuntime @Inject constructor(
                 tainted = taintedChain
             )
         ) ?: return false
+        val semanticContext = SemanticContext(
+            normalized.eventFamily,
+            normalized.domain,
+            normalized.semanticId,
+            normalized.changeKind,
+            ageBucket = 0,
+            changeSetSize = 1,
+            stable = true,
+            affectedCandidateSetVersion = normalized.affectedCandidateSetVersion,
+            coarseValueBucket = normalized.coarseValueBucket
+        )
+        val targetedActions = (ProductCandidateResolver.resolve(
+            semantic = semanticContext,
+            content = null,
+            route = normalized.route
+        ) as? ProductCandidateScope.Targeted)?.actions.orEmpty().takeIf { actions ->
+            actions.isNotEmpty() && actions.all { action ->
+                val spec = AppActionCatalog.spec(action)
+                spec.suggestible && spec.sideEffect != SideEffect.TRANSACTION
+            }
+        }.orEmpty()
+        val isPassiveContentEvent = normalized.eventFamily == SemanticEventFamily.CONTENT_STATE_CHANGED
+        val isExplicitSettingEvent = normalized.eventFamily == SemanticEventFamily.SETTING_CHANGED
         var journeyStart: JourneyStartRequest? = null
+        var committedChangeSetId: String? = null
+        var targetedOffer: PendingSuggestionOffer? = null
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         lock.withLock {
             if (!profileReady || profileKey != activeProfile || sessionId != activeSession) return false
+            if (isExplicitSettingEvent &&
+                settingSubmissionOrder < latestAppliedSettingSubmission.get()
+            ) return false
+            if (isExplicitSettingEvent) latestAppliedSettingSubmission.set(settingSubmissionOrder)
             val existingSet = dao.mergeableSemanticChangeSet(
                 activeProfile,
                 activeSession,
@@ -608,11 +664,30 @@ class BehaviorPredictionRuntime @Inject constructor(
                 nowElapsed - SEMANTIC_CHANGE_SET_WINDOW_MS
             )
             val changeSet = mergeChangeSet(activeProfile, activeSession, normalized, existingSet)
+            committedChangeSetId = changeSet.changeSetId
             val sequenceNo = sequence.incrementAndGet()
+            val preserveActiveTargetedContext = isPassiveContentEvent &&
+                hasActiveTargetedContext(nowElapsed)
+            val opportunityGeneration = if (isExplicitSettingEvent) {
+                contextGeneration.incrementAndGet().also {
+                    cancelSuggestionDeliveryState(
+                        reason = "SEMANTIC_CONTEXT_CHANGED"
+                    )
+                }
+            } else {
+                contextGeneration.get()
+            }
             database.transaction {
-                dao.latestPending(activeProfile)?.let { pending ->
-                    dao.censorPendingCas(pending.decisionId, activeProfile, "CENSORED_SEMANTIC_CONTEXT_CHANGED", normalized.eventId)
-                    deadlineJobs.remove(pending.decisionId)?.cancel()
+                if (!preserveActiveTargetedContext) {
+                    dao.latestPending(activeProfile)?.let { pending ->
+                        dao.censorPendingCas(
+                            pending.decisionId,
+                            activeProfile,
+                            "CENSORED_SEMANTIC_CONTEXT_CHANGED",
+                            normalized.eventId
+                        )
+                        deadlineJobs.remove(pending.decisionId)?.cancel()
+                    }
                 }
                 dao.insertSemanticEvent(
                     normalized.toEntity(
@@ -625,19 +700,16 @@ class BehaviorPredictionRuntime @Inject constructor(
                 )
                 dao.upsertSemanticChangeSet(changeSet.copy(state = "PREPARED"))
             }
-            latestSemanticContext = SemanticContext(
-                normalized.eventFamily,
-                normalized.domain,
-                normalized.semanticId,
-                normalized.changeKind,
-                ageBucket = 0,
-                changeSetSize = changeSet.mutationCount,
-                stable = true,
-                affectedCandidateSetVersion = normalized.affectedCandidateSetVersion,
-                coarseValueBucket = normalized.coarseValueBucket
-            )
-            latestSemanticOccurredElapsedMs = normalized.occurredAtElapsedMs
-            latestAffectedCandidateCount = changeSet.affectedActionIdsCsv.split(',').count(String::isNotBlank)
+            if (!isPassiveContentEvent) {
+                latestSemanticContext = semanticContext.copy(changeSetSize = changeSet.mutationCount)
+                latestSemanticOccurredElapsedMs = normalized.occurredAtElapsedMs
+                latestAffectedCandidateCount = targetedActions.size
+            } else if (!preserveActiveTargetedContext) {
+                latestSemanticContext = null
+                latestSemanticOccurredElapsedMs = 0L
+                latestAffectedCandidateCount = 0
+            }
+            if (preserveActiveTargetedContext) return@withLock
             val journeyDecisionId = UUID.randomUUID().toString()
             val journeySnapshot = snapshot(System.currentTimeMillis(), lastAction).copy(journeyPosition = 0)
             val journeyInput = FeatureExtractor.build(
@@ -657,28 +729,67 @@ class BehaviorPredictionRuntime @Inject constructor(
                 normalized.tainted,
                 bucket(promotion.holdoutSeed, journeyDecisionId, "journey") < JOURNEY_HOLDOUT_PERCENT
             )
-            createOpportunityLocked(
+            val deliveryLane = if (isExplicitSettingEvent && targetedActions.isNotEmpty()) {
+                SuggestionDeliveryLane.TARGETED
+            } else {
+                SuggestionDeliveryLane.ORDINARY_NEXT_ACTION
+            }
+            val pending = createOpportunityLocked(
                 OpportunityTrigger.SEMANTIC_MUTATION_COMMITTED,
                 lastAction,
                 normalized.eventId,
-                sequenceNo
+                sequenceNo,
+                deliveryLane,
+                opportunityGeneration
+            )
+            if (pending != null && deliveryLane == SuggestionDeliveryLane.TARGETED) {
+                val activeContext = ActiveTargetedContext(
+                    decisionId = pending.decisionId,
+                    contextGeneration = opportunityGeneration,
+                    deadlineElapsedMs = pending.labelDeadlineElapsedMs,
+                    changeSetId = changeSet.changeSetId,
+                    targetActions = targetedActions
+                )
+                activeTargetedContext = activeContext
+                when {
+                    pending.isPromotionHoldout -> updateDeliveryDiagnostics(
+                        lane = SuggestionDeliveryLane.TARGETED,
+                        offer = null,
+                        rejectionReason = SuggestionDeliveryBlockReason.HOLDOUT.name
+                    )
+                    changeSet.changeSetId in exposedTargetedChangeSets -> updateDeliveryDiagnostics(
+                        lane = SuggestionDeliveryLane.TARGETED,
+                        offer = null,
+                        rejectionReason = "CHANGE_SET_ALREADY_EXPOSED"
+                    )
+                    !normalized.tainted -> targetedOffer = PendingSuggestionOffer(
+                        decisionId = pending.decisionId,
+                        contextGeneration = opportunityGeneration,
+                        lane = SuggestionDeliveryLane.TARGETED,
+                        targetActions = targetedActions,
+                        earliestDisplayElapsedMs = nowElapsed + TARGETED_CHANGE_SETTLE_MS,
+                        deadlineElapsedMs = pending.labelDeadlineElapsedMs
+                    )
+                }
+            }
+        }
+        targetedOffer?.let(::queueTargetedSuggestionOffer)
+        journeyStart?.let { request ->
+            explicitMilestoneTarget(request.event)?.let { target ->
+                journeyEngine.onExplicitMilestone(activeProfile, target, request.event.eventId)
+            }
+            journeyEngine.start(
+                request.profileKey,
+                request.sessionId,
+                processInstanceId,
+                request.sequenceNo,
+                request.event.eventId,
+                request.input,
+                request.tainted,
+                request.holdout
             )
         }
-        val request = journeyStart ?: return false
-        explicitMilestoneTarget(request.event)?.let { target ->
-            journeyEngine.onExplicitMilestone(activeProfile, target, request.event.eventId)
-        }
-        journeyEngine.start(
-            request.profileKey,
-            request.sessionId,
-            processInstanceId,
-            request.sequenceNo,
-            request.event.eventId,
-            request.input,
-            request.tainted,
-            request.holdout
-        )
-        dao.updateSemanticChangeSetState(request.changeSetId, "COMMITTED")
+        committedChangeSetId?.let { dao.updateSemanticChangeSetState(it, "COMMITTED") }
         return true
     }
 
@@ -691,6 +802,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         domainOverride: SemanticDomain? = null,
         familyOverride: SemanticEventFamily? = null
     ) {
+        val settingSubmissionOrder = settingSubmissionSequence.incrementAndGet()
         scope.launch {
             recordCommittedMutation(
                 mutationId,
@@ -699,7 +811,8 @@ class BehaviorPredictionRuntime @Inject constructor(
                 source,
                 coarseValueBucket,
                 domainOverride,
-                familyOverride
+                familyOverride,
+                settingSubmissionOrder
             )
         }
     }
@@ -813,11 +926,17 @@ class BehaviorPredictionRuntime @Inject constructor(
         route: String?,
         ttlMillis: Long = 10_000L,
         allowHoldoutInvalidation: Boolean = false,
-        requestedExecutionId: String? = null
+        requestedExecutionId: String? = null,
+        expectedContextGeneration: Long? = null,
+        deliveryLane: SuggestionDeliveryLane? = null
     ): ProductExecutionLeaseEntity? {
         val activeProfile = profileKey ?: return null
+        if (expectedContextGeneration != null && expectedContextGeneration != contextGeneration.get()) return null
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         return lock.withLock {
+            if (expectedContextGeneration != null && expectedContextGeneration != contextGeneration.get()) {
+                return@withLock null
+            }
             val pending = dao.pending(decisionId) ?: return@withLock null
             if (pending.profileKey != activeProfile || pending.resolutionStatus != "PENDING" ||
                 (pending.isPromotionHoldout && !allowHoldoutInvalidation)
@@ -844,7 +963,14 @@ class BehaviorPredictionRuntime @Inject constructor(
                 elapsed + ttlMillis,
                 "PREPARED"
             )
-            if (!dao.prepareProductExecution(decisionId, activeProfile, "PREPARED_$type", lease)) {
+            if (!dao.prepareProductExecution(
+                    decisionId,
+                    activeProfile,
+                    "PREPARED_$type",
+                    lease,
+                    allowPreparing = deliveryLane == SuggestionDeliveryLane.TARGETED
+                )
+            ) {
                 return@withLock null
             }
             deadlineJobs.remove(decisionId)?.cancel()
@@ -864,22 +990,32 @@ class BehaviorPredictionRuntime @Inject constructor(
         return lease.copy(state = "CONSUMED")
     }
 
-    suspend fun showSuggestion(decisionId: String, action: AppActionId, probability: Float): Boolean {
+    private suspend fun showSuggestion(
+        offer: PendingSuggestionOffer,
+        action: AppActionId,
+        probability: Float
+    ): Boolean {
         if (!preferencesManager.personalizationEnabled.first()) return false
         val spec = AppActionCatalog.spec(action)
         if (!spec.suggestible || spec.sideEffect == SideEffect.TRANSACTION || !foreground || !interactive ||
-            _sensitiveUiVisible.value || _suggestionOverlayBlocked.value ||
+            _sensitiveUiVisible.value || _suggestionOverlayBlocked.value || externalSuggestionHostBlocked ||
             !isSuggestionSurfaceAllowed(lastRoute) || _uiState.value != PredictionUiState.Hidden
         ) return false
         val activeProfile = profileKey ?: return false
-        val pending = dao.pending(decisionId) ?: return false
+        if (offer.contextGeneration != contextGeneration.get() ||
+            pendingSuggestionOffer != offer || action !in offer.targetActions
+        ) return false
+        val pending = dao.pending(offer.decisionId) ?: return false
         if (pending.profileKey != activeProfile || pending.resolutionStatus != "PENDING" ||
             pending.isPromotionHoldout || SystemClock.elapsedRealtime() >= pending.labelDeadlineElapsedMs
         ) return false
+        if (!isActionAvailable(action, pending)) return false
         val executionId = UUID.randomUUID().toString()
         _uiState.value = PredictionUiState.Suggestion(
             executionId,
-            decisionId,
+            offer.decisionId,
+            offer.contextGeneration,
+            offer.lane,
             action,
             spec.title,
             spec.reasonLabel,
@@ -900,9 +1036,18 @@ class BehaviorPredictionRuntime @Inject constructor(
         val offered = _uiState.value as? PredictionUiState.Suggestion ?: return false
         if (offered.executionId != executionId) return false
         if (offered.exposureConfirmed) return true
-        if (!foreground || !interactive || _suggestionOverlayBlocked.value ||
+        val activeOffer = pendingSuggestionOffer
+        if (!SuggestionPolicy.canConfirmExposure(
+                offer = activeOffer,
+                decisionId = offered.decisionId,
+                contextGeneration = offered.contextGeneration,
+                currentGeneration = contextGeneration.get(),
+                enteredVisiblePopup = true
+            ) || !foreground || !interactive || _suggestionOverlayBlocked.value ||
+            externalSuggestionHostBlocked ||
             !isSuggestionSurfaceAllowed(lastRoute)
         ) {
+            clearPendingOfferIfCurrent(activeOffer)
             hideSuggestionIfCurrent(executionId)
             return false
         }
@@ -913,12 +1058,16 @@ class BehaviorPredictionRuntime @Inject constructor(
             "SUGGESTION",
             ActionSource.SUGGESTION,
             spec.route,
-            requestedExecutionId = executionId
+            requestedExecutionId = executionId,
+            expectedContextGeneration = offered.contextGeneration,
+            deliveryLane = offered.deliveryLane
         ) ?: run {
+            clearPendingOfferIfCurrent(activeOffer)
             hideSuggestionIfCurrent(executionId)
             return false
         }
         if (consumeIntervention(lease.executionId) == null) {
+            clearPendingOfferIfCurrent(activeOffer)
             hideSuggestionIfCurrent(executionId)
             return false
         }
@@ -931,7 +1080,20 @@ class BehaviorPredictionRuntime @Inject constructor(
             shownAtElapsedMs = shownAtElapsedMs,
             expiresAtElapsedMs = shownAtElapsedMs + SUGGESTION_VISIBLE_TTL_MS
         )
-        lastSuggestionElapsedMs = shownAtElapsedMs
+        clearPendingOfferIfCurrent(activeOffer)
+        if (current.deliveryLane == SuggestionDeliveryLane.TARGETED) {
+            lastTargetedSuggestionElapsedMs = shownAtElapsedMs
+            activeTargetedContext
+                ?.takeIf { it.decisionId == current.decisionId }
+                ?.changeSetId
+                ?.let(exposedTargetedChangeSets::add)
+        }
+        lastOrdinarySuggestionElapsedMs = shownAtElapsedMs
+        updateDeliveryDiagnostics(
+            lane = current.deliveryLane,
+            offer = null,
+            rejectionReason = null
+        )
         prefetchCoordinator.prefetchSuggestedAction(
             action = current.action,
             holdout = false,
@@ -977,15 +1139,28 @@ class BehaviorPredictionRuntime @Inject constructor(
     fun setSensitiveUiVisible(visible: Boolean) {
         _sensitiveUiVisible.value = visible
         _suggestionOverlayBlocked.value = visible
-        if (visible) hideSuggestion()
+        if (visible) {
+            cancelSuggestionDeliveryState("SENSITIVE_UI")
+        }
     }
 
     fun setInlineSensitiveUiVisible(visible: Boolean) {
         _sensitiveUiVisible.value = visible
+        if (visible && _uiState.value == PredictionUiState.Hidden) {
+            cancelSuggestionRetry("INLINE_SENSITIVE_UI")
+        }
+    }
+
+    fun setSuggestionHostBlocked(blocked: Boolean) {
+        if (externalSuggestionHostBlocked == blocked) return
+        externalSuggestionHostBlocked = blocked
+        if (blocked) {
+            cancelSuggestionDeliveryState("HOST_SAFETY_GATE")
+        }
     }
 
     fun dismissSuggestionByUser() {
-        hideSuggestion()
+        cancelSuggestionDeliveryState("DISMISSED_BY_USER")
     }
 
     suspend fun acceptSuggestion(executionId: String): AppActionId? {
@@ -1013,6 +1188,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             ) {
                 _uiState.value = PredictionUiState.Hidden
                 suggestionExpiryJob = null
+                updateDeliveryDiagnostics(current.deliveryLane, null, null)
             }
         }
     }
@@ -1108,6 +1284,17 @@ class BehaviorPredictionRuntime @Inject constructor(
         latestSemanticOccurredElapsedMs = 0L
         latestContentContext = null
         latestAffectedCandidateCount = 0
+        contextGeneration.set(0L)
+        latestAppliedSettingSubmission.set(0L)
+        lastTargetedSuggestionElapsedMs = 0L
+        lastOrdinarySuggestionElapsedMs = 0L
+        pendingSuggestionOffer = null
+        activeTargetedContext = null
+        exposedTargetedChangeSets.clear()
+        suggestionRetryGeneration.incrementAndGet()
+        suggestionRetryJob?.cancel()
+        suggestionRetryJob = null
+        externalSuggestionHostBlocked = false
         lastAction = null
         lastRoute = null
         routeChangedElapsedMs = 0L
@@ -1231,11 +1418,21 @@ class BehaviorPredictionRuntime @Inject constructor(
         trigger: OpportunityTrigger,
         previousAction: AppActionId?,
         triggerEventId: String,
-        sequenceNo: Long
-    ) {
-        val activeProfile = profileKey ?: return
-        val activeSession = sessionId ?: return
-        if (!profileReady || !foreground || !interactive) return
+        sequenceNo: Long,
+        deliveryLane: SuggestionDeliveryLane = SuggestionDeliveryLane.ORDINARY_NEXT_ACTION,
+        opportunityContextGeneration: Long = contextGeneration.get()
+    ): PendingPredictionEntity? {
+        val activeProfile = profileKey ?: return null
+        val activeSession = sessionId ?: return null
+        if (!profileReady || !foreground || !interactive) return null
+        if (deliveryLane != SuggestionDeliveryLane.TARGETED && hasActiveTargetedContext()) {
+            updateDeliveryDiagnostics(
+                lane = deliveryLane,
+                offer = pendingSuggestionOffer,
+                rejectionReason = "TARGETED_CONTEXT_HAS_PRIORITY"
+            )
+            return null
+        }
         dao.latestPending(activeProfile)?.let { existing ->
             dao.censorPendingCas(existing.decisionId, activeProfile, "CENSORED_SUPERSEDED")
             deadlineJobs.remove(existing.decisionId)?.cancel()
@@ -1254,7 +1451,8 @@ class BehaviorPredictionRuntime @Inject constructor(
         val model = modelStateStore.state(activeProfile)
         val learningEligible = !taintedChain
         val holdout = learningEligible && bucket(promotion.holdoutSeed, decisionId, "promotion") < HOLDOUT_PERCENT
-        val candidateHoldout = learningEligible && model.candidate != null &&
+        val candidateHoldout = deliveryLane != SuggestionDeliveryLane.TARGETED &&
+            learningEligible && model.candidate != null &&
             bucket(promotion.holdoutSeed, decisionId, "candidate") < CANDIDATE_HOLDOUT_PERCENT
         val preparing = PendingPredictionEntity(
             decisionId,
@@ -1312,15 +1510,23 @@ class BehaviorPredictionRuntime @Inject constructor(
             activeCheckpoint = model.active.checkpointId
         )
         scope.launch {
-            preparePrediction(preparing, input, promotion, candidateHoldout)
+            preparePrediction(
+                preparing,
+                input,
+                promotion,
+                candidateHoldout,
+                opportunityContextGeneration
+            )
         }
+        return preparing
     }
 
     private suspend fun preparePrediction(
         preparing: PendingPredictionEntity,
         input: PredictionInput,
         promotion: PromotionSnapshot,
-        candidateHoldout: Boolean
+        candidateHoldout: Boolean,
+        opportunityContextGeneration: Long
     ) {
         try {
             val statDeferred = scope.async { statPredictor.predict(input) }
@@ -1341,6 +1547,7 @@ class BehaviorPredictionRuntime @Inject constructor(
                 if (current.preparationState != "PREPARING" || current.resolutionStatus != "PENDING" ||
                     current.processInstanceId != processInstanceId || current.inputDigest != input.inputDigest ||
                     current.activeCheckpointId != model.active.checkpointId || now >= current.labelDeadlineElapsedMs
+                    || opportunityContextGeneration != contextGeneration.get()
                 ) {
                     if (current.resolutionStatus == "PENDING") {
                         dao.censorPendingCas(current.decisionId, current.profileKey, "CENSORED_PREPARATION_STALE")
@@ -1407,7 +1614,9 @@ class BehaviorPredictionRuntime @Inject constructor(
                 )
                 val productProbabilities = productScopedProbabilities(effective, input.snapshot, preparing.profileKey)
                 scope.launch { prefetchCoordinator.consider(productProbabilities, activated.isPromotionHoldout, foreground) }
-                scope.launch { maybeOfferSuggestion(activated, effective) }
+                scope.launch {
+                    maybeOfferSuggestion(activated, effective, opportunityContextGeneration)
+                }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -1545,6 +1754,7 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     private suspend fun censorActive(reason: String) {
         val activeProfile = profileKey ?: return
+        cancelSuggestionDeliveryState(reason)
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         lock.withLock {
             dao.latestPending(activeProfile)?.let { pending ->
@@ -1558,17 +1768,34 @@ class BehaviorPredictionRuntime @Inject constructor(
         }
     }
 
-    private suspend fun maybeOfferSuggestion(pending: PendingPredictionEntity, effective: NextActionProbabilityVector) {
-        if (pending.isPromotionHoldout || _sensitiveUiVisible.value || !isSuggestionSurfaceAllowed(lastRoute) ||
-            !preferencesManager.personalizationEnabled.first()
-        ) return
-        val nowElapsed = SystemClock.elapsedRealtime()
-        if (!SuggestionPolicy.isDisplayIntervalElapsed(
-                lastShownElapsedMs = lastSuggestionElapsedMs,
-                nowElapsedMs = nowElapsed,
-                minimumIntervalMs = SUGGESTION_MIN_INTERVAL_MS
+    private suspend fun maybeOfferSuggestion(
+        pending: PendingPredictionEntity,
+        effective: NextActionProbabilityVector,
+        opportunityContextGeneration: Long
+    ) {
+        if (pending.isPromotionHoldout) {
+            updateDeliveryDiagnostics(
+                lane = activeTargetedContext
+                    ?.takeIf { it.decisionId == pending.decisionId }
+                    ?.let { SuggestionDeliveryLane.TARGETED },
+                offer = null,
+                rejectionReason = SuggestionDeliveryBlockReason.HOLDOUT.name
             )
-        ) return
+            return
+        }
+        val targetedContext = activeTargetedContext?.takeIf {
+            it.decisionId == pending.decisionId &&
+                it.contextGeneration == opportunityContextGeneration &&
+                it.contextGeneration == contextGeneration.get()
+        }
+        if (targetedContext != null) {
+            pendingSuggestionOffer?.takeIf {
+                it.decisionId == pending.decisionId &&
+                    it.contextGeneration == opportunityContextGeneration &&
+                    it.lane == SuggestionDeliveryLane.TARGETED
+            }?.let { attemptTargetedSuggestionOffer(it) }
+            return
+        }
         val snapshot = ContextSnapshotCodec.decode(pending.contextSnapshotJson)
         val candidateScope = ProductCandidateResolver.resolve(
             semantic = snapshot.semanticContext,
@@ -1601,11 +1828,298 @@ class BehaviorPredictionRuntime @Inject constructor(
             )
             return
         }
-        if (showSuggestion(proposal.decisionId, proposal.action, proposal.probability)) {
-            _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = null)
-        } else {
-            _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = "SURFACE_OR_SAFETY_GATE_REJECTED")
+        val lane = when (proposal.task) {
+            PredictionTask.JOURNEY_GOAL -> SuggestionDeliveryLane.ORDINARY_JOURNEY
+            PredictionTask.NEXT_ACTION -> SuggestionDeliveryLane.ORDINARY_NEXT_ACTION
+            PredictionTask.PRESET_RANKING -> return
         }
+        val offer = PendingSuggestionOffer(
+            decisionId = proposal.decisionId,
+            contextGeneration = opportunityContextGeneration,
+            lane = lane,
+            targetActions = setOf(proposal.action),
+            earliestDisplayElapsedMs = SystemClock.elapsedRealtime(),
+            deadlineElapsedMs = pending.labelDeadlineElapsedMs
+        )
+        if (!registerPendingOffer(offer)) {
+            updateDeliveryDiagnostics(
+                lane = lane,
+                offer = offer,
+                rejectionReason = "HIGHER_PRIORITY_OFFER_ACTIVE"
+            )
+            return
+        }
+        attemptSuggestionOffer(offer, pending, proposal.action, proposal.probability, allowRetry = false)
+    }
+
+    @Synchronized
+    private fun queueTargetedSuggestionOffer(offer: PendingSuggestionOffer) {
+        if (!foreground || !interactive || _sensitiveUiVisible.value ||
+            _suggestionOverlayBlocked.value || externalSuggestionHostBlocked ||
+            !isSuggestionSurfaceAllowed(lastRoute)
+        ) {
+            updateDeliveryDiagnostics(
+                SuggestionDeliveryLane.TARGETED,
+                null,
+                SuggestionDeliveryBlockReason.SAFETY_GATE.name
+            )
+            return
+        }
+        if (!registerPendingOffer(offer)) return
+        scheduleTargetedRetry(offer, offer.earliestDisplayElapsedMs, "TARGETED_SETTLE_OR_INTERVAL")
+    }
+
+    @Synchronized
+    private fun registerPendingOffer(offer: PendingSuggestionOffer): Boolean {
+        if (offer.contextGeneration != contextGeneration.get()) return false
+        val existing = pendingSuggestionOffer
+        if (existing != null && existing != offer &&
+            existing.contextGeneration == offer.contextGeneration &&
+            existing.lane.priority > offer.lane.priority
+        ) return false
+        pendingSuggestionOffer = offer
+        updateDeliveryDiagnostics(offer.lane, offer, null)
+        return true
+    }
+
+    @Synchronized
+    private fun clearPendingOfferIfCurrent(offer: PendingSuggestionOffer?) {
+        if (offer == null || pendingSuggestionOffer != offer) return
+        pendingSuggestionOffer = null
+        suggestionRetryGeneration.incrementAndGet()
+        suggestionRetryJob?.cancel()
+        suggestionRetryJob = null
+    }
+
+    @Synchronized
+    private fun cancelSuggestionRetry(reason: String) {
+        val offer = pendingSuggestionOffer
+        suggestionRetryGeneration.incrementAndGet()
+        suggestionRetryJob?.cancel()
+        suggestionRetryJob = null
+        if (_uiState.value == PredictionUiState.Hidden) {
+            pendingSuggestionOffer = null
+        }
+        updateDeliveryDiagnostics(offer?.lane, null, reason)
+    }
+
+    @Synchronized
+    private fun cancelSuggestionDeliveryState(reason: String) {
+        suggestionRetryGeneration.incrementAndGet()
+        suggestionRetryJob?.cancel()
+        suggestionRetryJob = null
+        pendingSuggestionOffer = null
+        activeTargetedContext = null
+        hideSuggestion()
+        updateDeliveryDiagnostics(null, null, reason)
+    }
+
+    @Synchronized
+    private fun hasActiveTargetedContext(nowElapsedMs: Long = SystemClock.elapsedRealtime()): Boolean {
+        val active = activeTargetedContext ?: return false
+        val valid = active.contextGeneration == contextGeneration.get() &&
+            nowElapsedMs < active.deadlineElapsedMs
+        if (!valid) {
+            activeTargetedContext = null
+            pendingSuggestionOffer?.takeIf { it.decisionId == active.decisionId }
+                ?.let(::clearPendingOfferIfCurrent)
+        }
+        return valid
+    }
+
+    @Synchronized
+    private fun scheduleTargetedRetry(
+        offer: PendingSuggestionOffer,
+        retryAtElapsedMs: Long,
+        reason: String
+    ) {
+        if (offer.lane != SuggestionDeliveryLane.TARGETED ||
+            offer.contextGeneration != contextGeneration.get()
+        ) return
+        val now = SystemClock.elapsedRealtime()
+        if (retryAtElapsedMs >= offer.deadlineElapsedMs || now >= offer.deadlineElapsedMs) {
+            clearPendingOfferIfCurrent(offer)
+            updateDeliveryDiagnostics(
+                SuggestionDeliveryLane.TARGETED,
+                null,
+                SuggestionDeliveryBlockReason.EXPIRED.name
+            )
+            return
+        }
+        val scheduled = offer.copy(earliestDisplayElapsedMs = maxOf(offer.earliestDisplayElapsedMs, retryAtElapsedMs))
+        pendingSuggestionOffer = scheduled
+        val retryGeneration = suggestionRetryGeneration.incrementAndGet()
+        suggestionRetryJob?.cancel()
+        suggestionRetryJob = scope.launch {
+            delay((scheduled.earliestDisplayElapsedMs - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
+            if (retryGeneration != suggestionRetryGeneration.get() ||
+                pendingSuggestionOffer != scheduled ||
+                scheduled.contextGeneration != contextGeneration.get()
+            ) return@launch
+            attemptTargetedSuggestionOffer(scheduled)
+        }
+        updateDeliveryDiagnostics(
+            SuggestionDeliveryLane.TARGETED,
+            scheduled,
+            reason.takeIf { scheduled.earliestDisplayElapsedMs > now }
+        )
+    }
+
+    private suspend fun attemptTargetedSuggestionOffer(offer: PendingSuggestionOffer) {
+        if (pendingSuggestionOffer != offer || offer.contextGeneration != contextGeneration.get()) return
+        val pending = dao.pending(offer.decisionId) ?: run {
+            clearPendingOfferIfCurrent(offer)
+            return
+        }
+        if (pending.resolutionStatus != "PENDING") {
+            clearPendingOfferIfCurrent(offer)
+            return
+        }
+        val availableTargets = offer.targetActions.filterTo(linkedSetOf()) { isActionAvailable(it, pending) }
+        if (availableTargets.isEmpty()) {
+            clearPendingOfferIfCurrent(offer)
+            updateDeliveryDiagnostics(
+                SuggestionDeliveryLane.TARGETED,
+                null,
+                "TARGETED_ACTION_UNAVAILABLE_OR_UNSAFE"
+            )
+            return
+        }
+        val selected = if (availableTargets.size == 1) {
+            availableTargets.single() to 1f
+        } else {
+            selectModelRankedTarget(pending, availableTargets)
+        }
+        if (selected == null) {
+            val retryAt = SystemClock.elapsedRealtime() + SuggestionPolicy.OCCUPIED_RETRY_DELAY_MS
+            scheduleTargetedRetry(offer, retryAt, "WAITING_FOR_MODEL_RANKING")
+            return
+        }
+        attemptSuggestionOffer(
+            offer = offer,
+            pending = pending,
+            action = selected.first,
+            probability = selected.second,
+            allowRetry = true
+        )
+    }
+
+    private suspend fun attemptSuggestionOffer(
+        offer: PendingSuggestionOffer,
+        pending: PendingPredictionEntity,
+        action: AppActionId,
+        probability: Float,
+        allowRetry: Boolean
+    ) {
+        if (pendingSuggestionOffer != offer ||
+            offer.contextGeneration != contextGeneration.get() ||
+            pending.decisionId != offer.decisionId
+        ) return
+        val currentSuggestion = _uiState.value as? PredictionUiState.Suggestion
+        if (currentSuggestion?.decisionId == offer.decisionId &&
+            currentSuggestion.contextGeneration == offer.contextGeneration
+        ) return
+        val now = SystemClock.elapsedRealtime()
+        val safetyAllowed = preferencesManager.personalizationEnabled.first() &&
+            foreground && interactive && !_sensitiveUiVisible.value &&
+            !_suggestionOverlayBlocked.value && !externalSuggestionHostBlocked &&
+            isSuggestionSurfaceAllowed(lastRoute)
+        val assessment = SuggestionPolicy.assessDelivery(
+            offer = offer,
+            currentGeneration = contextGeneration.get(),
+            nowElapsedMs = now,
+            lastTargetedShownElapsedMs = lastTargetedSuggestionElapsedMs,
+            lastOrdinaryShownElapsedMs = lastOrdinarySuggestionElapsedMs,
+            currentLane = currentSuggestion?.deliveryLane,
+            holdout = pending.isPromotionHoldout,
+            safetyAllowed = safetyAllowed,
+            entryAvailable = isActionAvailable(action, pending)
+        )
+        if (!assessment.canDisplay) {
+            if (allowRetry && assessment.retryAtElapsedMs != null) {
+                scheduleTargetedRetry(
+                    offer,
+                    assessment.retryAtElapsedMs,
+                    assessment.blockReason?.name ?: SuggestionDeliveryBlockReason.INTERVAL.name
+                )
+            } else {
+                clearPendingOfferIfCurrent(offer)
+                updateDeliveryDiagnostics(offer.lane, null, assessment.blockReason?.name)
+            }
+            return
+        }
+        if (currentSuggestion != null && offer.lane.priority > currentSuggestion.deliveryLane.priority) {
+            hideSuggestion()
+        }
+        if (showSuggestion(offer, action, probability)) {
+            updateDeliveryDiagnostics(offer.lane, offer, null)
+        } else if (allowRetry) {
+            scheduleTargetedRetry(
+                offer,
+                SystemClock.elapsedRealtime() + SuggestionPolicy.OCCUPIED_RETRY_DELAY_MS,
+                "SURFACE_TEMPORARILY_OCCUPIED"
+            )
+        } else {
+            clearPendingOfferIfCurrent(offer)
+            updateDeliveryDiagnostics(offer.lane, null, "SURFACE_OR_SAFETY_GATE_REJECTED")
+        }
+    }
+
+    private fun selectModelRankedTarget(
+        pending: PendingPredictionEntity,
+        allowedTargets: Set<AppActionId>
+    ): Pair<AppActionId, Float>? {
+        val stat = pending.statProbabilities?.let(BinaryCodec::floats) ?: return null
+        val tiny = pending.tinyProbabilities?.let(BinaryCodec::floats)
+        return allowedTargets.mapNotNull { action ->
+            val index = AppActionCatalog.outputIndex[action.stableId] ?: return@mapNotNull null
+            val probability = (1f - pending.mixedLambda) * stat.getOrElse(index) { 0f } +
+                pending.mixedLambda * (tiny?.getOrElse(index) { 0f } ?: stat.getOrElse(index) { 0f })
+            action to probability
+        }.maxWithOrNull(compareBy<Pair<AppActionId, Float>> { it.second }.thenBy { it.first.stableId })
+    }
+
+    private fun isActionAvailable(action: AppActionId, pending: PendingPredictionEntity): Boolean {
+        val spec = AppActionCatalog.spec(action)
+        if (!spec.suggestible || spec.sideEffect == SideEffect.TRANSACTION) return false
+        val index = AppActionCatalog.outputIndex[action.stableId] ?: return false
+        val pendingAvailability = BinaryCodec.booleans(pending.availabilityMask)
+        val currentAvailability = AppActionCatalog.businessAvailability(lastRoute)
+        return pendingAvailability.getOrElse(index) { false } &&
+            currentAvailability.getOrElse(index) { false }
+    }
+
+    private fun updateDeliveryDiagnostics(
+        lane: SuggestionDeliveryLane?,
+        offer: PendingSuggestionOffer?,
+        rejectionReason: String?
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        val activeTargets = offer?.targetActions ?: activeTargetedContext?.targetActions.orEmpty()
+        val remaining = offer?.let { (it.earliestDisplayElapsedMs - now).coerceAtLeast(0L) }
+            ?: lane?.let {
+                val earliest = SuggestionPolicy.earliestDisplayElapsedMs(
+                    lane = it,
+                    nowElapsedMs = now,
+                    lastTargetedShownElapsedMs = lastTargetedSuggestionElapsedMs,
+                    lastOrdinaryShownElapsedMs = lastOrdinarySuggestionElapsedMs
+                )
+                (earliest - now).coerceAtLeast(0L)
+            }
+            ?: 0L
+        _diagnostics.value = _diagnostics.value.copy(
+            suggestionDeliveryLane = lane?.name ?: "NONE",
+            contextGeneration = contextGeneration.get(),
+            suggestionIntervalRemainingMs = remaining,
+            suggestionRetryAtElapsedMs = offer?.earliestDisplayElapsedMs?.takeIf { it > now },
+            candidateScope = if (lane == SuggestionDeliveryLane.TARGETED) "TARGETED" else _diagnostics.value.candidateScope,
+            targetedActions = if (lane == SuggestionDeliveryLane.TARGETED || activeTargets.isNotEmpty()) {
+                activeTargets.map(AppActionId::stableId).toSet()
+            } else {
+                _diagnostics.value.targetedActions
+            },
+            candidateRejectionReason = rejectionReason
+        )
     }
 
     private suspend fun productScopedProbabilities(
@@ -1884,6 +2398,14 @@ class BehaviorPredictionRuntime @Inject constructor(
         val holdout: Boolean
     )
 
+    private data class ActiveTargetedContext(
+        val decisionId: String,
+        val contextGeneration: Long,
+        val deadlineElapsedMs: Long,
+        val changeSetId: String,
+        val targetActions: Set<AppActionId>
+    )
+
     private companion object {
         const val LABEL_WINDOW_POLICY_VERSION = 1
         const val CONTEXT_DEBOUNCE_MS = 30_000L
@@ -1893,7 +2415,8 @@ class BehaviorPredictionRuntime @Inject constructor(
         const val DEADLINE_RACE_GRACE_MS = 250L
         const val HOLDOUT_PERCENT = 15
         const val CANDIDATE_HOLDOUT_PERCENT = 20
-        const val SUGGESTION_MIN_INTERVAL_MS = 30_000L
+        const val TARGETED_CHANGE_SETTLE_MS =
+            SEMANTIC_CHANGE_SET_WINDOW_MS + SuggestionPolicy.OCCUPIED_RETRY_DELAY_MS
         const val SUGGESTION_VISIBLE_TTL_MS = 12_000L
         const val TRAINING_IDLE_GRACE_MS = 1_500L
         const val MAX_BEHAVIOR_EVENTS = 20_000

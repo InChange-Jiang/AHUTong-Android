@@ -223,8 +223,8 @@ object ProductCandidateResolver {
         content: ContentContext?,
         route: String?
     ): ProductCandidateScope {
-        contentErrorTarget(content)?.let { return ProductCandidateScope.Targeted(setOf(it)) }
         if (semantic == null) {
+            contentErrorTarget(content)?.let { return targeted(it) }
             return if (content == null) ProductCandidateScope.Ordinary else ProductCandidateScope.Suppress
         }
         return when {
@@ -245,7 +245,7 @@ object ProductCandidateResolver {
                 val bucket = semantic.semanticId.removePrefix("${MutationId.HOME_WIDGET_ADDED.name}_")
                 AffectedActionCatalog.affectedActions(MutationId.HOME_WIDGET_ADDED, bucket)
                     .singleOrNull()
-                    ?.let(::targeted)
+                    ?.let { targeted(it) }
                     ?: ProductCandidateScope.Suppress
             }
             else -> ProductCandidateScope.Suppress
@@ -262,8 +262,11 @@ object ProductCandidateResolver {
         }
     }
 
-    private fun targeted(action: AppActionId): ProductCandidateScope =
-        ProductCandidateScope.Targeted(setOf(action))
+    private fun targeted(vararg actions: AppActionId): ProductCandidateScope {
+        val candidates = actions.toSet()
+        require(candidates.size == 1) { "An explicit semantic mapping must resolve to exactly one action" }
+        return ProductCandidateScope.Targeted(candidates)
+    }
 }
 
 @Singleton

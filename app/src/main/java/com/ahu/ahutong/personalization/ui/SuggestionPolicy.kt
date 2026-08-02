@@ -10,7 +10,43 @@ internal data class SuggestionCandidate(
     val probability: Float
 )
 
+enum class SuggestionDeliveryLane(val priority: Int) {
+    TARGETED(3),
+    ORDINARY_JOURNEY(2),
+    ORDINARY_NEXT_ACTION(1)
+}
+
+data class PendingSuggestionOffer(
+    val decisionId: String,
+    val contextGeneration: Long,
+    val lane: SuggestionDeliveryLane,
+    val targetActions: Set<AppActionId>,
+    val earliestDisplayElapsedMs: Long,
+    val deadlineElapsedMs: Long
+)
+
+internal enum class SuggestionDeliveryBlockReason {
+    STALE_GENERATION,
+    HOLDOUT,
+    EXPIRED,
+    SAFETY_GATE,
+    ENTRY_UNAVAILABLE,
+    EMPTY_TARGETS,
+    INTERVAL,
+    OCCUPIED
+}
+
+internal data class SuggestionDeliveryAssessment(
+    val canDisplay: Boolean,
+    val retryAtElapsedMs: Long? = null,
+    val blockReason: SuggestionDeliveryBlockReason? = null
+)
+
 internal object SuggestionPolicy {
+    const val TARGETED_MIN_INTERVAL_MS = 10_000L
+    const val ORDINARY_MIN_INTERVAL_MS = 30_000L
+    const val OCCUPIED_RETRY_DELAY_MS = 250L
+
     fun remainingVisibilityFraction(
         shownAtElapsedMs: Long,
         expiresAtElapsedMs: Long,
@@ -32,6 +68,99 @@ internal object SuggestionPolicy {
         return nowElapsedMs >= lastShownElapsedMs &&
             nowElapsedMs - lastShownElapsedMs >= minimumIntervalMs
     }
+
+    fun minimumIntervalMillis(lane: SuggestionDeliveryLane): Long = when (lane) {
+        SuggestionDeliveryLane.TARGETED -> TARGETED_MIN_INTERVAL_MS
+        SuggestionDeliveryLane.ORDINARY_JOURNEY,
+        SuggestionDeliveryLane.ORDINARY_NEXT_ACTION -> ORDINARY_MIN_INTERVAL_MS
+    }
+
+    fun earliestDisplayElapsedMs(
+        lane: SuggestionDeliveryLane,
+        nowElapsedMs: Long,
+        lastTargetedShownElapsedMs: Long,
+        lastOrdinaryShownElapsedMs: Long
+    ): Long {
+        val lastShown = when (lane) {
+            SuggestionDeliveryLane.TARGETED -> lastTargetedShownElapsedMs
+            SuggestionDeliveryLane.ORDINARY_JOURNEY,
+            SuggestionDeliveryLane.ORDINARY_NEXT_ACTION -> lastOrdinaryShownElapsedMs
+        }
+        if (lastShown == 0L || nowElapsedMs < lastShown) return nowElapsedMs
+        return maxOf(nowElapsedMs, lastShown + minimumIntervalMillis(lane))
+    }
+
+    fun assessDelivery(
+        offer: PendingSuggestionOffer,
+        currentGeneration: Long,
+        nowElapsedMs: Long,
+        lastTargetedShownElapsedMs: Long,
+        lastOrdinaryShownElapsedMs: Long,
+        currentLane: SuggestionDeliveryLane?,
+        holdout: Boolean,
+        safetyAllowed: Boolean,
+        entryAvailable: Boolean
+    ): SuggestionDeliveryAssessment {
+        if (offer.contextGeneration != currentGeneration) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.STALE_GENERATION)
+        }
+        if (nowElapsedMs >= offer.deadlineElapsedMs) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.EXPIRED)
+        }
+        if (holdout) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.HOLDOUT)
+        }
+        if (!safetyAllowed) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.SAFETY_GATE)
+        }
+        if (!entryAvailable) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.ENTRY_UNAVAILABLE)
+        }
+        if (offer.targetActions.isEmpty()) {
+            return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.EMPTY_TARGETS)
+        }
+
+        val intervalAt = maxOf(
+            offer.earliestDisplayElapsedMs,
+            earliestDisplayElapsedMs(
+                offer.lane,
+                nowElapsedMs,
+                lastTargetedShownElapsedMs,
+                lastOrdinaryShownElapsedMs
+            )
+        )
+        val occupiedAt = currentLane?.takeIf { it.priority >= offer.lane.priority }
+            ?.let { nowElapsedMs + OCCUPIED_RETRY_DELAY_MS }
+            ?: nowElapsedMs
+        val retryAt = maxOf(intervalAt, occupiedAt)
+        if (retryAt > nowElapsedMs) {
+            return if (retryAt < offer.deadlineElapsedMs) {
+                SuggestionDeliveryAssessment(
+                    canDisplay = false,
+                    retryAtElapsedMs = retryAt,
+                    blockReason = if (occupiedAt > nowElapsedMs) {
+                        SuggestionDeliveryBlockReason.OCCUPIED
+                    } else {
+                        SuggestionDeliveryBlockReason.INTERVAL
+                    }
+                )
+            } else {
+                SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.EXPIRED)
+            }
+        }
+        return SuggestionDeliveryAssessment(canDisplay = true)
+    }
+
+    fun canConfirmExposure(
+        offer: PendingSuggestionOffer?,
+        decisionId: String,
+        contextGeneration: Long,
+        currentGeneration: Long,
+        enteredVisiblePopup: Boolean
+    ): Boolean = enteredVisiblePopup && offer != null &&
+        offer.decisionId == decisionId &&
+        offer.contextGeneration == contextGeneration &&
+        contextGeneration == currentGeneration
 
     fun rankedCandidates(
         prediction: NextActionProbabilityVector,

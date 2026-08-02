@@ -187,6 +187,32 @@ class SemanticEventRecorderTest {
         )
     }
 
+    @Test
+    fun passiveWeatherContentCannotOverrideActiveHomeSettingScope() {
+        val ready = ContentContext(
+            SemanticDomain.WEATHER,
+            ContentStateBucket.READY,
+            freshnessBucket = 0,
+            resultCount = ResultCountBucket.ONE_TO_FIVE,
+            errorType = ErrorTypeBucket.NONE
+        )
+        val error = ready.copy(
+            state = ContentStateBucket.ERROR,
+            resultCount = ResultCountBucket.ZERO,
+            errorType = ErrorTypeBucket.NETWORK
+        )
+        val setting = context(MutationId.WEATHER_HOME_CONFIG_CHANGED)
+
+        assertEquals(
+            ProductCandidateScope.Targeted(setOf(AppActionId.OPEN_HOME)),
+            ProductCandidateResolver.resolve(setting, ready, "weather")
+        )
+        assertEquals(
+            ProductCandidateScope.Targeted(setOf(AppActionId.OPEN_HOME)),
+            ProductCandidateResolver.resolve(setting, error, "weather")
+        )
+    }
+
     private fun context(mutationId: MutationId) = context(mutationId.name)
 
     private fun context(

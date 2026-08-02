@@ -267,6 +267,18 @@ private fun DiagnosticsScreen(
         item {
             DiagnosticsSection(title = "针对性语义事件") {
                 LabeledValue("候选域", state.candidateScope, monospace = true)
+                LabeledValue("投递通道", state.suggestionDeliveryLane, monospace = true)
+                LabeledValue("上下文代次", state.contextGeneration.toString(), monospace = true)
+                LabeledValue(
+                    "剩余展示间隔",
+                    "${state.suggestionIntervalRemainingMs}ms",
+                    monospace = true
+                )
+                LabeledValue(
+                    "计划重试时间",
+                    state.suggestionRetryAtElapsedMs?.let { "$it elapsed-ms" } ?: "--",
+                    monospace = true
+                )
                 LabeledValue(
                     "定向动作",
                     state.targetedActions.sorted().joinToString().ifBlank { "--" },

@@ -78,7 +78,7 @@ fun SmartSuggestionHost(
 ) {
     val state by runtime.uiState.collectAsState()
     LaunchedEffect(blocked) {
-        if (blocked) runtime.hideSuggestion()
+        runtime.setSuggestionHostBlocked(blocked)
     }
     if (blocked) return
     val suggestion = state as? PredictionUiState.Suggestion ?: return

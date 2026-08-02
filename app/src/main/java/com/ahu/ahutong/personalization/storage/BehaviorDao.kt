@@ -57,14 +57,27 @@ abstract class BehaviorDao {
         interventionState: String
     ): Int
 
+    @Query("UPDATE pending_prediction SET interventionState = :interventionState, resolutionStatus = 'INVALIDATED_INTERVENTION_PREPARED' WHERE decisionId = :decisionId AND profileKey = :profileKey AND resolutionStatus = 'PENDING' AND preparationState IN ('PREPARING', 'PENDING') AND interventionState IN ('NONE', 'TAINTED_CHAIN')")
+    abstract suspend fun prepareEarlyTargetedInterventionCas(
+        decisionId: String,
+        profileKey: String,
+        interventionState: String
+    ): Int
+
     @Transaction
     open suspend fun prepareProductExecution(
         decisionId: String,
         profileKey: String,
         interventionState: String,
-        lease: ProductExecutionLeaseEntity
+        lease: ProductExecutionLeaseEntity,
+        allowPreparing: Boolean = false
     ): Boolean {
-        if (prepareInterventionCas(decisionId, profileKey, interventionState) != 1) return false
+        val prepared = if (allowPreparing) {
+            prepareEarlyTargetedInterventionCas(decisionId, profileKey, interventionState)
+        } else {
+            prepareInterventionCas(decisionId, profileKey, interventionState)
+        }
+        if (prepared != 1) return false
         insertLease(lease)
         return true
     }

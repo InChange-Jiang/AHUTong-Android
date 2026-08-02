@@ -2,6 +2,7 @@ package com.ahu.ahutong.personalization
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.os.SystemClock
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -9,8 +10,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ahu.ahutong.personalization.storage.BehaviorDatabase
 import com.ahu.ahutong.personalization.storage.BehaviorDatabaseFactory
 import com.ahu.ahutong.personalization.storage.BehaviorDatabaseFiles
+import com.ahu.ahutong.personalization.storage.PendingPredictionEntity
+import com.ahu.ahutong.personalization.storage.ProductExecutionLeaseEntity
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -122,6 +127,104 @@ class BehaviorDatabaseRollbackCompatibilityTest {
                 assertTrue(cursor.moveToFirst())
                 assertEquals(1, cursor.getInt(0))
             }
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun targetedInterventionCanAtomicallyClaimAStillPreparingOpportunity() = runBlocking {
+        cleanUp()
+        val database = BehaviorDatabaseFactory.open(context)
+        try {
+            val now = SystemClock.elapsedRealtime()
+            val pending = PendingPredictionEntity(
+                decisionId = "targeted-preparing",
+                profileKey = "profile",
+                sessionId = "session",
+                processInstanceId = "process",
+                sequenceNo = 1L,
+                triggerEventId = "event",
+                previousAction = null,
+                createdAtEpochMs = System.currentTimeMillis(),
+                createdAtElapsedMs = now,
+                labelDeadlineElapsedMs = now + 60_000L,
+                labelWindowPolicyVersion = 1,
+                featureSchemaVersion = 1,
+                outputSchemaVersion = 1,
+                actionCatalogVersion = 1,
+                features = byteArrayOf(),
+                availabilityMask = byteArrayOf(),
+                inputDigest = "digest",
+                contextSnapshotJson = "{}",
+                preparationState = "PREPARING",
+                preparationFailure = null,
+                statProbabilities = null,
+                tinyProbabilities = null,
+                recentBaselineProbabilities = null,
+                timeBaselineProbabilities = null,
+                statModelVersion = null,
+                tinyModelVersion = null,
+                activeCheckpointId = "active",
+                activeCheckpointChecksum = "checksum",
+                candidateCheckpointId = null,
+                candidateCheckpointChecksum = null,
+                candidateProbabilities = null,
+                candidateInferenceNanos = null,
+                statInferenceNanos = null,
+                tinyInferenceNanos = null,
+                promotionStageAtDecision = "SHADOW",
+                effectiveDecisionTierAtDecision = "STAT_ONLY",
+                mixedLambda = 0f,
+                isPromotionHoldout = false,
+                interventionState = "NONE",
+                resolutionStatus = "PENDING",
+                finalOrganicTarget = null,
+                resolvedByEventId = null
+            )
+            database.behaviorDao().insertPending(pending)
+            val lease = ProductExecutionLeaseEntity(
+                executionId = "execution",
+                decisionId = pending.decisionId,
+                profileKey = pending.profileKey,
+                sessionId = pending.sessionId,
+                processInstanceId = pending.processInstanceId,
+                actionId = "OPEN_HOME",
+                interventionType = "SUGGESTION_TARGETED",
+                source = "SUGGESTION",
+                route = "home",
+                profileGeneration = 1L,
+                loginGeneration = 1L,
+                preparedAtSequenceNo = pending.sequenceNo,
+                executionEpoch = 1L,
+                createdAtElapsedMs = now,
+                expiresAtElapsedMs = now + 10_000L,
+                state = "PREPARED"
+            )
+
+            assertFalse(
+                database.behaviorDao().prepareProductExecution(
+                    pending.decisionId,
+                    pending.profileKey,
+                    "PREPARED_SUGGESTION",
+                    lease,
+                    allowPreparing = false
+                )
+            )
+            assertTrue(
+                database.behaviorDao().prepareProductExecution(
+                    pending.decisionId,
+                    pending.profileKey,
+                    "PREPARED_SUGGESTION_TARGETED",
+                    lease,
+                    allowPreparing = true
+                )
+            )
+            assertEquals(
+                "INVALIDATED_INTERVENTION_PREPARED",
+                database.behaviorDao().pending(pending.decisionId)?.resolutionStatus
+            )
+            assertEquals("PREPARED", database.behaviorDao().lease(lease.executionId)?.state)
         } finally {
             database.close()
         }

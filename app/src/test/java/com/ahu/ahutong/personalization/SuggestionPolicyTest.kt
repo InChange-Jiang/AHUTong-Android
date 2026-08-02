@@ -165,27 +165,26 @@ class SuggestionPolicyTest {
             ?.groupValues
             ?.get(1)
             .orEmpty()
-        assertEquals("hideSuggestion()", dismissBody.trim())
+        assertTrue(dismissBody.contains("cancelSuggestionDeliveryState"))
         assertTrue(
             Regex("acceptSuggestion[\\s\\S]*?recordActionIntent\\([\\s\\S]*?deferNextOpportunity = true")
                 .containsMatchIn(runtime)
         )
-        assertTrue(runtime.contains("SUGGESTION_MIN_INTERVAL_MS = 30_000L"))
+        assertTrue(runtime.contains("TARGETED_CHANGE_SETTLE_MS"))
+        assertTrue(runtime.contains("SuggestionDeliveryLane.TARGETED"))
         val showBody = Regex("suspend fun showSuggestion[\\s\\S]*?\\n    }\\n\\n    suspend fun confirmSuggestionVisible")
             .find(runtime)
             ?.value
             .orEmpty()
         assertFalse(showBody.contains("consumeIntervention"))
         assertTrue(
-            Regex("confirmSuggestionVisible[\\s\\S]*?consumeIntervention[\\s\\S]*?lastSuggestionElapsedMs = shownAtElapsedMs")
+            Regex("confirmSuggestionVisible[\\s\\S]*?consumeIntervention[\\s\\S]*?lastOrdinarySuggestionElapsedMs = shownAtElapsedMs")
                 .containsMatchIn(runtime)
         )
         assertTrue(runtime.contains("fun setInlineSensitiveUiVisible(visible: Boolean)"))
-        assertTrue(
-            Regex("confirmSuggestionVisible[\\s\\S]*?if \\(!foreground \\|\\| !interactive \\|\\| _suggestionOverlayBlocked.value")
-                .containsMatchIn(runtime)
-        )
+        assertTrue(runtime.contains("!foreground || !interactive || _suggestionOverlayBlocked.value"))
         assertTrue(main.contains("suggestionOverlayBlocked"))
+        assertTrue(host.contains("runtime.setSuggestionHostBlocked(blocked)"))
         assertFalse(main.contains("isReLoginShown || sensitiveUiVisible || imeVisible"))
         assertTrue(runtime.contains("fun pauseSuggestionVisibility(executionId: String)"))
         assertTrue(runtime.contains("fun restartSuggestionVisibility(executionId: String)"))

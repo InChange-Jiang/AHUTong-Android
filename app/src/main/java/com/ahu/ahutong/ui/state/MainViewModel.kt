@@ -156,6 +156,11 @@ class MainViewModel : ViewModel() {
      * 全部在 IO 线程执行，不阻塞主线程
      */
     suspend fun checkApkUpdate(context: Context) = withContext(Dispatchers.IO) {
+        if (BuildConfig.DEBUG) {
+            Log.i("ApkUpdate", "startup update check disabled for debug build")
+            return@withContext
+        }
+
         val dir = context.getExternalFilesDir(null) ?: context.filesDir
 
         // 1. 清理版本号 <= 当前版本的残留 APK（安全校验文件名）

@@ -2,6 +2,7 @@ package com.ahu.ahutong.sdk
 
 import android.content.Context
 import android.util.Log
+import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.model.Card
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.model.User
@@ -89,6 +90,14 @@ object RustSDK {
 
             Log.d(TAG_HOTUPDATE, "Checking custom lib at: ${customLib.absolutePath}, exists: ${customLib.exists()}")
 
+            if (BuildConfig.DEBUG && customLib.exists()) {
+                if (customLib.delete()) {
+                    Log.i(TAG_HOTUPDATE, "removed cached hot-update library for debug build")
+                } else {
+                    Log.w(TAG_HOTUPDATE, "failed to remove cached hot-update library for debug build")
+                }
+            }
+
             if (currentVersionCode > lastVersionCode) {
                 Log.i(TAG_HOTUPDATE, "App updated ($lastVersionCode -> $currentVersionCode), clearing hotUpdate libs")
                 if (customLib.exists()) {
@@ -97,7 +106,7 @@ object RustSDK {
                 prefs.edit {putLong("app_version_code", currentVersionCode)}
             }
 
-            if (customLib.exists()) {
+            if (!BuildConfig.DEBUG && customLib.exists()) {
                 try {
                     // 尝试预加载 C++ 运行时，防止热更新 SO 找不到依赖
                     try { System.loadLibrary("c++_shared") } catch (e: Throwable) { Log.w(TAG_HOTUPDATE, "Failed to load c++_shared: ${e.message}") }
@@ -139,6 +148,12 @@ object RustSDK {
         onSuccess: (() -> Unit)? = null,
         onFinished: (() -> Unit)? = null
     ) {
+        if (BuildConfig.DEBUG) {
+            Log.i(TAG_HOTUPDATE, "native hot update check disabled for debug build")
+            onFinished?.invoke()
+            return
+        }
+
         if (!android.os.Process.is64Bit()) {
             Log.w(TAG_HOTUPDATE, "current device is not a 64-bit environment, skip the hotUpdate")
             onFinished?.invoke()

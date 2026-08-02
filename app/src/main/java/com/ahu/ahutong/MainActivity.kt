@@ -46,6 +46,9 @@ import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.action.ActionSource
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.coroutines.delay
+
+private const val DEBUG_BUILD_NOTICE_DURATION_MS = 3_000L
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -152,6 +155,8 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+        showDebugBuildNotice(savedInstanceState)
     }
 
     private fun init() {
@@ -160,8 +165,10 @@ class MainActivity : ComponentActivity() {
                 AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let { behaviorRuntime.startProfile(it) }
             }
         }
-        lifecycleScope.launchSafe {
-            mainViewModel.checkApkUpdate(this@MainActivity)
+        if (!BuildConfig.DEBUG) {
+            lifecycleScope.launchSafe {
+                mainViewModel.checkApkUpdate(this@MainActivity)
+            }
         }
         WidgetUpdateScheduler.scheduleNext(this@MainActivity)
 
@@ -203,6 +210,22 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         if (intent.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
     }
+
+    private fun showDebugBuildNotice(savedInstanceState: Bundle?) {
+        if (!BuildConfig.DEBUG || savedInstanceState != null) return
+
+        val toast = Toast.makeText(
+            this,
+            R.string.debug_build_notice,
+            Toast.LENGTH_LONG
+        )
+        toast.show()
+        lifecycleScope.launchSafe {
+            delay(DEBUG_BUILD_NOTICE_DURATION_MS)
+            toast.cancel()
+        }
+    }
+
 //    private fun checkApkUpdateOnStartup() {
 //        Log.i("ApkUpdate", "start checkApkUpdateOnStartup")
 //

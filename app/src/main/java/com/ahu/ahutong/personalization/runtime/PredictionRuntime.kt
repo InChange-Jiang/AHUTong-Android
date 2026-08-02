@@ -19,6 +19,25 @@ import com.ahu.ahutong.personalization.context.DayType
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
 import com.ahu.ahutong.personalization.context.FeatureExtractor
 import com.ahu.ahutong.personalization.context.PredictionInput
+import com.ahu.ahutong.personalization.journey.JourneyPredictionEngine
+import com.ahu.ahutong.personalization.preset.PresetCandidate
+import com.ahu.ahutong.personalization.preset.AppliedPreset
+import com.ahu.ahutong.personalization.preset.PresetInteractionToken
+import com.ahu.ahutong.personalization.preset.PresetRankingEngine
+import com.ahu.ahutong.personalization.preset.PresetSubmission
+import com.ahu.ahutong.personalization.semantic.CommittedMutation
+import com.ahu.ahutong.personalization.semantic.ContentContext
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.MutationId
+import com.ahu.ahutong.personalization.semantic.NormalizedSemanticEvent
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.ProductCandidateResolver
+import com.ahu.ahutong.personalization.semantic.ProductCandidateScope
+import com.ahu.ahutong.personalization.semantic.SemanticContext
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import com.ahu.ahutong.personalization.semantic.SemanticEventFamily
+import com.ahu.ahutong.personalization.semantic.SemanticEventRecorder
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import com.ahu.ahutong.personalization.evaluation.ShadowModelEvaluator
 import com.ahu.ahutong.personalization.inference.DecayedFrequencyPredictor
@@ -40,6 +59,8 @@ import com.ahu.ahutong.personalization.storage.BinaryCodec
 import com.ahu.ahutong.personalization.storage.LearningStateEntity
 import com.ahu.ahutong.personalization.storage.PendingPredictionEntity
 import com.ahu.ahutong.personalization.storage.ProductExecutionLeaseEntity
+import com.ahu.ahutong.personalization.storage.SemanticChangeSetEntity
+import com.ahu.ahutong.personalization.storage.SemanticEventEntity
 import com.ahu.ahutong.personalization.storage.transaction
 import com.ahu.ahutong.personalization.training.OnDeviceTrainer
 import com.ahu.ahutong.personalization.training.OrganicTrainingSample
@@ -47,6 +68,10 @@ import com.ahu.ahutong.personalization.training.TrainingSliceResult
 import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
+import com.ahu.ahutong.personalization.ui.ActionPredictionProposal
+import com.ahu.ahutong.personalization.ui.ArbitratedPrediction
+import com.ahu.ahutong.personalization.ui.PredictionArbiter
+import com.ahu.ahutong.personalization.ui.PredictionTask
 import com.ahu.ahutong.data.dao.PreferencesManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.EntryPoint
@@ -83,7 +108,8 @@ import kotlinx.coroutines.sync.withLock
 enum class OpportunityTrigger(val labelWindowMillis: Long) {
     STABLE_FOREGROUND(120_000L),
     ACTION_INTENT_ACCEPTED(60_000L),
-    BUSINESS_CONTEXT_CHANGED(60_000L)
+    BUSINESS_CONTEXT_CHANGED(60_000L),
+    SEMANTIC_MUTATION_COMMITTED(60_000L)
 }
 
 enum class ConfidenceBucket { LOW, MEDIUM, HIGH }
@@ -118,6 +144,9 @@ data class RuntimeDiagnosticsState(
     val statProbabilities: Map<String, Float> = emptyMap(),
     val tinyProbabilities: Map<String, Float> = emptyMap(),
     val effectiveProbabilities: Map<String, Float> = emptyMap(),
+    val candidateScope: String = "ORDINARY",
+    val targetedActions: Set<String> = emptySet(),
+    val candidateRejectionReason: String? = null,
     val lastResolution: String? = null,
     val lastFailure: String? = null,
     val lastTraining: TrainingSliceResult? = null
@@ -135,7 +164,16 @@ data class SanitizedDiagnosticsSnapshot(
     val modelSizeBytes: Long = 0,
     val promotionWindows: List<String> = emptyList(),
     val recentTimeline: List<String> = emptyList(),
-    val pendingTelemetryReports: Int = 0
+    val pendingTelemetryReports: Int = 0,
+    val recentSemanticEvents: List<String> = emptyList(),
+    val recentSemanticChangeSets: List<String> = emptyList(),
+    val pendingJourney: String? = null,
+    val journeyProbabilities: List<String> = emptyList(),
+    val presetCandidates: List<String> = emptyList(),
+    val journeyTrainingSamples: Int = 0,
+    val presetTrainingSamples: Int = 0,
+    val presetFeedbackDiagnostics: List<String> = emptyList(),
+    val taskStates: List<String> = emptyList()
 )
 
 @Singleton
@@ -157,7 +195,10 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val paymentQrRepository: PaymentQrRepository,
     private val paymentQrCommands: PaymentQrOpenCommandStore,
     private val telemetryManager: ModelQualityTelemetryManager,
-    private val telemetryAggregateStore: TelemetryAggregateStore
+    private val telemetryAggregateStore: TelemetryAggregateStore,
+    private val semanticEventRecorder: SemanticEventRecorder,
+    private val journeyEngine: JourneyPredictionEngine,
+    private val presetRankingEngine: PresetRankingEngine
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val processInstanceId = UUID.randomUUID().toString()
@@ -204,6 +245,10 @@ class BehaviorPredictionRuntime @Inject constructor(
     @Volatile private var taintedChain = false
     @Volatile private var suppressedRoute: String? = null
     @Volatile private var nextNavigationSource: ActionSource? = null
+    @Volatile private var latestSemanticContext: SemanticContext? = null
+    @Volatile private var latestSemanticOccurredElapsedMs: Long = 0L
+    @Volatile private var latestContentContext: ContentContext? = null
+    @Volatile private var latestAffectedCandidateCount: Int = 0
 
     suspend fun startProfile(accountIdentifier: String) = profileLifecycleMutex.withLock {
         startProfileLocked(accountIdentifier)
@@ -229,6 +274,10 @@ class BehaviorPredictionRuntime @Inject constructor(
         recentActions.clear()
         recentActionSources.clear()
         organicActionHistory.clear()
+        latestSemanticContext = null
+        latestSemanticOccurredElapsedMs = 0L
+        latestContentContext = null
+        latestAffectedCandidateCount = 0
         dao.recentEvents(nextProfile, 64).asReversed()
             .filter { it.eventType == "ACTION_INTENT_ACCEPTED" }
             .forEach { stored ->
@@ -245,9 +294,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         taintedChain = false
         dao.censorPendingWithExistingResolutionEvent(nextProfile)
         dao.censorStaleProcessPending(nextProfile, processInstanceId)
+        dao.recoverPreparedSemanticChangeSets(nextProfile)
+        journeyEngine.recoverProfile(nextProfile, processInstanceId)
         modelStateStore.loadOrCreate(nextProfile)
         val promotion = promotionManager.snapshot(nextProfile)
         trainer.resumeProfile(nextProfile)
+        presetRankingEngine.resumeProfile(nextProfile)
         val onboardingChoice = preferencesManager.modelQualityTelemetryOnboardingChoice.first()
         val profileTelemetryEnabled = telemetryManager.isConsentEnabled(nextProfile)
         when {
@@ -290,6 +342,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         _diagnostics.value = _diagnostics.value.copy(foreground = value)
         if (!value || !isInteractive) {
             scope.launch { censorActive("CENSORED_BACKGROUND") }
+            profileKey?.let { activeProfile -> scope.launch { journeyEngine.censorProfile(activeProfile, "CENSORED_BACKGROUND") } }
             scope.launch { prefetchCoordinator.cancelAll() }
             profileKey?.let { activeProfile -> scope.launch { trainer.cancelProfile(activeProfile) } }
             hideSuggestion()
@@ -350,6 +403,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         val spec = AppActionCatalog.spec(action)
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
         var deferredOpportunity: RecordedActionOpportunity? = null
+        var journeyObservation: JourneyActionObservation? = null
         lock.withLock {
             if (!profileReady || profileKey != activeProfile || sessionId != activeSession) return@withLock
             val elapsed = SystemClock.elapsedRealtime()
@@ -372,6 +426,7 @@ class BehaviorPredictionRuntime @Inject constructor(
                     currentPending?.decisionId
                 )
             )
+            journeyObservation = JourneyActionObservation(activeProfile, activeSession, action, source, eventId, elapsed)
             if (currentPending != null) {
                 when {
                     currentPending.preparationState == "PREPARING" ->
@@ -437,6 +492,12 @@ class BehaviorPredictionRuntime @Inject constructor(
                 organicActionHistory.addLast(action)
                 while (organicActionHistory.size > 64) organicActionHistory.removeFirst()
             }
+            // Semantic/content scopes are single-opportunity product constraints. The immutable
+            // pending rows keep their full context for labels and journey evaluation.
+            latestSemanticContext = null
+            latestSemanticOccurredElapsedMs = 0L
+            latestContentContext = null
+            latestAffectedCandidateCount = 0
             // Product-directed/deep-link/restore actions may continue product prediction, but the
             // opportunity is TAINTED_CHAIN and can never train, evaluate, or promote a model.
             // The next independent organic action starts a clean opportunity after acting only as an anchor.
@@ -453,6 +514,16 @@ class BehaviorPredictionRuntime @Inject constructor(
                     createOpportunityLocked(OpportunityTrigger.ACTION_INTENT_ACCEPTED, action, eventId, sequenceNo)
                 }
             }
+        }
+        journeyObservation?.let { observation ->
+            journeyEngine.onAction(
+                observation.profileKey,
+                observation.sessionId,
+                observation.action,
+                observation.source,
+                observation.eventId,
+                observation.elapsedMs
+            )
         }
         deferredOpportunity?.let(::scheduleRecordedActionOpportunity)
     }
@@ -490,6 +561,242 @@ class BehaviorPredictionRuntime @Inject constructor(
         scope.launch {
             censorActive("CENSORED_CONTEXT_CHANGED")
             createOpportunity(OpportunityTrigger.BUSINESS_CONTEXT_CHANGED, lastAction)
+        }
+    }
+
+    suspend fun recordCommittedMutation(
+        mutationId: MutationId,
+        oldValue: Any?,
+        newValue: Any?,
+        source: ActionSource = ActionSource.ORGANIC,
+        coarseValueBucket: String? = null,
+        domainOverride: SemanticDomain? = null,
+        familyOverride: SemanticEventFamily? = null
+    ): Boolean {
+        if (!profileReady) return false
+        val activeProfile = profileKey ?: return false
+        val activeSession = sessionId ?: return false
+        val nowElapsed = SystemClock.elapsedRealtime()
+        val normalized = semanticEventRecorder.normalize(
+            CommittedMutation(
+                mutationId = mutationId,
+                oldValue = oldValue,
+                newValue = newValue,
+                source = source,
+                route = lastRoute,
+                domainOverride = domainOverride,
+                coarseValueBucket = coarseValueBucket,
+                familyOverride = familyOverride,
+                committedAtEpochDay = LocalDate.now(ZoneOffset.UTC).toEpochDay(),
+                occurredAtElapsedMs = nowElapsed,
+                tainted = taintedChain
+            )
+        ) ?: return false
+        var journeyStart: JourneyStartRequest? = null
+        val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
+        lock.withLock {
+            if (!profileReady || profileKey != activeProfile || sessionId != activeSession) return false
+            val existingSet = dao.mergeableSemanticChangeSet(
+                activeProfile,
+                activeSession,
+                normalized.route,
+                nowElapsed - SEMANTIC_CHANGE_SET_WINDOW_MS
+            )
+            val changeSet = mergeChangeSet(activeProfile, activeSession, normalized, existingSet)
+            val sequenceNo = sequence.incrementAndGet()
+            database.transaction {
+                dao.latestPending(activeProfile)?.let { pending ->
+                    dao.censorPendingCas(pending.decisionId, activeProfile, "CENSORED_SEMANTIC_CONTEXT_CHANGED", normalized.eventId)
+                    deadlineJobs.remove(pending.decisionId)?.cancel()
+                }
+                dao.insertSemanticEvent(
+                    normalized.toEntity(
+                        activeProfile,
+                        activeSession,
+                        sequenceNo,
+                        changeSet.changeSetId,
+                        changeSet.mutationBatchId
+                    )
+                )
+                dao.upsertSemanticChangeSet(changeSet.copy(state = "PREPARED"))
+            }
+            latestSemanticContext = SemanticContext(
+                normalized.eventFamily,
+                normalized.domain,
+                normalized.semanticId,
+                normalized.changeKind,
+                ageBucket = 0,
+                changeSetSize = changeSet.mutationCount,
+                stable = true,
+                affectedCandidateSetVersion = normalized.affectedCandidateSetVersion,
+                coarseValueBucket = normalized.coarseValueBucket
+            )
+            latestSemanticOccurredElapsedMs = normalized.occurredAtElapsedMs
+            latestAffectedCandidateCount = changeSet.affectedActionIdsCsv.split(',').count(String::isNotBlank)
+            val journeyDecisionId = UUID.randomUUID().toString()
+            val journeySnapshot = snapshot(System.currentTimeMillis(), lastAction).copy(journeyPosition = 0)
+            val journeyInput = FeatureExtractor.build(
+                activeProfile,
+                journeyDecisionId,
+                journeySnapshot,
+                AppActionCatalog.businessAvailability(journeySnapshot.route)
+            )
+            val promotion = promotionManager.snapshot(activeProfile)
+            journeyStart = JourneyStartRequest(
+                activeProfile,
+                activeSession,
+                sequenceNo,
+                normalized,
+                changeSet.changeSetId,
+                journeyInput,
+                normalized.tainted,
+                bucket(promotion.holdoutSeed, journeyDecisionId, "journey") < JOURNEY_HOLDOUT_PERCENT
+            )
+            createOpportunityLocked(
+                OpportunityTrigger.SEMANTIC_MUTATION_COMMITTED,
+                lastAction,
+                normalized.eventId,
+                sequenceNo
+            )
+        }
+        val request = journeyStart ?: return false
+        explicitMilestoneTarget(request.event)?.let { target ->
+            journeyEngine.onExplicitMilestone(activeProfile, target, request.event.eventId)
+        }
+        journeyEngine.start(
+            request.profileKey,
+            request.sessionId,
+            processInstanceId,
+            request.sequenceNo,
+            request.event.eventId,
+            request.input,
+            request.tainted,
+            request.holdout
+        )
+        dao.updateSemanticChangeSetState(request.changeSetId, "COMMITTED")
+        return true
+    }
+
+    fun recordCommittedMutationAsync(
+        mutationId: MutationId,
+        oldValue: Any?,
+        newValue: Any?,
+        source: ActionSource = ActionSource.ORGANIC,
+        coarseValueBucket: String? = null,
+        domainOverride: SemanticDomain? = null,
+        familyOverride: SemanticEventFamily? = null
+    ) {
+        scope.launch {
+            recordCommittedMutation(
+                mutationId,
+                oldValue,
+                newValue,
+                source,
+                coarseValueBucket,
+                domainOverride,
+                familyOverride
+            )
+        }
+    }
+
+    fun onContentStateChanged(
+        domain: SemanticDomain,
+        state: ContentStateBucket,
+        freshnessBucket: Int,
+        resultCount: ResultCountBucket,
+        errorType: ErrorTypeBucket = ErrorTypeBucket.NONE
+    ) {
+        val previous = latestContentContext
+        val next = ContentContext(domain, state, freshnessBucket.coerceIn(0, 7), resultCount, errorType)
+        if (previous == next) return
+        latestContentContext = next
+        recordCommittedMutationAsync(
+            MutationId.CONTENT_STATE_CHANGED,
+            previous?.state,
+            next.state,
+            coarseValueBucket = next.state.name,
+            domainOverride = domain,
+            familyOverride = SemanticEventFamily.CONTENT_STATE_CHANGED
+        )
+    }
+
+    suspend fun rankLocalPresets(domain: SemanticDomain): List<PresetCandidate> {
+        val activeProfile = profileKey ?: return emptyList()
+        if (!profileReady) return emptyList()
+        val promotion = promotionManager.snapshot(activeProfile)
+        val decisionId = UUID.randomUUID().toString()
+        val holdout = bucket(promotion.holdoutSeed, decisionId, "preset") < PRESET_HOLDOUT_PERCENT
+        return presetRankingEngine.rank(activeProfile, domain, snapshot(System.currentTimeMillis(), lastAction), holdout)
+    }
+
+    suspend fun markPresetRecommendationExposed(candidate: PresetCandidate): PresetInteractionToken? {
+        val activeProfile = profileKey ?: return null
+        if (!profileReady) return null
+        val token = presetRankingEngine.markRecommendationExposed(activeProfile, candidate) ?: return null
+        hideSuggestion()
+        journeyEngine.censorProfile(activeProfile, "CENSORED_PRESET_RECOMMENDATION_EXPOSURE")
+        return token
+    }
+
+    suspend fun recordNaturalPresetSubmission(
+        submission: PresetSubmission,
+        interactionToken: PresetInteractionToken?,
+        candidatesAtOpportunity: List<PresetCandidate>
+    ): String? {
+        val activeProfile = profileKey ?: return null
+        if (!profileReady) return null
+        val presetId = presetRankingEngine.recordNaturalSubmission(
+            activeProfile,
+            submission,
+            snapshot(System.currentTimeMillis(), lastAction),
+            interactionToken,
+            candidatesAtOpportunity
+        )
+        recordCommittedMutation(
+            when (submission.domain) {
+                SemanticDomain.FREE_CLASSROOM -> MutationId.FREE_CLASSROOM_QUERY_COMMITTED
+                SemanticDomain.GRADE -> MutationId.GRADE_FILTER_COMMITTED
+                SemanticDomain.LOST_FOUND -> MutationId.LOST_FOUND_FILTER_COMMITTED
+                SemanticDomain.ELECTRICITY -> MutationId.ELECTRICITY_PRESET_COMMITTED
+                else -> MutationId.FLOW_STEP_COMPLETED
+            },
+            oldValue = null,
+            newValue = "COMMITTED",
+            coarseValueBucket = "COMMITTED",
+            domainOverride = submission.domain,
+            familyOverride = SemanticEventFamily.QUERY_FILTER_COMMITTED
+        )
+        return presetId
+    }
+
+    suspend fun applyLocalPreset(candidate: PresetCandidate): AppliedPreset? {
+        val activeProfile = profileKey ?: return null
+        val applied = presetRankingEngine.applyRecommendation(activeProfile, candidate) ?: return null
+        recordCommittedMutation(
+            MutationId.LOCAL_PRESET_APPLIED,
+            oldValue = null,
+            newValue = "APPLIED",
+            source = ActionSource.SUGGESTION,
+            coarseValueBucket = "APPLIED",
+            domainOverride = candidate.domain,
+            familyOverride = SemanticEventFamily.LOCAL_PRESET_APPLIED
+        )
+        return applied
+    }
+
+    fun expirePresetInteractionAsync(token: PresetInteractionToken?) {
+        val activeProfile = profileKey ?: return
+        scope.launch { presetRankingEngine.expireInteraction(activeProfile, token) }
+    }
+
+    fun recordRemovedPresetAsync(token: PresetInteractionToken) {
+        val activeProfile = profileKey ?: return
+        scope.launch {
+            presetRankingEngine.recordRemovedRecommendation(
+                activeProfile,
+                token,
+                snapshot(System.currentTimeMillis(), lastAction)
+            )
         }
     }
 
@@ -559,6 +866,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         ) return false
         val lease = prepareVisibleIntervention(decisionId, action, "SUGGESTION", ActionSource.SUGGESTION, spec.route) ?: return false
         val consumed = consumeIntervention(lease.executionId) ?: return false
+        profileKey?.let { journeyEngine.censorProfile(it, "CENSORED_RECOMMENDATION_EXPOSURE") }
         val shownAtElapsedMs = SystemClock.elapsedRealtime()
         _uiState.value = PredictionUiState.Suggestion(
             consumed.executionId,
@@ -706,10 +1014,13 @@ class BehaviorPredictionRuntime @Inject constructor(
         deadlineJobs.values.forEach(Job::cancel)
         deadlineJobs.clear()
         trainer.cancelProfile(activeProfile)
+        journeyEngine.censorProfile(activeProfile, censorReason)
         dao.cancelProfileLeases(activeProfile)
         paymentQrCommands.clear()
         insertLifecycleEvent("SESSION_ENDED", ActionSource.SYSTEM)
         if (clearProfile) {
+            journeyEngine.clearProfile(activeProfile)
+            presetRankingEngine.clearProfile(activeProfile)
             dao.deleteProfileLearningState(activeProfile)
             modelStateStore.reset(activeProfile)
         }
@@ -719,6 +1030,10 @@ class BehaviorPredictionRuntime @Inject constructor(
         recentActions.clear()
         recentActionSources.clear()
         organicActionHistory.clear()
+        latestSemanticContext = null
+        latestSemanticOccurredElapsedMs = 0L
+        latestContentContext = null
+        latestAffectedCandidateCount = 0
         lastAction = null
         lastRoute = null
         routeChangedElapsedMs = 0L
@@ -744,7 +1059,9 @@ class BehaviorPredictionRuntime @Inject constructor(
         ) {
             return TrainingSliceResult(false, profileKey, 0, 0, null, null, 0, "THERMAL_LIMIT")
         }
-        val result = trainer.runIdleSlice(50)
+        val result = trainer.runIdleSlice(25)
+        journeyEngine.runIdleTrainingSlice(15)
+        presetRankingEngine.runIdleTrainingSlice(10)
         _diagnostics.value = _diagnostics.value.copy(lastTraining = result)
         return result
     }
@@ -753,6 +1070,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         val activeProfile = profileKey ?: return SanitizedDiagnosticsSnapshot()
         val learning = dao.learningState(activeProfile)
         val model = modelStateStore.state(activeProfile)
+        val pendingJourney = dao.latestPendingJourney(activeProfile)
+        val presetSamples = dao.recentPresetTrainingSamples(activeProfile, 512)
+        val naturalMass = presetSamples.filter { it.naturalHoldoutEligible }.sumOf { it.sampleWeight.toDouble() }
+        val assistedPositiveMass = presetSamples.filter { !it.naturalHoldoutEligible && it.label }.sumOf { it.sampleWeight.toDouble() }
+        val assistedNegativeMass = presetSamples.filter { !it.naturalHoldoutEligible && !it.label }.sumOf { it.sampleWeight.toDouble() }
+        val weakRatio = if (presetSamples.isEmpty()) 0.0 else presetSamples.count { !it.naturalHoldoutEligible }.toDouble() / presetSamples.size
         return SanitizedDiagnosticsSnapshot(
             trainingSamples = dao.trainingSampleCount(activeProfile),
             organicNonNoneSamples = dao.organicNonNoneTrainingSampleCount(activeProfile),
@@ -769,8 +1092,53 @@ class BehaviorPredictionRuntime @Inject constructor(
             recentTimeline = dao.recentEvents(activeProfile, 20).map {
                 "#${it.sequenceNo} ${it.eventType} ${it.actionId ?: "--"} ${it.source}"
             },
-            pendingTelemetryReports = dao.pendingTelemetryReportCount(activeProfile)
+            pendingTelemetryReports = dao.pendingTelemetryReportCount(activeProfile),
+            recentSemanticEvents = dao.recentSemanticEvents(activeProfile, 20).map {
+                "#${it.sequenceNo} ${it.eventFamily}/${it.domainId} ${it.semanticId} ${it.changeKind}${if (it.tainted) " TAINTED" else ""}"
+            },
+            recentSemanticChangeSets = dao.recentSemanticChangeSets(activeProfile, 10).map {
+                "${it.changeSetId.take(8)} n=${it.mutationCount} ${it.state} " +
+                    "candidates=${it.affectedActionIdsCsv.ifBlank { "NONE" }}"
+            },
+            pendingJourney = pendingJourney?.let {
+                "${it.journeyId.take(8)} steps=${it.observedActionCount}/${it.maximumActions} remaining=${(it.deadlineElapsedMs - SystemClock.elapsedRealtime()).coerceAtLeast(0)}ms ${it.interventionState}"
+            },
+            journeyProbabilities = pendingJourney?.let(::sanitizedJourneyProbabilities).orEmpty(),
+            presetCandidates = presetRankingEngine.sanitizedDiagnostics(activeProfile),
+            journeyTrainingSamples = dao.journeyTrainingSampleCount(activeProfile),
+            presetTrainingSamples = dao.presetTrainingSampleCount(activeProfile),
+            presetFeedbackDiagnostics = listOf(
+                "mass natural=${"%.2f".format(naturalMass)} assisted+=${"%.2f".format(assistedPositiveMass)} assisted-=${"%.2f".format(assistedNegativeMass)}",
+                "weakPoolRatio=${"%.3f".format(weakRatio)} evaluationSource=ORGANIC_NATURAL_HOLDOUT"
+            ) + dao.recentPresetInteractions(activeProfile, 8).map {
+                "${it.domainId} ${it.candidateId.take(8)} state=${it.state} weight=${it.feedbackWeight ?: "--"}"
+            },
+            taskStates = dao.taskModelStates(activeProfile).map {
+                "${it.modelTask} ${it.stage} lambda=${it.mixedLambda} n=${it.validSampleCount} " +
+                    "eval=${it.lastEvaluationSeq} health=${it.healthState}"
+            }
         )
+    }
+
+    private fun sanitizedJourneyProbabilities(
+        pending: com.ahu.ahutong.personalization.storage.PendingJourneyEntity
+    ): List<String> {
+        val stat = BinaryCodec.floats(pending.statProbabilities)
+        val tiny = pending.tinyProbabilities?.let(BinaryCodec::floats)
+        return com.ahu.ahutong.personalization.journey.JourneyGoalCatalog.outputIds.indices
+            .map { index ->
+                val effective = (1f - pending.mixedLambda) * stat[index] +
+                    pending.mixedLambda * (tiny?.get(index) ?: stat[index])
+                com.ahu.ahutong.personalization.journey.JourneyGoalCatalog.outputIds[index] to
+                    Triple(stat[index], tiny?.get(index), effective)
+            }
+            .sortedByDescending { it.second.third }
+            .take(5)
+            .map { (outputId, values) ->
+                "$outputId stat=${"%.3f".format(values.first)} " +
+                    "tiny=${values.second?.let { "%.3f".format(it) } ?: "--"} " +
+                    "effective=${"%.3f".format(values.third)}"
+            }
     }
 
     private suspend fun createOpportunity(trigger: OpportunityTrigger, previousAction: AppActionId?) {
@@ -937,14 +1305,33 @@ class BehaviorPredictionRuntime @Inject constructor(
                 dao.updatePending(activated)
                 registerDeadline(activated)
                 val effective = composeDecision(stat, tiny, input, preparing.profileKey, promotion)
+                val productScope = ProductCandidateResolver.resolve(
+                    input.snapshot.semanticContext,
+                    input.snapshot.contentContext,
+                    input.snapshot.route
+                )
                 _diagnostics.value = _diagnostics.value.copy(
                     preparationState = "PENDING",
                     statProbabilities = stat.asMap(),
                     tinyProbabilities = tiny?.asMap().orEmpty(),
                     effectiveProbabilities = effective.asMap(),
-                    lastFailure = activated.preparationFailure
+                    lastFailure = activated.preparationFailure,
+                    candidateScope = when (productScope) {
+                        ProductCandidateScope.Ordinary -> "ORDINARY"
+                        ProductCandidateScope.Suppress -> "SUPPRESS"
+                        is ProductCandidateScope.Targeted -> "TARGETED"
+                    },
+                    targetedActions = (productScope as? ProductCandidateScope.Targeted)
+                        ?.actions
+                        ?.map(AppActionId::stableId)
+                        ?.toSet()
+                        .orEmpty(),
+                    candidateRejectionReason = if (productScope == ProductCandidateScope.Suppress) {
+                        "SEMANTIC_OR_CONTENT_SCOPE_SUPPRESSED"
+                    } else null
                 )
-                scope.launch { prefetchCoordinator.consider(effective.asMap(), activated.isPromotionHoldout, foreground) }
+                val productProbabilities = productScopedProbabilities(effective, input.snapshot, preparing.profileKey)
+                scope.launch { prefetchCoordinator.consider(productProbabilities, activated.isPromotionHoldout, foreground) }
                 scope.launch { maybeOfferSuggestion(activated, effective) }
             }
         } catch (cancelled: CancellationException) {
@@ -1107,18 +1494,71 @@ class BehaviorPredictionRuntime @Inject constructor(
                 minimumIntervalMs = SUGGESTION_MIN_INTERVAL_MS
             )
         ) return
+        val snapshot = ContextSnapshotCodec.decode(pending.contextSnapshotJson)
+        val candidateScope = ProductCandidateResolver.resolve(
+            semantic = snapshot.semanticContext,
+            content = snapshot.contentContext,
+            route = snapshot.route
+        )
+        if (candidateScope == ProductCandidateScope.Suppress) return
+        val targetedActions = (candidateScope as? ProductCandidateScope.Targeted)?.actions
         val candidates = SuggestionPolicy.rankedCandidates(
             effective,
-            dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet()
-        )
-        val candidate = candidates.firstOrNull() ?: return
-        if (showSuggestion(pending.decisionId, candidate.action, candidate.probability)) {
+            dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet(),
+            requireOrganicHistory = candidateScope == ProductCandidateScope.Ordinary
+        ).filter { targetedActions == null || it.action in targetedActions }
+        val next = candidates.firstOrNull()?.let {
+            ActionPredictionProposal(PredictionTask.NEXT_ACTION, it.action, it.probability, pending.decisionId)
+        }
+        val journey = journeyEngine.currentRecommendation(pending.profileKey)?.takeIf {
+            targetedActions == null || it.action in targetedActions
+        }?.let {
+            ActionPredictionProposal(PredictionTask.JOURNEY_GOAL, it.action, it.probability, pending.decisionId)
+        }
+        val proposal = (PredictionArbiter.choose(0, journey, next) as? ArbitratedPrediction.Action)?.proposal
+        if (proposal == null) {
+            _diagnostics.value = _diagnostics.value.copy(
+                candidateRejectionReason = if (candidateScope is ProductCandidateScope.Targeted) {
+                    "TARGETED_ACTION_UNAVAILABLE_OR_UNSAFE"
+                } else {
+                    "NO_ORGANICALLY_ELIGIBLE_ACTION"
+                }
+            )
+            return
+        }
+        if (showSuggestion(proposal.decisionId, proposal.action, proposal.probability)) {
             lastSuggestionElapsedMs = nowElapsed
+            _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = null)
             prefetchCoordinator.prefetchSuggestedAction(
-                action = candidate.action,
+                action = proposal.action,
                 holdout = pending.isPromotionHoldout,
                 foreground = foreground
             )
+        } else {
+            _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = "SURFACE_OR_SAFETY_GATE_REJECTED")
+        }
+    }
+
+    private suspend fun productScopedProbabilities(
+        effective: NextActionProbabilityVector,
+        snapshot: ContextSnapshot,
+        profileKey: String
+    ): Map<String, Float> {
+        val scope = ProductCandidateResolver.resolve(
+            semantic = snapshot.semanticContext,
+            content = snapshot.contentContext,
+            route = snapshot.route
+        )
+        val allowed = when (scope) {
+            ProductCandidateScope.Suppress -> emptySet()
+            is ProductCandidateScope.Targeted -> scope.actions
+            ProductCandidateScope.Ordinary -> dao.organicNonNoneTrainingActionIds(profileKey)
+                .mapNotNull(AppActionId::fromStableId)
+                .toSet()
+        }
+        return effective.outputIds.indices.associate { index ->
+            val action = AppActionId.fromStableId(effective.outputIds[index])
+            effective.outputIds[index] to if (action in allowed) effective.probabilities[index] else 0f
         }
     }
 
@@ -1159,6 +1599,9 @@ class BehaviorPredictionRuntime @Inject constructor(
         val time = Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()).toLocalDateTime()
         val personal = personalFamilySignals()
         val nowElapsed = SystemClock.elapsedRealtime()
+        val semantic = latestSemanticContext?.copy(
+            ageBucket = latestSemanticOccurredElapsedMs.takeIf { it > 0 }?.let { gapBucket(nowElapsed - it) } ?: 7
+        )
         return ContextSnapshot(
             epochDay = Instant.ofEpochMilli(epochMs).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay(),
             minuteOfDay = time.hour * 60 + time.minute,
@@ -1176,7 +1619,13 @@ class BehaviorPredictionRuntime @Inject constructor(
             pageDwellBucket = routeChangedElapsedMs.takeIf { it > 0 }?.let { gapBucket(nowElapsed - it) },
             recentActionSources = recentActionSources.toList(),
             personalFamilyFrequencies = personal.first,
-            personalFamilyRecencies = personal.second
+            personalFamilyRecencies = personal.second,
+            semanticContext = semantic,
+            contentContext = latestContentContext,
+            candidateSetSize = latestAffectedCandidateCount,
+            journeyPosition = recentActions.takeLast(5).count {
+                it !in com.ahu.ahutong.personalization.journey.JourneyGoalCatalog.shellActions
+            }
         )
     }
 
@@ -1247,6 +1696,68 @@ class BehaviorPredictionRuntime @Inject constructor(
         )
     }
 
+    private fun mergeChangeSet(
+        profile: String,
+        session: String,
+        event: NormalizedSemanticEvent,
+        existing: SemanticChangeSetEntity?
+    ): SemanticChangeSetEntity {
+        val semanticIds = existing?.semanticIdsCsv?.split(',')?.filter(String::isNotBlank).orEmpty()
+            .plus(event.semanticId).distinct().sorted()
+        val affected = existing?.affectedActionIdsCsv?.split(',')?.filter(String::isNotBlank).orEmpty()
+            .plus(event.affectedActionIds.map(AppActionId::stableId)).distinct().sorted()
+        return SemanticChangeSetEntity(
+            changeSetId = existing?.changeSetId ?: UUID.randomUUID().toString(),
+            profileKey = profile,
+            sessionId = session,
+            route = event.route,
+            mutationBatchId = existing?.mutationBatchId ?: event.mutationBatchId,
+            firstOccurredAtElapsedMs = existing?.firstOccurredAtElapsedMs ?: event.occurredAtElapsedMs,
+            lastOccurredAtElapsedMs = event.occurredAtElapsedMs,
+            mutationCount = (existing?.mutationCount ?: 0) + 1,
+            semanticIdsCsv = semanticIds.joinToString(","),
+            affectedActionIdsCsv = affected.joinToString(","),
+            affectedCandidateSetVersion = maxOf(existing?.affectedCandidateSetVersion ?: 0, event.affectedCandidateSetVersion),
+            state = "PREPARED"
+        )
+    }
+
+    private fun NormalizedSemanticEvent.toEntity(
+        profile: String,
+        session: String,
+        sequenceNo: Long,
+        changeSetId: String,
+        mergedMutationBatchId: String
+    ): SemanticEventEntity = SemanticEventEntity(
+        eventId,
+        profile,
+        session,
+        sequenceNo,
+        eventFamily.name,
+        domain.name,
+        semanticId,
+        changeKind.name,
+        coarseValueBucket,
+        route,
+        affectedCandidateSetVersion,
+        source.name,
+        committedAtEpochDay,
+        occurredAtElapsedMs,
+        semanticSchemaVersion,
+        tainted,
+        mergedMutationBatchId,
+        changeSetId
+    )
+
+    private fun explicitMilestoneTarget(event: NormalizedSemanticEvent): AppActionId? {
+        if (event.eventFamily != SemanticEventFamily.QUERY_FILTER_COMMITTED &&
+            event.eventFamily != SemanticEventFamily.FLOW_STEP_COMPLETED
+        ) return null
+        return event.affectedActionIds.firstOrNull { action ->
+            com.ahu.ahutong.personalization.journey.JourneyGoalCatalog.isSafeTerminal(action)
+        }
+    }
+
     private suspend fun insertLifecycleEvent(type: String, source: ActionSource) {
         val activeProfile = profileKey ?: return
         val activeSession = sessionId ?: return
@@ -1284,9 +1795,32 @@ class BehaviorPredictionRuntime @Inject constructor(
         val sequenceNo: Long
     )
 
+    private data class JourneyActionObservation(
+        val profileKey: String,
+        val sessionId: String,
+        val action: AppActionId,
+        val source: ActionSource,
+        val eventId: String,
+        val elapsedMs: Long
+    )
+
+    private data class JourneyStartRequest(
+        val profileKey: String,
+        val sessionId: String,
+        val sequenceNo: Long,
+        val event: NormalizedSemanticEvent,
+        val changeSetId: String,
+        val input: PredictionInput,
+        val tainted: Boolean,
+        val holdout: Boolean
+    )
+
     private companion object {
         const val LABEL_WINDOW_POLICY_VERSION = 1
         const val CONTEXT_DEBOUNCE_MS = 30_000L
+        const val SEMANTIC_CHANGE_SET_WINDOW_MS = 5_000L
+        const val JOURNEY_HOLDOUT_PERCENT = 15
+        const val PRESET_HOLDOUT_PERCENT = 15
         const val DEADLINE_RACE_GRACE_MS = 250L
         const val HOLDOUT_PERCENT = 15
         const val CANDIDATE_HOLDOUT_PERCENT = 20

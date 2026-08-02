@@ -26,7 +26,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.GradeEvaluationGate
 import com.ahu.ahutong.data.crawler.model.jwxt.CourseGrade
@@ -46,9 +46,12 @@ import com.ahu.ahutong.personalization.action.AppActionId
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Grade(
-    gradeViewModel: GradeViewModel = viewModel(),
+    gradeViewModel: GradeViewModel = hiltViewModel(),
     onNavigateToEvaluation: () -> Unit = {}
 ) {
+    DisposableEffect(gradeViewModel) {
+        onDispose { gradeViewModel.onPresetSurfaceDisposed() }
+    }
     val behaviorReporter = rememberBehaviorActionReporter()
     val grade = gradeViewModel.grade
     val gpaRankInfo = gradeViewModel.gpaRankInfo
@@ -219,7 +222,7 @@ fun Grade(
                     gradeViewModel.studentProfiles.forEachIndexed { index, profile ->
                         FilterChip(
                             selected = gradeViewModel.selectedProfileIndex == index,
-                            onClick = { gradeViewModel.selectedProfileIndex = index },
+                            onClick = { gradeViewModel.selectProfile(index) },
                             label = {
                                 Text(
                                     text = profile.displayName,
@@ -240,6 +243,22 @@ fun Grade(
 
             // 改成学期下拉选择（替代原来的学年+学期双筛选）
             if (!searchExpanded) {
+                gradeViewModel.presetCandidates.firstOrNull()?.let { candidate ->
+                    LaunchedEffect(candidate.opportunityId, candidate.presetId) {
+                        gradeViewModel.onPresetCandidateVisible(candidate)
+                    }
+                    Text(
+                        text = "使用常用条件",
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .clip(ContinuousCapsule)
+                            .background(90.a1)
+                            .clickable { gradeViewModel.applyPresetCandidate(candidate) }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        color = 0.n1,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
                 val allTerms = gradeViewModel.grade?.termGradeList
                     ?.sortedWith(
                         compareByDescending<Grade.TermGradeListBean> {
@@ -306,8 +325,7 @@ fun Grade(
                                     textColor = 10.n1 withNight 90.n1
                                 ),
                                 onClick = {
-                                    gradeViewModel.schoolYear = term.schoolYear
-                                    gradeViewModel.schoolTerm = term.term
+                                    gradeViewModel.selectTerm(term.schoolYear, term.term)
                                     termMenuExpanded = false
                                 }
                             )

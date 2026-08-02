@@ -477,3 +477,337 @@ data class TelemetryDeletionTombstoneEntity(
     val expiresAtEpochMs: Long,
     val state: String
 )
+
+@Entity(
+    tableName = "semantic_event",
+    indices = [
+        Index(value = ["profileKey", "sequenceNo"]),
+        Index(value = ["profileKey", "semanticId", "committedAtEpochDay"]),
+        Index(value = ["profileKey", "mutationBatchId"])
+    ]
+)
+data class SemanticEventEntity(
+    @PrimaryKey val eventId: String,
+    val profileKey: String,
+    val sessionId: String,
+    val sequenceNo: Long,
+    val eventFamily: String,
+    val domainId: String,
+    val semanticId: String,
+    val changeKind: String,
+    val coarseValueBucket: String,
+    val route: String?,
+    val affectedCandidateSetVersion: Int,
+    val source: String,
+    val committedAtEpochDay: Long,
+    val occurredAtElapsedMs: Long,
+    val semanticSchemaVersion: Int,
+    val tainted: Boolean,
+    val mutationBatchId: String,
+    val changeSetId: String
+)
+
+@Entity(
+    tableName = "semantic_change_set",
+    indices = [Index(value = ["profileKey", "sessionId", "state", "lastOccurredAtElapsedMs"])]
+)
+data class SemanticChangeSetEntity(
+    @PrimaryKey val changeSetId: String,
+    val profileKey: String,
+    val sessionId: String,
+    val route: String?,
+    val mutationBatchId: String,
+    val firstOccurredAtElapsedMs: Long,
+    val lastOccurredAtElapsedMs: Long,
+    val mutationCount: Int,
+    val semanticIdsCsv: String,
+    val affectedActionIdsCsv: String,
+    val affectedCandidateSetVersion: Int,
+    val state: String
+)
+
+@Entity(
+    tableName = "pending_journey",
+    indices = [
+        Index(value = ["profileKey", "resolutionStatus", "deadlineElapsedMs"]),
+        Index(value = ["profileKey", "sessionId", "triggerEventId"], unique = true),
+        Index(value = ["profileKey", "consumedTerminalEventId"], unique = true)
+    ]
+)
+data class PendingJourneyEntity(
+    @PrimaryKey val journeyId: String,
+    val profileKey: String,
+    val sessionId: String,
+    val processInstanceId: String,
+    val triggerEventId: String,
+    val sequenceNo: Long,
+    val createdAtEpochMs: Long,
+    val createdAtElapsedMs: Long,
+    val deadlineElapsedMs: Long,
+    val maximumActions: Int,
+    val observedActionCount: Int,
+    val observedActionIdsCsv: String,
+    val lastLeafEnteredAtElapsedMs: Long?,
+    val lastLeafActionId: String?,
+    val lastLeafEventId: String?,
+    val featureSchemaVersion: Int,
+    val journeyOutputSchemaVersion: Int,
+    val features: ByteArray,
+    val inputDigest: String,
+    val contextSnapshotJson: String,
+    val statProbabilities: ByteArray,
+    val tinyProbabilities: ByteArray?,
+    val statModelVersion: Int,
+    val tinyModelVersion: Int?,
+    val statInferenceNanos: Long,
+    val tinyInferenceNanos: Long?,
+    val activeCheckpointId: String?,
+    val candidateCheckpointId: String?,
+    val stageAtDecision: String,
+    val mixedLambda: Float,
+    val isPromotionHoldout: Boolean,
+    val interventionState: String,
+    val resolutionStatus: String,
+    val censorReason: String?,
+    val finalTargetActionId: String?,
+    val consumedTerminalEventId: String?
+)
+
+@Entity(
+    tableName = "journey_action_stat",
+    primaryKeys = ["profileKey", "contextKey", "targetActionId"],
+    indices = [Index(value = ["profileKey", "targetActionId"])]
+)
+data class JourneyActionStatEntity(
+    val profileKey: String,
+    val contextKey: String,
+    val targetActionId: String,
+    val positiveMass: Double,
+    val exposureMass: Double,
+    val updatedAtEpochDay: Long
+)
+
+@Entity(
+    tableName = "journey_training_sample",
+    indices = [
+        Index(value = ["profileKey", "journeyId"], unique = true),
+        Index(value = ["profileKey", "targetIndex"]),
+        Index(value = ["profileKey", "occurredEpochDay"])
+    ]
+)
+data class JourneyTrainingSampleEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
+    val sampleId: String,
+    val profileKey: String,
+    val journeyId: String,
+    val featureSchemaVersion: Int,
+    val journeyOutputSchemaVersion: Int,
+    val features: ByteArray,
+    val targetIndex: Int,
+    val targetActionId: String,
+    val targetFamily: String,
+    val journeyLength: Int,
+    val occurredEpochDay: Long,
+    val replayPriority: Float,
+    val trainingCount: Int,
+    val labelSource: String
+)
+
+@Entity(
+    tableName = "journey_shadow_evaluation",
+    indices = [
+        Index(value = ["profileKey", "evaluationSeq"], unique = true),
+        Index(value = ["profileKey", "journeyId"], unique = true)
+    ]
+)
+data class JourneyShadowEvaluationEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
+    val profileKey: String,
+    val evaluationSeq: Long,
+    val journeyId: String,
+    val occurredEpochDay: Long,
+    val trueLabel: String,
+    val journeyLength: Int,
+    val statTop1: Int,
+    val statTop3: Int,
+    val statReciprocalRank: Double,
+    val statBrier: Double,
+    val statLogLoss: Double,
+    val tinyTop1: Int,
+    val tinyTop3: Int,
+    val tinyReciprocalRank: Double,
+    val tinyBrier: Double,
+    val tinyLogLoss: Double,
+    val tinyTop1Confidence: Double,
+    val tinyCheckpointId: String?,
+    val statInferenceNanos: Long,
+    val tinyInferenceNanos: Long,
+    val stage: String,
+    val featureSchemaVersion: Int,
+    val journeyOutputSchemaVersion: Int
+)
+
+@Entity(
+    tableName = "local_parameter_preset",
+    indices = [
+        Index(value = ["profileKey", "domainId", "fingerprint"], unique = true),
+        Index(value = ["profileKey", "domainId", "lastOrganicUsedAtEpochMs"])
+    ]
+)
+data class LocalParameterPresetEntity(
+    @PrimaryKey val presetId: String,
+    val profileKey: String,
+    val domainId: String,
+    val fingerprint: String,
+    val localPayloadJson: String,
+    val coarseFeaturesJson: String,
+    val createdAtEpochMs: Long,
+    /** Natural commits only. Assisted interactions must not alter recency baselines. */
+    val lastOrganicUsedAtEpochMs: Long?,
+    val organicUseCount: Int,
+    val source: String,
+    val schemaVersion: Int
+)
+
+@Entity(
+    tableName = "preset_usage_stat",
+    primaryKeys = ["profileKey", "domainId", "contextKey", "presetId"],
+    indices = [Index(value = ["profileKey", "domainId", "presetId"])]
+)
+data class PresetUsageStatEntity(
+    val profileKey: String,
+    val domainId: String,
+    val contextKey: String,
+    val presetId: String,
+    val positiveMass: Double,
+    val exposureMass: Double,
+    val updatedAtEpochDay: Long
+)
+
+@Entity(
+    tableName = "targeted_prediction_feedback",
+    indices = [Index(value = ["profileKey", "predictionTask", "createdAtEpochMs"])]
+)
+data class TargetedPredictionFeedbackEntity(
+    @PrimaryKey val feedbackId: String,
+    val profileKey: String,
+    val predictionTask: String,
+    val decisionId: String,
+    val candidateId: String?,
+    val feedbackType: String,
+    val isolatedFromTraining: Boolean,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "preset_recommendation_interaction",
+    indices = [
+        Index(value = ["profileKey", "domainId", "state", "shownAtEpochMs"]),
+        Index(value = ["profileKey", "opportunityId", "candidateId"], unique = true)
+    ]
+)
+data class PresetRecommendationInteractionEntity(
+    @PrimaryKey val interactionId: String,
+    val profileKey: String,
+    val domainId: String,
+    val opportunityId: String,
+    val candidateId: String,
+    val candidateFingerprint: String,
+    val state: String,
+    val shownAtEpochMs: Long,
+    val appliedAtEpochMs: Long?,
+    val resolvedAtEpochMs: Long?,
+    val resolutionFingerprint: String?,
+    val feedbackWeight: Float?,
+    val checkpointId: String?
+)
+
+@Entity(
+    tableName = "task_model_state",
+    primaryKeys = ["profileKey", "modelTask"],
+    indices = [Index(value = ["profileKey", "stage"])]
+)
+data class TaskModelStateEntity(
+    val profileKey: String,
+    val modelTask: String,
+    val modelGeneration: Long,
+    val featureSchemaVersion: Int,
+    val outputSchemaVersion: Int,
+    val activeCheckpointId: String?,
+    val candidateCheckpointId: String?,
+    val trainingRevision: Long,
+    val stage: String,
+    val mixedLambda: Float,
+    val consecutivePassingWindows: Int,
+    val consecutiveFailingWindows: Int,
+    val validSampleCount: Int,
+    val nonNoneSampleCount: Int,
+    val targetFamilyCount: Int,
+    val ece: Double,
+    val healthState: String,
+    val lastTransitionReason: String,
+    val lastEvaluationSeq: Long,
+    val updatedAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "task_training_batch_journal",
+    indices = [Index(value = ["profileKey", "modelTask", "state", "createdAtEpochMs"])]
+)
+data class TaskTrainingBatchJournalEntity(
+    @PrimaryKey val batchId: String,
+    val profileKey: String,
+    val modelTask: String,
+    val expectedTrainingRevision: Long,
+    val selectedRowIds: String,
+    val state: String,
+    val createdAtEpochMs: Long,
+    val committedAtEpochMs: Long?
+)
+
+@Entity(
+    tableName = "preset_training_sample",
+    indices = [
+        Index(value = ["profileKey", "domainId", "opportunityId", "candidateId"], unique = true),
+        Index(value = ["profileKey", "domainId", "label"])
+    ]
+)
+data class PresetTrainingSampleEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
+    val profileKey: String,
+    val domainId: String,
+    val opportunityId: String,
+    val candidateId: String,
+    val features: ByteArray,
+    val label: Boolean,
+    val occurredEpochDay: Long,
+    val trainingCount: Int,
+    val labelSource: String,
+    val sampleWeight: Float,
+    val feedbackSource: String,
+    val weightConfigVersion: Int,
+    val naturalHoldoutEligible: Boolean,
+    val interactionId: String?
+)
+
+@Entity(
+    tableName = "preset_shadow_evaluation",
+    indices = [Index(value = ["profileKey", "domainId", "opportunityId", "candidateId"], unique = true)]
+)
+data class PresetShadowEvaluationEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
+    val profileKey: String,
+    val domainId: String,
+    val opportunityId: String,
+    val candidateId: String,
+    val label: Boolean,
+    val statScore: Float,
+    val tinyScore: Float,
+    val recentBaselineScore: Float,
+    val frequencyBaselineScore: Float,
+    val tinyCheckpointId: String,
+    val occurredEpochDay: Long,
+    val featureSchemaVersion: Int,
+    val evaluationSource: String,
+    val naturalHoldoutEligible: Boolean
+)

@@ -12,10 +12,18 @@ import androidx.lifecycle.viewModelScope
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.weather.WeatherApi
 import com.ahu.ahutong.data.weather.WeatherResponse
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.MutationId
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+import javax.inject.Inject
 
 enum class WeatherHomeMode(val cacheValue: String) {
     Detailed("detailed"),
@@ -59,7 +67,10 @@ data class WeatherHomeConfig(
     }
 }
 
-class WeatherViewModel : ViewModel() {
+@HiltViewModel
+class WeatherViewModel @Inject constructor(
+    private val behaviorRuntime: BehaviorPredictionRuntime
+) : ViewModel() {
 
     var weather by mutableStateOf<WeatherResponse?>(null)
         private set
@@ -97,10 +108,12 @@ class WeatherViewModel : ViewModel() {
                 weather = result
                 lastCity = city
                 lastAdcode = null
-                Log.d("Weather", "Fetched weather for city=$city, temp=${result.temperature}")
+                Log.d("Weather", "Weather content loaded")
+                reportReady()
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather", e)
+                Log.e("Weather", "Failed to fetch weather")
                 errorMessage = e.message ?: "获取天气失败"
+                reportError()
             } finally {
                 isLoading = false
             }
@@ -127,10 +140,12 @@ class WeatherViewModel : ViewModel() {
                 lastAdcode = adcode
                 lastCity = null
                 result.adcode?.let { AHUCache.saveWeatherAdcode(it) }
-                Log.d("Weather", "Fetched weather for adcode=$adcode, temp=${result.temperature}")
+                Log.d("Weather", "Weather content loaded by saved location")
+                reportReady()
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather by adcode", e)
+                Log.e("Weather", "Failed to fetch weather by saved location")
                 errorMessage = e.message ?: "获取天气失败"
+                reportError()
             } finally {
                 isLoading = false
             }
@@ -151,20 +166,19 @@ class WeatherViewModel : ViewModel() {
                 val cachedAdcode = AHUCache.getWeatherAdcode()
                 if (cachedAdcode != null) {
                     // 有缓存的区级 adcode，直接用
-                    Log.d("Weather", "Using cached adcode: $cachedAdcode")
                     val result = WeatherApi.API.getWeather(adcode = cachedAdcode)
                     weather = result
                     lastAdcode = cachedAdcode
                     lastCity = null
                     // 刷新缓存
                     result.adcode?.let { AHUCache.saveWeatherAdcode(it) }
+                    reportReady()
                     return@launch
                 }
 
                 // 无缓存，GPS 定位获取城市名
                 val city = withContext(Dispatchers.IO) { getCityNameFromGps(context) }
                 if (city != null) {
-                    Log.d("Weather", "GPS located city: $city")
                     lastCity = city
                     lastAdcode = null
                     lastLocationName = city
@@ -172,20 +186,24 @@ class WeatherViewModel : ViewModel() {
                     weather = result
                     // 保存 adcode 供后续精准查询
                     result.adcode?.let { AHUCache.saveWeatherAdcode(it) }
+                    reportReady()
                 } else {
                     Log.w("Weather", "GPS failed, fallback to IP")
                     val result = WeatherApi.API.getWeather()
                     weather = result
                     result.adcode?.let { AHUCache.saveWeatherAdcode(it) }
+                    reportReady()
                 }
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather by GPS", e)
+                Log.e("Weather", "Failed to fetch weather by location")
                 try {
                     val result = WeatherApi.API.getWeather()
                     weather = result
                     errorMessage = null
+                    reportReady()
                 } catch (e2: Exception) {
                     errorMessage = e2.message ?: "获取天气失败"
+                    reportError()
                 }
             } finally {
                 isLoading = false
@@ -216,8 +234,35 @@ class WeatherViewModel : ViewModel() {
     }
 
     fun updateHomeConfig(config: WeatherHomeConfig) {
+        val previous = homeConfig
+        if (previous == config) return
         homeConfig = config
         config.saveToCache()
+        behaviorRuntime.recordCommittedMutationAsync(
+            MutationId.WEATHER_HOME_CONFIG_CHANGED,
+            previous,
+            config,
+            coarseValueBucket = "CONFIG_CHANGED"
+        )
+    }
+
+    private fun reportReady() {
+        behaviorRuntime.onContentStateChanged(
+            SemanticDomain.WEATHER,
+            ContentStateBucket.READY,
+            freshnessBucket = 0,
+            resultCount = ResultCountBucket.ONE_TO_FIVE
+        )
+    }
+
+    private fun reportError() {
+        behaviorRuntime.onContentStateChanged(
+            SemanticDomain.WEATHER,
+            ContentStateBucket.ERROR,
+            freshnessBucket = 7,
+            resultCount = ResultCountBucket.ZERO,
+            errorType = ErrorTypeBucket.NETWORK
+        )
     }
 
     val locationName: String

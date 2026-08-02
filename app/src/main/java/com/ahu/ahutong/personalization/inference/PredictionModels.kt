@@ -74,7 +74,7 @@ data class TinyMlpParameters(
         const val MODEL_VERSION = 1
 
         fun initialize(
-            inputSize: Int = 64,
+            inputSize: Int = 96,
             hidden1Size: Int = 32,
             hidden2Size: Int = 16,
             outputSize: Int = AppActionCatalog.outputIds.size,
@@ -175,6 +175,7 @@ object TinyMlpBackprop {
         optimizer: AdamWState,
         inputs: List<FloatArray>,
         labels: IntArray,
+        sampleWeights: FloatArray? = null,
         learningRate: Float = 1e-3f,
         beta1: Float = 0.9f,
         beta2: Float = 0.999f,
@@ -182,7 +183,7 @@ object TinyMlpBackprop {
         weightDecay: Float = 1e-4f,
         gradientClipNorm: Float = 1f
     ): TinyTrainingResult {
-        val gradientResult = gradients(parameters, inputs, labels)
+        val gradientResult = gradients(parameters, inputs, labels, sampleWeights)
         val gradients = gradientResult.values
 
         val norm = sqrt(gradients.sumOf { gradient -> gradient.sumOf { (it * it).toDouble() } }).toFloat()
@@ -214,18 +215,28 @@ object TinyMlpBackprop {
     internal fun gradients(
         parameters: TinyMlpParameters,
         inputs: List<FloatArray>,
-        labels: IntArray
+        labels: IntArray,
+        sampleWeights: FloatArray? = null
     ): TinyGradientResult {
         require(inputs.isNotEmpty() && inputs.size == labels.size)
         require(labels.all { it in 0 until parameters.outputSize })
+        require(sampleWeights == null || sampleWeights.size == inputs.size)
+        val weights = sampleWeights ?: FloatArray(inputs.size) { 1f }
+        require(weights.all { it.isFinite() && it >= 0f })
+        val totalWeight = weights.sum()
+        require(totalWeight > 0f)
         val gradients = parameters.allArrays().map { FloatArray(it.size) }
         var loss = 0.0
 
         inputs.indices.forEach { sampleIndex ->
             val pass = TinyMlpMath.forward(parameters, inputs[sampleIndex])
             val target = labels[sampleIndex]
-            loss += -ln(pass.probabilities[target].coerceAtLeast(1e-7f).toDouble())
-            val dLogits = pass.probabilities.copyOf().also { it[target] -= 1f }
+            val sampleWeight = weights[sampleIndex]
+            loss += -ln(pass.probabilities[target].coerceAtLeast(1e-7f).toDouble()) * sampleWeight
+            val dLogits = pass.probabilities.copyOf().also { values ->
+                values[target] -= 1f
+                values.indices.forEach { values[it] *= sampleWeight }
+            }
 
             outerAccumulate(gradients[4], pass.hidden2, dLogits, parameters.outputSize)
             addInPlace(gradients[5], dLogits)
@@ -241,9 +252,9 @@ object TinyMlpBackprop {
             addInPlace(gradients[1], dHidden1)
         }
 
-        val inverseBatch = 1f / inputs.size
-        gradients.forEach { gradient -> for (i in gradient.indices) gradient[i] *= inverseBatch }
-        return TinyGradientResult((loss / inputs.size).toFloat(), gradients)
+        val inverseWeight = 1f / totalWeight
+        gradients.forEach { gradient -> for (i in gradient.indices) gradient[i] *= inverseWeight }
+        return TinyGradientResult((loss / totalWeight).toFloat(), gradients)
     }
 
     private fun outerAccumulate(target: FloatArray, left: FloatArray, right: FloatArray, rightSize: Int) {

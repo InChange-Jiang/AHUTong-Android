@@ -2,6 +2,14 @@ package com.ahu.ahutong.ui.state
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ahu.ahutong.personalization.preset.PresetCandidate
+import com.ahu.ahutong.personalization.preset.PresetInteractionToken
+import com.ahu.ahutong.personalization.preset.PresetSubmission
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
 import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
 import com.ahu.ahutong.data.crawler.model.jwxt.DateTimeSegmentCmd
 import com.ahu.ahutong.data.crawler.model.jwxt.FreeRoom
@@ -10,10 +18,16 @@ import com.ahu.ahutong.data.crawler.model.jwxt.GetFreeRoomsRequest
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockCampusData
 import com.ahu.ahutong.ext.launchSafe
+import com.google.gson.Gson
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.time.LocalDate
+import javax.inject.Inject
 
-class FreeClassroomViewModel : ViewModel() {
+@HiltViewModel
+class FreeClassroomViewModel @Inject constructor(
+    private val behaviorRuntime: BehaviorPredictionRuntime
+) : ViewModel() {
     val campusOptions = listOf(
         CampusOption(id = 1, name = "磬苑校区"),
         CampusOption(id = 2, name = "龙河校区")
@@ -28,10 +42,16 @@ class FreeClassroomViewModel : ViewModel() {
     val isSearching = MutableStateFlow(false)
     val freeRooms = MutableStateFlow<List<FreeRoom>>(emptyList())
     val errorMessage = MutableStateFlow<String?>(null)
+    val presetCandidates = MutableStateFlow<List<PresetCandidate>>(emptyList())
+    private var activePresetInteraction: PresetInteractionToken? = null
+    private var candidatesAtOpportunity: List<PresetCandidate> = emptyList()
     private val buildingsCache = mutableMapOf<Int, List<GetBuildingsResponseItem>>()
 
     init {
         selectCampus(1)
+        viewModelScope.launchSafe {
+            presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.FREE_CLASSROOM)
+        }
     }
 
     fun selectCampus(campusId: Int) = viewModelScope.launchSafe {
@@ -114,6 +134,7 @@ class FreeClassroomViewModel : ViewModel() {
         val end = endDate.value.toString()
         isSearching.value = true
         errorMessage.value = null
+        recordDispatchedPreset(campusId, buildingIds, units)
         runCatching {
             val allRooms = if (AHUCache.getMockData()) {
                 MockCampusData.freeRooms(campusId, buildingIds)
@@ -138,10 +159,110 @@ class FreeClassroomViewModel : ViewModel() {
             freeRooms.value = allRooms
                 .distinctBy { "${it.id}-${it.building.id}" }
                 .sortedWith(compareBy({ it.building.nameZh }, { it.floor }, { it.nameZh }))
+            behaviorRuntime.onContentStateChanged(
+                SemanticDomain.FREE_CLASSROOM,
+                if (freeRooms.value.isEmpty()) ContentStateBucket.EMPTY else ContentStateBucket.READY,
+                freshnessBucket = 0,
+                resultCount = resultCountBucket(freeRooms.value.size)
+            )
         }.onFailure {
             errorMessage.value = it.message ?: "查询失败"
+            behaviorRuntime.onContentStateChanged(
+                SemanticDomain.FREE_CLASSROOM,
+                ContentStateBucket.ERROR,
+                freshnessBucket = 7,
+                resultCount = ResultCountBucket.ZERO,
+                errorType = ErrorTypeBucket.NETWORK
+            )
         }
         isSearching.value = false
+    }
+
+    fun applyPresetCandidate(candidate: PresetCandidate) = viewModelScope.launchSafe {
+        val applied = behaviorRuntime.applyLocalPreset(candidate) ?: return@launchSafe
+        activePresetInteraction = applied.interactionToken
+        candidatesAtOpportunity = presetCandidates.value
+        val decoded = runCatching { Gson().fromJson(applied.localPayloadJson, FreeClassroomPresetPayload::class.java) }.getOrNull()
+            ?: return@launchSafe
+        if (decoded.campusId !in campusOptions.map(CampusOption::id)) return@launchSafe
+        selectedCampusId.value = decoded.campusId
+        selectedBuildingIds.value = emptySet()
+        loadBuildings(decoded.campusId)
+        selectedBuildingIds.value = decoded.buildingIds.toSet().intersect(buildings.value.map { it.id }.toSet())
+        selectedUnits.value = decoded.units.toSet().filter { it in 1..13 }.toSet()
+        val start = runCatching { LocalDate.parse(decoded.startDate) }.getOrNull() ?: return@launchSafe
+        val end = runCatching { LocalDate.parse(decoded.endDate) }.getOrNull() ?: return@launchSafe
+        setDateRange(start, end.coerceAtLeast(start))
+        presetCandidates.value = emptyList()
+    }
+
+    fun onPresetCandidateVisible(candidate: PresetCandidate) = viewModelScope.launchSafe {
+        val token = behaviorRuntime.markPresetRecommendationExposed(candidate) ?: return@launchSafe
+        activePresetInteraction = token
+        candidatesAtOpportunity = presetCandidates.value
+    }
+
+    fun onPresetSurfaceDisposed() {
+        behaviorRuntime.expirePresetInteractionAsync(activePresetInteraction)
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+    }
+
+    private suspend fun recordDispatchedPreset(campusId: Int, buildingIds: List<Int>, units: List<String>) {
+        val payload = FreeClassroomPresetPayload(
+            campusId,
+            buildingIds.sorted(),
+            units.mapNotNull(String::toIntOrNull).sorted(),
+            startDate.value.toString(),
+            endDate.value.toString()
+        )
+        val coarse = FreeClassroomCoarsePreset(
+            campusCategory = if (campusId == 1) "CAMPUS_PRIMARY" else "CAMPUS_SECONDARY",
+            buildingCountBucket = when (buildingIds.size) { 0 -> "ALL"; 1 -> "ONE"; in 2..4 -> "TWO_TO_FOUR"; else -> "FIVE_PLUS" },
+            timeSegment = unitBucket(units.mapNotNull(String::toIntOrNull)),
+            dateRange = dateBucket(startDate.value, endDate.value),
+            resultCount = ResultCountBucket.UNKNOWN.name
+        )
+        behaviorRuntime.recordNaturalPresetSubmission(
+            PresetSubmission(
+                SemanticDomain.FREE_CLASSROOM,
+                Gson().toJson(payload),
+                Gson().toJson(coarse),
+                "${payload.campusId}|${payload.buildingIds.joinToString(",")}|${payload.units.joinToString(",")}|${payload.startDate}|${payload.endDate}"
+            ),
+            interactionToken = activePresetInteraction,
+            candidatesAtOpportunity = candidatesAtOpportunity.ifEmpty { presetCandidates.value }
+        )
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+        presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.FREE_CLASSROOM)
+    }
+
+    override fun onCleared() {
+        onPresetSurfaceDisposed()
+        super.onCleared()
+    }
+
+    private fun resultCountBucket(count: Int): ResultCountBucket = when (count) {
+        0 -> ResultCountBucket.ZERO
+        in 1..5 -> ResultCountBucket.ONE_TO_FIVE
+        in 6..20 -> ResultCountBucket.SIX_TO_TWENTY
+        else -> ResultCountBucket.TWENTY_ONE_PLUS
+    }
+
+    private fun unitBucket(units: List<Int>): String = when {
+        units.isEmpty() || units.size == 13 -> "ALL_DAY"
+        units.all { it in 1..5 } -> "MORNING"
+        units.all { it in 6..10 } -> "AFTERNOON"
+        units.all { it in 11..13 } -> "EVENING"
+        else -> "CUSTOM"
+    }
+
+    private fun dateBucket(start: LocalDate, end: LocalDate): String = when {
+        start == LocalDate.now() && end == start -> "TODAY"
+        start == LocalDate.now().plusDays(1) && end == start -> "TOMORROW"
+        !end.isAfter(start.plusDays(7)) -> "WITHIN_SEVEN_DAYS"
+        else -> "CUSTOM_RANGE"
     }
 
     private suspend fun loadBuildings(campusId: Int) {
@@ -170,4 +291,20 @@ class FreeClassroomViewModel : ViewModel() {
 data class CampusOption(
     val id: Int,
     val name: String
+)
+
+private data class FreeClassroomPresetPayload(
+    val campusId: Int,
+    val buildingIds: List<Int>,
+    val units: List<Int>,
+    val startDate: String,
+    val endDate: String
+)
+
+private data class FreeClassroomCoarsePreset(
+    val campusCategory: String,
+    val buildingCountBucket: String,
+    val timeSegment: String,
+    val dateRange: String,
+    val resultCount: String
 )

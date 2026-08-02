@@ -265,6 +265,58 @@ private fun DiagnosticsScreen(
             LearningSection(state, snapshot)
         }
         item {
+            DiagnosticsSection(title = "针对性语义事件") {
+                LabeledValue("候选域", state.candidateScope, monospace = true)
+                LabeledValue(
+                    "定向动作",
+                    state.targetedActions.sorted().joinToString().ifBlank { "--" },
+                    monospace = true
+                )
+                state.candidateRejectionReason?.let {
+                    LabeledValue("拒绝原因", it, monospace = true)
+                }
+                HorizontalDivider()
+                if (snapshot.recentSemanticEvents.isEmpty()) {
+                    EmptyDiagnosticsText("尚未记录已提交的语义变化")
+                } else {
+                    snapshot.recentSemanticEvents.take(12).forEach { line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                }
+                HorizontalDivider()
+                snapshot.recentSemanticChangeSets.take(8).forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+        item {
+            DiagnosticsSection(title = "多跳旅程与参数模型") {
+                LabeledValue("Pending journey", snapshot.pendingJourney ?: "无", monospace = true)
+                LabeledValue("Journey 样本", snapshot.journeyTrainingSamples.toString())
+                LabeledValue("Preset 样本", snapshot.presetTrainingSamples.toString())
+                snapshot.journeyProbabilities.forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                HorizontalDivider()
+                if (snapshot.presetCandidates.isEmpty()) {
+                    EmptyDiagnosticsText("当前没有已排序的本地预设候选")
+                } else {
+                    snapshot.presetCandidates.forEach { line ->
+                        Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    }
+                }
+                snapshot.presetFeedbackDiagnostics.forEach { line ->
+                    Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                }
+                HorizontalDivider()
+                if (snapshot.taskStates.isEmpty()) {
+                    EmptyDiagnosticsText("任务模型尚未初始化")
+                } else {
+                    snapshot.taskStates.forEach { Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace) }
+                }
+            }
+        }
+        item {
             PromotionSection(snapshot.promotionWindows)
         }
         item {

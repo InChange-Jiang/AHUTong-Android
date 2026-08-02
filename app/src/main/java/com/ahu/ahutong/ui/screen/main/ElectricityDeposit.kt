@@ -42,6 +42,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,7 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.PayState
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
@@ -78,8 +79,11 @@ import androidx.compose.ui.text.input.ImeAction
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ElectricityDeposit(
-    viewModel: ElectricityDepositViewModel = viewModel()
+    viewModel: ElectricityDepositViewModel = hiltViewModel()
 ) {
+    DisposableEffect(viewModel) {
+        onDispose { viewModel.onPresetSurfaceDisposed() }
+    }
     val behaviorReporter = rememberBehaviorActionReporter()
     val payState = viewModel.payState.collectAsState()
     LaunchedEffect(payState.value) {
@@ -110,6 +114,7 @@ fun ElectricityDeposit(
 
     val roomInfo by viewModel.roomInfo.collectAsState()
     val historyOptions by viewModel.historyOptions.collectAsState()
+    val presetCandidates by viewModel.presetCandidates.collectAsState()
 
     var campusDropdownExpanded by remember { mutableStateOf(false) }
     var buildingsDropdownExpanded by remember { mutableStateOf(false) }
@@ -160,6 +165,23 @@ fun ElectricityDeposit(
             modifier = Modifier.padding(24.dp, 32.dp),
             style = MaterialTheme.typography.headlineMedium
         )
+
+        presetCandidates.firstOrNull()?.let { candidate ->
+            LaunchedEffect(candidate.opportunityId, candidate.presetId) {
+                viewModel.onPresetCandidateVisible(candidate)
+            }
+            Text(
+                text = "使用最近房间",
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .clip(SmoothRoundedCornerShape(16.dp))
+                    .background(90.a1 withNight 30.n1)
+                    .clickable { viewModel.applyPresetCandidate(candidate) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = 10.n1 withNight 90.n1,
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
 
         Column(
             modifier = Modifier

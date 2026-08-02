@@ -104,6 +104,14 @@ class DecayedFrequencyPredictor @Inject constructor(
             "recent:${snapshot.recentActions.takeLast(3).joinToString(",") { it.stableId }}" to 0.18,
             "business:${snapshot.balanceBucket}:${snapshot.examDistanceBucket}" to 0.10
         )
+        snapshot.semanticContext?.let { semantic ->
+            result += "mutation:${semantic.semanticId}" to 0.30
+            result += "mutation_route:${semantic.semanticId}:${snapshot.route ?: "NONE"}" to 0.24
+            result += "mutation_time:${semantic.semanticId}:${snapshot.minuteOfDay / 240}" to 0.18
+        }
+        snapshot.contentContext?.let { content ->
+            result += "content:${content.domain}:${content.state}" to 0.20
+        }
         return result
     }
 

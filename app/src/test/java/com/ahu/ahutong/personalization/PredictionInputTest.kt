@@ -6,6 +6,11 @@ import com.ahu.ahutong.personalization.context.ContextSnapshot
 import com.ahu.ahutong.personalization.context.DayType
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
 import com.ahu.ahutong.personalization.context.FeatureExtractor
+import com.ahu.ahutong.personalization.context.V3ToV4FeatureAdapter
+import com.ahu.ahutong.personalization.semantic.SemanticChangeKind
+import com.ahu.ahutong.personalization.semantic.SemanticContext
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import com.ahu.ahutong.personalization.semantic.SemanticEventFamily
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -68,5 +73,41 @@ class PredictionInputTest {
         assertTrue(first.features[59] == 0f && second.features[59] == 1f)
         assertTrue(first.features[60] == 0f && second.features[60] == 1f)
         assertTrue(second.features[61] == 1f)
+    }
+
+    @Test
+    fun semanticFeaturesOnlyOccupyTheAppendedSchemaRange() {
+        val baseline = FeatureExtractor.build("profile", "base", snapshot)
+        val semantic = FeatureExtractor.build(
+            "profile",
+            "semantic",
+            snapshot.copy(
+                semanticContext = SemanticContext(
+                    SemanticEventFamily.SETTING_CHANGED,
+                    SemanticDomain.HOME,
+                    "HOME_DEFAULT_QR_CHANGED",
+                    SemanticChangeKind.ENABLED,
+                    ageBucket = 2,
+                    changeSetSize = 3,
+                    stable = true
+                ),
+                candidateSetSize = 2,
+                journeyPosition = 1
+            )
+        )
+
+        assertTrue(baseline.features.copy().copyOfRange(0, 64).contentEquals(
+            semantic.features.copy().copyOfRange(0, 64)
+        ))
+        assertTrue(semantic.features.copy().copyOfRange(64, 96).any { it != 0f })
+    }
+
+    @Test
+    fun legacySamplesKeepAllOldCoordinatesAndPadZeros() {
+        val legacy = FloatArray(FeatureExtractor.LEGACY_V3_INPUT_DIMENSION) { it / 64f }
+        val migrated = V3ToV4FeatureAdapter.adapt(legacy, 3)
+
+        assertTrue(legacy.contentEquals(migrated.copyOfRange(0, 64)))
+        assertTrue(migrated.copyOfRange(64, 96).all { it == 0f })
     }
 }

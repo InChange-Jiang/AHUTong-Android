@@ -73,11 +73,17 @@ import io.noties.markwon.Markwon
 import kotlinx.coroutines.flow.collect
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
 
 @Composable
 fun Repository(
     navController: NavHostController,
-    path: String
+    path: String,
+    behaviorRuntime: BehaviorPredictionRuntime
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
     val activity = LocalContext.current as androidx.activity.ComponentActivity
@@ -96,6 +102,21 @@ fun Repository(
     LaunchedEffect(path) {
         viewModel.ensureLoaded(path)
         viewModel.warmUpAllContentCaches()
+    }
+
+    LaunchedEffect(state.isLoading, state.isRefreshing, state.error, state.items.size, state.isShowingCachedContents) {
+        behaviorRuntime.onContentStateChanged(
+            domain = SemanticDomain.REPOSITORY,
+            state = when {
+                state.isLoading || state.isRefreshing -> ContentStateBucket.LOADING
+                state.error != null -> ContentStateBucket.ERROR
+                state.items.isEmpty() -> ContentStateBucket.EMPTY
+                else -> ContentStateBucket.READY
+            },
+            freshnessBucket = if (state.isShowingCachedContents) 3 else 0,
+            resultCount = repositoryResultBucket(state.items.size),
+            errorType = if (state.error == null) ErrorTypeBucket.NONE else ErrorTypeBucket.NETWORK
+        )
     }
 
     LaunchedEffect(listState, path) {
@@ -274,6 +295,13 @@ fun Repository(
         markdownState = markdownState,
         onDismiss = { viewModel.clearMarkdown() }
     )
+}
+
+private fun repositoryResultBucket(count: Int): ResultCountBucket = when (count) {
+    0 -> ResultCountBucket.ZERO
+    in 1..5 -> ResultCountBucket.ONE_TO_FIVE
+    in 6..20 -> ResultCountBucket.SIX_TO_TWENTY
+    else -> ResultCountBucket.TWENTY_ONE_PLUS
 }
 
 @Composable

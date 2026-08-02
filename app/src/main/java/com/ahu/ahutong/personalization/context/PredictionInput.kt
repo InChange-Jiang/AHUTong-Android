@@ -4,6 +4,8 @@ import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionFamily
 import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.personalization.semantic.ContentContext
+import com.ahu.ahutong.personalization.semantic.SemanticContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.io.ByteArrayOutputStream
@@ -64,7 +66,11 @@ data class ContextSnapshot(
     val pageDwellBucket: Int? = null,
     val recentActionSources: List<ActionSource> = emptyList(),
     val personalFamilyFrequencies: List<Float> = emptyList(),
-    val personalFamilyRecencies: List<Float> = emptyList()
+    val personalFamilyRecencies: List<Float> = emptyList(),
+    val semanticContext: SemanticContext? = null,
+    val contentContext: ContentContext? = null,
+    val candidateSetSize: Int = 0,
+    val journeyPosition: Int = 0
 )
 
 data class PredictionInput(
@@ -80,8 +86,9 @@ data class PredictionInput(
 )
 
 object FeatureExtractor {
-    const val FEATURE_SCHEMA_VERSION = 3
-    const val INPUT_DIMENSION = 64
+    const val FEATURE_SCHEMA_VERSION = 4
+    const val INPUT_DIMENSION = 96
+    const val LEGACY_V3_INPUT_DIMENSION = 64
 
     fun build(
         profileKey: String,
@@ -166,6 +173,42 @@ object FeatureExtractor {
         features[62] = if (safeSnapshot.route == null) 1f else 0f
         features[63] = if (safeSnapshot.recentActions.isEmpty()) 1f else 0f
 
+        // 64..71: semantic domain and family. Stable hashing keeps the catalog extensible.
+        safeSnapshot.semanticContext?.let { semantic ->
+            hashedOneHot(features, 64, 4, semantic.domain.name, 1f)
+            hashedOneHot(features, 68, 4, semantic.eventFamily.name, 1f)
+
+            // 72..79: stable semantic/mutation identifier.
+            hashedOneHot(features, 72, 8, semantic.semanticId, 1f)
+
+            // 80..83: change direction.
+            hashedOneHot(features, 80, 4, semantic.changeKind.name, 1f)
+
+            // 84..87: recency, change-set size and stability.
+            features[84] = semantic.ageBucket.coerceIn(0, 7) / 7f
+            features[85] = semantic.changeSetSize.coerceIn(1, 8) / 8f
+            features[86] = if (semantic.stable) 1f else 0f
+            features[87] = 1f
+        }
+
+        // 88..91: content state, freshness, result count and coarse error type.
+        safeSnapshot.contentContext?.let { content ->
+            features[88] = content.state.ordinal / (com.ahu.ahutong.personalization.semantic.ContentStateBucket.entries.size - 1f)
+            features[89] = content.freshnessBucket.coerceIn(0, 7) / 7f
+            features[90] = content.resultCount.ordinal / (com.ahu.ahutong.personalization.semantic.ResultCountBucket.entries.size - 1f)
+            features[91] = content.errorType.ordinal / (com.ahu.ahutong.personalization.semantic.ErrorTypeBucket.entries.size - 1f)
+        }
+
+        // 92..95: candidate scope, journey position, catalog version and unknown mask.
+        features[92] = safeSnapshot.candidateSetSize.coerceIn(0, 16) / 16f
+        features[93] = safeSnapshot.journeyPosition.coerceIn(0, 5) / 5f
+        features[94] = safeSnapshot.semanticContext?.affectedCandidateSetVersion?.coerceIn(0, 16)?.div(16f) ?: 0f
+        features[95] = when {
+            safeSnapshot.semanticContext == null && safeSnapshot.contentContext == null -> 1f
+            safeSnapshot.contentContext == null -> 0.5f
+            else -> 0f
+        }
+
         val immutableFeatures = ImmutableFloatVector(features)
         val immutableAvailability = ImmutableBooleanVector(availability)
         val digest = MessageDigest.getInstance("SHA-256").digest(
@@ -225,6 +268,27 @@ object FeatureExtractor {
                 value.personalFamilyFrequencies.forEach(output::writeFloat)
                 output.writeInt(value.personalFamilyRecencies.size)
                 value.personalFamilyRecencies.forEach(output::writeFloat)
+                output.writeBoolean(value.semanticContext != null)
+                value.semanticContext?.let { semantic ->
+                    output.writeUTF(semantic.eventFamily.name)
+                    output.writeUTF(semantic.domain.name)
+                    output.writeUTF(semantic.semanticId)
+                    output.writeUTF(semantic.changeKind.name)
+                    output.writeInt(semantic.ageBucket)
+                    output.writeInt(semantic.changeSetSize)
+                    output.writeBoolean(semantic.stable)
+                    output.writeInt(semantic.affectedCandidateSetVersion)
+                }
+                output.writeBoolean(value.contentContext != null)
+                value.contentContext?.let { content ->
+                    output.writeUTF(content.domain.name)
+                    output.writeUTF(content.state.name)
+                    output.writeInt(content.freshnessBucket)
+                    output.writeUTF(content.resultCount.name)
+                    output.writeUTF(content.errorType.name)
+                }
+                output.writeInt(value.candidateSetSize)
+                output.writeInt(value.journeyPosition)
             }
             bytes.toByteArray()
         }
@@ -254,4 +318,17 @@ object FeatureExtractor {
         ExamDistanceBucket.WITHIN_THREE_DAYS,
         ExamDistanceBucket.WITHIN_SEVEN_DAYS
     )
+}
+
+object V3ToV4FeatureAdapter {
+    fun adapt(values: FloatArray, schemaVersion: Int): FloatArray = when (schemaVersion) {
+        FeatureExtractor.FEATURE_SCHEMA_VERSION -> values.also {
+            require(it.size == FeatureExtractor.INPUT_DIMENSION)
+        }
+        3 -> FloatArray(FeatureExtractor.INPUT_DIMENSION).also { migrated ->
+            require(values.size == FeatureExtractor.LEGACY_V3_INPUT_DIMENSION)
+            values.copyInto(migrated, endIndex = FeatureExtractor.LEGACY_V3_INPUT_DIMENSION)
+        }
+        else -> throw IllegalArgumentException("Unsupported feature schema $schemaVersion")
+    }
 }

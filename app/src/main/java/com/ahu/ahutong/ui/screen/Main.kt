@@ -155,6 +155,7 @@ fun Main(
                     discoveryViewModel = discoveryViewModel,
                     scheduleViewModel = scheduleViewModel,
                     navController = navController,
+                    behaviorRuntime = behaviorRuntime,
                     homeEditEnabled = homeEditGrayState.enabled,
                     enterEditModeRequest = shouldEnterHomeEdit,
                     onEnterEditModeRequestConsumed = {
@@ -209,7 +210,7 @@ fun Main(
                 )
             }
             animatedComposable("schedule") {
-                Schedule(scheduleViewModel = scheduleViewModel)
+                Schedule(scheduleViewModel = scheduleViewModel, behaviorRuntime = behaviorRuntime)
             }
             animatedComposable("tools") {
                 Tools(
@@ -252,7 +253,8 @@ fun Main(
             animatedComposable(REPOSITORY_ROUTE) {
                 Repository(
                     navController = navController,
-                    path = ""
+                    path = "",
+                    behaviorRuntime = behaviorRuntime
                 )
             }
             animatedComposable(
@@ -267,7 +269,8 @@ fun Main(
             ) { backStackEntry ->
                 Repository(
                     navController = navController,
-                    path = backStackEntry.arguments?.getString(REPOSITORY_PATH_ARG).orEmpty()
+                    path = backStackEntry.arguments?.getString(REPOSITORY_PATH_ARG).orEmpty(),
+                    behaviorRuntime = behaviorRuntime
                 )
             }
             animatedComposable("repository_downloads") {

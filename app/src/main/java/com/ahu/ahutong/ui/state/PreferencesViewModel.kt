@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.MutationId
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -134,37 +135,49 @@ class PreferencesViewModel @Inject constructor(
 
     fun setShowQRCode(value: Boolean) {
         viewModelScope.launch {
+            val oldValue = _showQRCode.value
             preferencesManager.setShowQRCode(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.HOME_DEFAULT_QR_CHANGED, oldValue, value)
         }
     }
 
     fun setIsShowAllCourse(value: Boolean) {
         viewModelScope.launch {
+            val oldValue = _isShowAllCourse.value
             preferencesManager.setIsShowAllCourse(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.SCHEDULE_OVERVIEW_CHANGED, oldValue, value)
         }
     }
 
     fun setUseLiquidGlass(value: Boolean) {
         viewModelScope.launch {
+            val oldValue = _useLiquidGlass.value
             preferencesManager.setUseLiquidGlass(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.LIQUID_GLASS_CHANGED, oldValue, value)
         }
     }
 
     fun setCourseReminderEnabled(value: Boolean) {
         viewModelScope.launch {
+            val oldValue = _courseReminderEnabled.value
             preferencesManager.setCourseReminderEnabled(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.COURSE_REMINDER_CHANGED, oldValue, value)
         }
     }
 
     fun setCourseReminderLiveCountdownEnabled(value: Boolean) {
         viewModelScope.launch {
+            val oldValue = _courseReminderLiveCountdownEnabled.value
             preferencesManager.setCourseReminderLiveCountdownEnabled(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.COURSE_LIVE_COUNTDOWN_CHANGED, oldValue, value)
         }
     }
 
     fun setThemeColor(value: String?) {
         viewModelScope.launch {
+            val oldValue = _themeColor.value
             preferencesManager.setThemeColor(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.THEME_CHANGED, oldValue, value, coarseValueBucket = "COLOR_CHANGED")
         }
     }
 
@@ -176,7 +189,10 @@ class PreferencesViewModel @Inject constructor(
 
     fun setRepositoryAccelerationSource(value: String) {
         viewModelScope.launch {
+            val oldValue = _repositoryAccelerationSource.value
             preferencesManager.setRepositoryAccelerationSource(value)
+            behaviorRuntime.recordCommittedMutation(MutationId.REPOSITORY_ACCELERATION_CHANGED, oldValue, value, coarseValueBucket = "SOURCE_CHANGED")
         }
     }
+
 }

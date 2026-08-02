@@ -20,6 +20,16 @@ import com.ahu.ahutong.data.crawler.utils.sha256
 import com.ahu.ahutong.data.model.ElectricityChargeInfo
 import com.ahu.ahutong.data.model.ElectricityDepositHistoryItem
 import com.ahu.ahutong.data.model.RoomSelectionInfo
+import com.ahu.ahutong.personalization.preset.PresetCandidate
+import com.ahu.ahutong.personalization.preset.PresetInteractionToken
+import com.ahu.ahutong.personalization.preset.PresetSubmission
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -124,7 +134,10 @@ data class AccountPayInfoData(
     val passwordMap: Map<String, String>?
 )
 
-class ElectricityDepositViewModel: ViewModel() {
+@HiltViewModel
+class ElectricityDepositViewModel @Inject constructor(
+    private val behaviorRuntime: BehaviorPredictionRuntime
+) : ViewModel() {
     var _payState = MutableStateFlow<PayState>(PayState.Idle)
     val payState : StateFlow<PayState> = _payState
     fun resetPaymentState() {
@@ -169,6 +182,10 @@ class ElectricityDepositViewModel: ViewModel() {
 
     private val _historyOptions = MutableStateFlow<List<ElectricityDepositHistoryItem>>(emptyList())
     val historyOptions: StateFlow<List<ElectricityDepositHistoryItem>> = _historyOptions
+    private val _presetCandidates = MutableStateFlow<List<PresetCandidate>>(emptyList())
+    val presetCandidates: StateFlow<List<PresetCandidate>> = _presetCandidates
+    private var activePresetInteraction: PresetInteractionToken? = null
+    private var candidatesAtOpportunity: List<PresetCandidate> = emptyList()
 
     init {
         _campusList.value = emptyList()
@@ -200,9 +217,12 @@ class ElectricityDepositViewModel: ViewModel() {
                 fetchCampuses()
             }
         }
+        viewModelScope.launch {
+            _presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.ELECTRICITY)
+        }
     }
 
-    private fun loadAndRestoreSelection(selection: RoomSelectionInfo) {
+    private fun loadAndRestoreSelection(selection: RoomSelectionInfo, commitPresetOnRoomRequest: Boolean = false) {
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
@@ -216,6 +236,7 @@ class ElectricityDepositViewModel: ViewModel() {
                 getBuildings().data?.let { _buildingsList.value = it } ?: throw Exception("加载楼栋列表失败")
                 getFloor().data?.let { _floorsList.value = it } ?: throw Exception("加载楼层列表失败")
                 getRoom().data?.let { _roomsList.value = it } ?: throw Exception("加载房间列表失败")
+                if (commitPresetOnRoomRequest) recordRoomPreset()
                 getRoomInfo().data?.let {
                     _fullRoomDetails.value = it
                     _roomInfo.value = it.showData?.info
@@ -330,7 +351,6 @@ class ElectricityDepositViewModel: ViewModel() {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
             Log.e("ElectricityDepositViewModel", "getCampus Exception", e)
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -402,7 +422,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         } finally {
             _isLoading.value = false
         }
@@ -480,7 +499,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -562,7 +580,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -577,19 +594,94 @@ class ElectricityDepositViewModel: ViewModel() {
             _isLoading.value = true
             _errorMessage.value = null
             try {
+                recordRoomPreset()
                 val response = getRoomInfo()
                 if (response.code == 0 && response.data != null) {
                     _fullRoomDetails.value = response.data
                     _roomInfo.value = response.data.showData?.info
+                    behaviorRuntime.onContentStateChanged(
+                        SemanticDomain.ELECTRICITY,
+                        ContentStateBucket.READY,
+                        freshnessBucket = 0,
+                        resultCount = ResultCountBucket.ONE_TO_FIVE
+                    )
                 } else {
                     _errorMessage.value = response.msg ?: "加载房间信息失败"
+                    reportRoomError()
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
+                reportRoomError()
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun applyPresetCandidate(candidate: PresetCandidate) = viewModelScope.launch {
+        val applied = behaviorRuntime.applyLocalPreset(candidate) ?: return@launch
+        activePresetInteraction = applied.interactionToken
+        candidatesAtOpportunity = _presetCandidates.value
+        val selection = runCatching { Gson().fromJson(applied.localPayloadJson, RoomSelectionInfo::class.java) }.getOrNull()
+            ?: return@launch
+        if (selection.campus == null || selection.building == null || selection.floor == null || selection.room == null) {
+            return@launch
+        }
+        _presetCandidates.value = emptyList()
+        loadAndRestoreSelection(selection, commitPresetOnRoomRequest = true)
+    }
+
+    private suspend fun recordRoomPreset() {
+        val selection = RoomSelectionInfo(
+            campus = _selectedCampus.value,
+            building = _selectedBuilding.value,
+            floor = _selectedFloor.value,
+            room = _selectedRoom.value
+        )
+        val campus = selection.campus ?: return
+        val building = selection.building ?: return
+        val floor = selection.floor ?: return
+        val room = selection.room ?: return
+        behaviorRuntime.recordNaturalPresetSubmission(
+            PresetSubmission(
+                SemanticDomain.ELECTRICITY,
+                Gson().toJson(selection),
+                "{\"roomCategory\":\"RECENT_LOCAL_ROOM\"}",
+                "${campus.value}|${building.value}|${floor.value}|${room.value}"
+            ),
+            interactionToken = activePresetInteraction,
+            candidatesAtOpportunity = candidatesAtOpportunity.ifEmpty { _presetCandidates.value }
+        )
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+        _presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.ELECTRICITY)
+    }
+
+    fun onPresetCandidateVisible(candidate: PresetCandidate) = viewModelScope.launch {
+        val token = behaviorRuntime.markPresetRecommendationExposed(candidate) ?: return@launch
+        activePresetInteraction = token
+        candidatesAtOpportunity = _presetCandidates.value
+    }
+
+    fun onPresetSurfaceDisposed() {
+        behaviorRuntime.expirePresetInteractionAsync(activePresetInteraction)
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+    }
+
+    override fun onCleared() {
+        onPresetSurfaceDisposed()
+        super.onCleared()
+    }
+
+    private fun reportRoomError() {
+        behaviorRuntime.onContentStateChanged(
+            SemanticDomain.ELECTRICITY,
+            ContentStateBucket.ERROR,
+            freshnessBucket = 7,
+            resultCount = ResultCountBucket.ZERO,
+            errorType = ErrorTypeBucket.NETWORK
+        )
     }
 
     private suspend fun getRoomInfo(): AHUResponse<RoomInfoMap> {
@@ -652,7 +744,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -717,7 +808,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -759,7 +849,6 @@ class ElectricityDepositViewModel: ViewModel() {
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            e.printStackTrace()
         }
         return responseWrapper
     }
@@ -879,37 +968,23 @@ class ElectricityDepositViewModel: ViewModel() {
                         val errorMessage = parsedResponse.msg ?: "支付失败，未知错误"
                         _errorMessage.value = errorMessage
                         _payState.value = PayState.Failed(errorMessage)
-                        Log.e("ElectricityDepositViewModel", "支付失败: $errorMessage")
+                        Log.e("ElectricityDepositViewModel", "支付失败 code=${parsedResponse.code}")
                     }
                 } else {
-                    val errorBody = finalRes.errorBody()?.string()
-                    val errorMessage = "支付失败: ${finalRes.message()}" + if (!errorBody.isNullOrBlank()) " ($errorBody)" else ""
+                    val errorMessage = "支付失败，请稍后重试（${finalRes.code()}）"
                     _errorMessage.value = errorMessage
                     _payState.value = PayState.Failed(errorMessage)
-                    Log.e("ElectricityDepositViewModel", errorMessage)
+                    Log.e("ElectricityDepositViewModel", "最终支付请求失败 code=${finalRes.code()}")
                 }
 
             } catch (e: Exception) {
                 val errorMessage = "支付请求异常: ${e.message}"
                 _errorMessage.value = errorMessage
                 _payState.value = PayState.Failed(errorMessage)
-                Log.e("ElectricityDepositViewModel", errorMessage, e)
+                Log.e("ElectricityDepositViewModel", "支付请求异常")
             } finally {
                 _isLoading.value = false
                 Log.d("ElectricityDepositViewModel", "支付流程结束。")
-            }
-        }
-    }
-
-    private fun FormBody.asString(): String {
-        return buildString {
-            for (i in 0 until size) {
-                append(encodedName(i))
-                append("=")
-                append(encodedValue(i))
-                if (i < size - 1) {
-                    append(", ")
-                }
             }
         }
     }

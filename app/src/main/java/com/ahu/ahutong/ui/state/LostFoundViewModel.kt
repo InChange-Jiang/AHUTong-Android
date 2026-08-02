@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.state
 
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,9 +11,25 @@ import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.personalization.preset.PresetCandidate
+import com.ahu.ahutong.personalization.preset.PresetInteractionToken
+import com.ahu.ahutong.personalization.preset.PresetSubmission
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import com.google.gson.Gson
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-class LostFoundViewModel : ViewModel() {
+@HiltViewModel
+class LostFoundViewModel @Inject constructor(
+    private val behaviorRuntime: BehaviorPredictionRuntime
+) : ViewModel() {
 
     // 校区
     var allCampus by mutableStateOf<AllCampus?>(null)
@@ -32,6 +47,15 @@ class LostFoundViewModel : ViewModel() {
     // 2=寻物启事
     var currentState by mutableStateOf(1)
         private set
+    var selectedCampus by mutableStateOf<String?>(null)
+        private set
+    var selectedType by mutableStateOf<String?>(null)
+        private set
+    var presetCandidates by mutableStateOf<List<PresetCandidate>>(emptyList())
+        private set
+    private var filterCommitJob: Job? = null
+    private var activePresetInteraction: PresetInteractionToken? = null
+    private var candidatesAtOpportunity: List<PresetCandidate> = emptyList()
 
     // 分页信息
     private var currentPage by mutableStateOf(1)
@@ -92,11 +116,6 @@ class LostFoundViewModel : ViewModel() {
                     result.data.`object`
                 )
 
-                Log.d(
-                    "lostfound",
-                    "allcampus = ${result.data}"
-                )
-
                 errorMessage = null
             } else {
                 errorMessage = result.msg
@@ -147,11 +166,6 @@ class LostFoundViewModel : ViewModel() {
                     result.data.`object`
                 )
 
-                Log.d(
-                    "lostfound",
-                    "alltype = ${result.data}"
-                )
-
                 errorMessage = null
             } else {
                 errorMessage = result.msg
@@ -183,22 +197,33 @@ class LostFoundViewModel : ViewModel() {
             AHUCache.getLostFoundList(state)
         }
 
-        // 再请求最新数据
-        fetchFirstPage()
+        scheduleFilterQuery()
+    }
+
+    fun selectCampusFilter(campusId: String?) {
+        if (selectedCampus == campusId) return
+        selectedCampus = campusId
+        scheduleFilterQuery()
+    }
+
+    fun selectTypeFilter(typeId: String?) {
+        if (selectedType == typeId) return
+        selectedType = typeId
+        scheduleFilterQuery()
     }
 
     /**
      * 获取第一页（覆盖）
      */
-    fun fetchFirstPage() = viewModelScope.launch {
+    fun fetchFirstPage(commitPresetOnDispatch: Boolean = false) = viewModelScope.launch {
         listLoading = true
         try {
+            if (commitPresetOnDispatch) recordCurrentPresetDispatch()
             val result = AHURepository.getLostFoundList(
                 pageNo = 1,
                 pageSize = pageSize,
                 state = currentState
             )
-            Log.d("lostfound", "alllist = ${result.data.toString()}")
             if (result.code == 0) {
                 val pageData = result.data.data
 
@@ -214,11 +239,14 @@ class LostFoundViewModel : ViewModel() {
                 )
 
                 errorMessage = null
+                reportListContent(pageData.list.size, fresh = true)
             } else {
                 errorMessage = result.msg
+                reportListError()
             }
         } catch (t: Throwable) {
             errorMessage = t.message ?: "获取列表失败"
+            reportListError()
         } finally {
             listLoading = false
         }
@@ -265,12 +293,15 @@ class LostFoundViewModel : ViewModel() {
                     )
 
                     errorMessage = null
+                    reportListContent(pageData.list.size, fresh = true)
                 } else {
                     errorMessage = result.msg
+                    reportListError()
                 }
             } catch (t: Throwable) {
                 errorMessage =
                     t.message ?: "刷新失败"
+                reportListError()
             } finally {
                 isRefreshing = false
             }
@@ -368,10 +399,97 @@ class LostFoundViewModel : ViewModel() {
 
                     refreshList()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (_: Exception) { }
         }
+    }
+
+    fun applyPresetCandidate(candidate: PresetCandidate) = viewModelScope.launch {
+        filterCommitJob?.cancel()
+        val applied = behaviorRuntime.applyLocalPreset(candidate) ?: return@launch
+        activePresetInteraction = applied.interactionToken
+        candidatesAtOpportunity = presetCandidates
+        val decoded = runCatching { Gson().fromJson(applied.localPayloadJson, LostFoundPresetPayload::class.java) }.getOrNull()
+            ?: return@launch
+        if (decoded.state !in 1..2) return@launch
+        currentState = decoded.state
+        selectedCampus = decoded.campusId?.takeIf { candidateId ->
+            allCampus?.`object`.orEmpty().any { it.id == candidateId }
+        }
+        selectedType = decoded.typeId?.takeIf { candidateId ->
+            allLostFoundType?.`object`.orEmpty().any { it.typeId == candidateId }
+        }
+        presetCandidates = emptyList()
+        currentPage = 1
+        totalPages = 1
+        fetchFirstPage(commitPresetOnDispatch = true)
+    }
+
+    private fun scheduleFilterQuery() {
+        filterCommitJob?.cancel()
+        filterCommitJob = viewModelScope.launch {
+            delay(FILTER_SETTLE_MS)
+            fetchFirstPage(commitPresetOnDispatch = true)
+        }
+    }
+
+    private suspend fun recordCurrentPresetDispatch() {
+        val payload = LostFoundPresetPayload(currentState, selectedCampus, selectedType)
+        val coarse = LostFoundCoarsePreset(
+            postCategory = if (currentState == 1) "LOST" else "FOUND",
+            campusCategory = if (selectedCampus == null) "ALL" else "SELECTED",
+            itemCategory = if (selectedType == null) "ALL" else "SELECTED"
+        )
+        behaviorRuntime.recordNaturalPresetSubmission(
+            PresetSubmission(
+                SemanticDomain.LOST_FOUND,
+                Gson().toJson(payload),
+                Gson().toJson(coarse),
+                "$currentState|${selectedCampus.orEmpty()}|${selectedType.orEmpty()}"
+            ),
+            interactionToken = activePresetInteraction,
+            candidatesAtOpportunity = candidatesAtOpportunity.ifEmpty { presetCandidates }
+        )
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+        presetCandidates = behaviorRuntime.rankLocalPresets(SemanticDomain.LOST_FOUND)
+    }
+
+    fun onPresetCandidateVisible(candidate: PresetCandidate) = viewModelScope.launch {
+        val token = behaviorRuntime.markPresetRecommendationExposed(candidate) ?: return@launch
+        activePresetInteraction = token
+        candidatesAtOpportunity = presetCandidates
+    }
+
+    fun onPresetSurfaceDisposed() {
+        behaviorRuntime.expirePresetInteractionAsync(activePresetInteraction)
+        activePresetInteraction = null
+        candidatesAtOpportunity = emptyList()
+    }
+
+    private fun reportListContent(count: Int, fresh: Boolean) {
+        behaviorRuntime.onContentStateChanged(
+            SemanticDomain.LOST_FOUND,
+            if (count == 0) ContentStateBucket.EMPTY else ContentStateBucket.READY,
+            freshnessBucket = if (fresh) 0 else 2,
+            resultCount = resultCountBucket(count)
+        )
+    }
+
+    private fun reportListError() {
+        behaviorRuntime.onContentStateChanged(
+            SemanticDomain.LOST_FOUND,
+            ContentStateBucket.ERROR,
+            freshnessBucket = 7,
+            resultCount = ResultCountBucket.ZERO,
+            errorType = ErrorTypeBucket.NETWORK
+        )
+    }
+
+    private fun resultCountBucket(count: Int): ResultCountBucket = when (count) {
+        0 -> ResultCountBucket.ZERO
+        in 1..5 -> ResultCountBucket.ONE_TO_FIVE
+        in 6..20 -> ResultCountBucket.SIX_TO_TWENTY
+        else -> ResultCountBucket.TWENTY_ONE_PLUS
     }
 
     init {
@@ -385,5 +503,23 @@ class LostFoundViewModel : ViewModel() {
         }
 
         fetchFirstPage()
+        viewModelScope.launch {
+            presetCandidates = behaviorRuntime.rankLocalPresets(SemanticDomain.LOST_FOUND)
+        }
+    }
+
+    private companion object { const val FILTER_SETTLE_MS = 800L }
+
+    override fun onCleared() {
+        filterCommitJob?.cancel()
+        onPresetSurfaceDisposed()
+        super.onCleared()
     }
 }
+
+private data class LostFoundPresetPayload(val state: Int, val campusId: String?, val typeId: String?)
+private data class LostFoundCoarsePreset(
+    val postCategory: String,
+    val campusCategory: String,
+    val itemCategory: String
+)

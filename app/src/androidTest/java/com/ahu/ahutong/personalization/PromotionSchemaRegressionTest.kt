@@ -76,7 +76,7 @@ class PromotionSchemaRegressionTest {
     }
 
     @Test
-    fun realSchemaUpgradeResetsExactlyOnceAndUsesCurrentSchema() = runBlocking {
+    fun supportedV3ToV4SchemaUpgradePreservesLearningStateExactlyOnce() = runBlocking {
         val profile = profile()
         val manager = LocalPromotionManager(database.behaviorDao(), modelStateStore)
         manager.snapshot(profile)
@@ -87,17 +87,42 @@ class PromotionSchemaRegressionTest {
         )
 
         manager.snapshot(profile)
-        val reset = requireNotNull(database.behaviorDao().promotionState(profile))
-        assertEquals(FeatureExtractor.FEATURE_SCHEMA_VERSION, reset.featureSchemaVersion)
-        assertEquals("SCHEMA_INCOMPATIBLE_RESET", reset.lastTransitionReason)
-        assertEquals(before.transitionSequence + 1, reset.transitionSequence)
-        assertEquals(0, database.behaviorDao().trainingSampleCount(profile))
-        assertTrue(database.behaviorDao().actionStats(profile).isEmpty())
+        val migrated = requireNotNull(database.behaviorDao().promotionState(profile))
+        assertEquals(FeatureExtractor.FEATURE_SCHEMA_VERSION, migrated.featureSchemaVersion)
+        assertEquals("FEATURE_SCHEMA_V3_TO_V4_MIGRATED", migrated.lastTransitionReason)
+        assertEquals(before.transitionSequence, migrated.transitionSequence)
+        assertEquals(1, database.behaviorDao().trainingSampleCount(profile))
+        assertTrue(database.behaviorDao().actionStats(profile).isNotEmpty())
 
         manager.snapshot(profile)
         val checkedAgain = requireNotNull(database.behaviorDao().promotionState(profile))
-        assertEquals(reset.transitionSequence, checkedAgain.transitionSequence)
-        assertEquals(reset.stageGeneration, checkedAgain.stageGeneration)
+        assertEquals(migrated.transitionSequence, checkedAgain.transitionSequence)
+        assertEquals(migrated.stageGeneration, checkedAgain.stageGeneration)
+    }
+
+    @Test
+    fun failedV3ToV4CheckpointBindingFallsBackToStatOnlyWithoutDeletingLearning() = runBlocking {
+        val profile = profile()
+        val manager = LocalPromotionManager(database.behaviorDao(), modelStateStore)
+        manager.snapshot(profile)
+        recordEligibleOrganic(profile)
+        val before = requireNotNull(database.behaviorDao().promotionState(profile))
+        database.behaviorDao().upsertPromotionState(
+            before.copy(
+                activeCheckpointId = "unrecoverable-v3-checkpoint",
+                featureSchemaVersion = FeatureExtractor.FEATURE_SCHEMA_VERSION - 1
+            )
+        )
+
+        manager.snapshot(profile)
+        val recovered = requireNotNull(database.behaviorDao().promotionState(profile))
+
+        assertEquals(FeatureExtractor.FEATURE_SCHEMA_VERSION, recovered.featureSchemaVersion)
+        assertEquals("LATCHED_STAT_ONLY", recovered.healthState)
+        assertEquals("FEATURE_SCHEMA_MIGRATION_FAILED_STAT_ONLY", recovered.lastTransitionReason)
+        assertEquals(before.transitionSequence + 1, recovered.transitionSequence)
+        assertEquals(1, database.behaviorDao().trainingSampleCount(profile))
+        assertTrue(database.behaviorDao().actionStats(profile).isNotEmpty())
     }
 
     @Test

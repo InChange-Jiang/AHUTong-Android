@@ -35,12 +35,13 @@ internal object SuggestionPolicy {
 
     fun rankedCandidates(
         prediction: NextActionProbabilityVector,
-        organicActionIds: Set<String>
+        organicActionIds: Set<String>,
+        requireOrganicHistory: Boolean = true
     ): List<SuggestionCandidate> = prediction.rankedIndices().mapNotNull { index ->
         val probability = prediction.probabilities[index]
         if (probability <= 0f) return@mapNotNull null
         val outputId = prediction.outputIds[index]
-        if (outputId !in organicActionIds) return@mapNotNull null
+        if (requireOrganicHistory && outputId !in organicActionIds) return@mapNotNull null
         val action = AppActionId.fromStableId(outputId) ?: return@mapNotNull null
         val spec = AppActionCatalog.spec(action)
         if (!spec.suggestible || spec.sideEffect == SideEffect.TRANSACTION) return@mapNotNull null

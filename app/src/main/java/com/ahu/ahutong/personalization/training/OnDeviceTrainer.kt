@@ -3,6 +3,7 @@ package com.ahu.ahutong.personalization.training
 import com.ahu.ahutong.personalization.action.ActionFamily
 import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.context.PredictionInput
+import com.ahu.ahutong.personalization.context.V3ToV4FeatureAdapter
 import com.ahu.ahutong.personalization.inference.AdamWState
 import com.ahu.ahutong.personalization.inference.TinyMlpBackprop
 import com.ahu.ahutong.personalization.model.ModelStateStore
@@ -128,7 +129,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
             val result = TinyMlpBackprop.trainBatch(
                 parameters,
                 optimizer,
-                selected.map { BinaryCodec.floats(it.features) },
+                selected.map { V3ToV4FeatureAdapter.adapt(BinaryCodec.floats(it.features), it.featureSchemaVersion) },
                 selected.map(TrainingSampleEntity::targetIndex).toIntArray()
             )
             require(result.averageLoss.isFinite() && result.gradientNorm.isFinite())
@@ -220,7 +221,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
         val result = TinyMlpBackprop.trainBatch(
             parameters,
             optimizer,
-            samples.map { BinaryCodec.floats(it.features) },
+            samples.map { V3ToV4FeatureAdapter.adapt(BinaryCodec.floats(it.features), it.featureSchemaVersion) },
             samples.map(TrainingSampleEntity::targetIndex).toIntArray()
         )
         require(result.averageLoss.isFinite() && result.gradientNorm.isFinite())

@@ -2,6 +2,14 @@ package com.ahu.ahutong.personalization.context
 
 import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.semantic.ContentContext
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticChangeKind
+import com.ahu.ahutong.personalization.semantic.SemanticContext
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import com.ahu.ahutong.personalization.semantic.SemanticEventFamily
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonNull
@@ -15,7 +23,7 @@ import com.google.gson.JsonParser
  * runtime model, while persisted action identifiers and enum tokens remain stable across builds.
  */
 object ContextSnapshotCodec {
-    internal const val SCHEMA_VERSION = 1
+    internal const val SCHEMA_VERSION = 2
 
     fun encode(snapshot: ContextSnapshot): String = JsonObject().apply {
         addProperty("schemaVersion", SCHEMA_VERSION)
@@ -36,6 +44,10 @@ object ContextSnapshotCodec {
         add("recentActionSources", snapshot.recentActionSources.toJsonArray { it.toWireToken() })
         add("personalFamilyFrequencies", snapshot.personalFamilyFrequencies.toJsonNumberArray())
         add("personalFamilyRecencies", snapshot.personalFamilyRecencies.toJsonNumberArray())
+        add("semanticContext", snapshot.semanticContext?.toJson() ?: JsonNull.INSTANCE)
+        add("contentContext", snapshot.contentContext?.toJson() ?: JsonNull.INSTANCE)
+        addProperty("candidateSetSize", snapshot.candidateSetSize)
+        addProperty("journeyPosition", snapshot.journeyPosition)
     }.toString()
 
     fun decode(encoded: String): ContextSnapshot {
@@ -46,7 +58,7 @@ object ContextSnapshotCodec {
         }
         return try {
             val schemaVersion = root.requiredInt("schemaVersion")
-            require(schemaVersion == SCHEMA_VERSION) {
+            require(schemaVersion in 1..SCHEMA_VERSION) {
                 "Unsupported context snapshot schema $schemaVersion"
             }
             ContextSnapshot(
@@ -72,7 +84,11 @@ object ContextSnapshotCodec {
                     actionSourceFromWireToken(element.requiredString("recentActionSources[$index]"))
                 },
                 personalFamilyFrequencies = root.requiredFloatList("personalFamilyFrequencies"),
-                personalFamilyRecencies = root.requiredFloatList("personalFamilyRecencies")
+                personalFamilyRecencies = root.requiredFloatList("personalFamilyRecencies"),
+                semanticContext = if (schemaVersion >= 2) root.optionalObject("semanticContext")?.toSemanticContext() else null,
+                contentContext = if (schemaVersion >= 2) root.optionalObject("contentContext")?.toContentContext() else null,
+                candidateSetSize = if (schemaVersion >= 2) root.requiredInt("candidateSetSize") else 0,
+                journeyPosition = if (schemaVersion >= 2) root.requiredInt("journeyPosition") else 0
             )
         } catch (error: IllegalArgumentException) {
             throw error
@@ -206,10 +222,60 @@ object ContextSnapshotCodec {
     private fun JsonObject.optionalInt(name: String): Int? =
         get(name)?.takeUnless(JsonElement::isJsonNull)?.asInt
 
+    private fun JsonObject.optionalObject(name: String): JsonObject? =
+        get(name)?.takeUnless(JsonElement::isJsonNull)?.let { element ->
+            require(element.isJsonObject) { "Context snapshot field $name must be an object" }
+            element.asJsonObject
+        }
+
     private fun JsonObject.requiredFloatList(name: String): List<Float> =
         requiredArray(name).mapIndexed { index, element ->
             val value = element.asFloat
             require(value.isFinite()) { "Context snapshot field $name[$index] must be finite" }
             value
         }
+
+    private fun SemanticContext.toJson(): JsonObject = JsonObject().apply {
+        addProperty("eventFamily", eventFamily.name)
+        addProperty("domain", domain.name)
+        addProperty("semanticId", semanticId)
+        addProperty("changeKind", changeKind.name)
+        addProperty("ageBucket", ageBucket)
+        addProperty("changeSetSize", changeSetSize)
+        addProperty("stable", stable)
+        addProperty("affectedCandidateSetVersion", affectedCandidateSetVersion)
+        addProperty("coarseValueBucket", coarseValueBucket)
+    }
+
+    private fun JsonObject.toSemanticContext(): SemanticContext {
+        val semanticId = requiredString("semanticId")
+        require(semanticId.matches(Regex("[A-Z][A-Z0-9_]{2,63}"))) { "Invalid semantic id" }
+        return SemanticContext(
+            eventFamily = enumValueOf(requiredString("eventFamily")),
+            domain = enumValueOf(requiredString("domain")),
+            semanticId = semanticId,
+            changeKind = enumValueOf(requiredString("changeKind")),
+            ageBucket = requiredInt("ageBucket"),
+            changeSetSize = requiredInt("changeSetSize"),
+            stable = requiredBoolean("stable"),
+            affectedCandidateSetVersion = requiredInt("affectedCandidateSetVersion"),
+            coarseValueBucket = optionalString("coarseValueBucket") ?: "UNKNOWN"
+        )
+    }
+
+    private fun ContentContext.toJson(): JsonObject = JsonObject().apply {
+        addProperty("domain", domain.name)
+        addProperty("state", state.name)
+        addProperty("freshnessBucket", freshnessBucket)
+        addProperty("resultCount", resultCount.name)
+        addProperty("errorType", errorType.name)
+    }
+
+    private fun JsonObject.toContentContext(): ContentContext = ContentContext(
+        domain = enumValueOf(requiredString("domain")),
+        state = enumValueOf(requiredString("state")),
+        freshnessBucket = requiredInt("freshnessBucket"),
+        resultCount = enumValueOf(requiredString("resultCount")),
+        errorType = enumValueOf(requiredString("errorType"))
+    )
 }

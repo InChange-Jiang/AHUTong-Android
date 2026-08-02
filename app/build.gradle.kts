@@ -103,6 +103,7 @@ val generateThirdPartyAssets by tasks.registering(Sync::class) {
 }
 
 android.sourceSets.getByName("main").assets.srcDir(generatedThirdPartyAssets)
+android.sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
@@ -161,6 +162,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.kotlinx.serialization.json)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
 

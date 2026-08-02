@@ -57,6 +57,8 @@ import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.mock.MockScenarioController
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.MutationId
 import com.ahu.ahutong.ui.screen.main.home.AtAGlance
 import com.ahu.ahutong.ui.screen.main.home.HomeWeatherWidget
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetDragOverlay
@@ -89,6 +91,7 @@ fun Home(
     discoveryViewModel: DiscoveryViewModel = viewModel(),
     scheduleViewModel: ScheduleViewModel = viewModel(),
     navController: NavHostController,
+    behaviorRuntime: BehaviorPredictionRuntime,
     homeEditEnabled: Boolean = false,
     enterEditModeRequest: Boolean = false,
     onEnterEditModeRequestConsumed: () -> Unit = {}
@@ -175,6 +178,12 @@ fun Home(
         if (drag.sourceSlot != null && libraryBounds?.contains(dragCenter) == true) {
             nextSlots[drag.sourceSlot - 1] = null
             saveHomeWidgetSlots(nextSlots)
+            behaviorRuntime.recordCommittedMutationAsync(
+                MutationId.HOME_WIDGET_REMOVED,
+                drag.widgetId,
+                null,
+                coarseValueBucket = drag.widgetId.uppercase()
+            )
         } else if (targetSlot != null) {
             val targetIndex = targetSlot - 1
             val sourceSlot = drag.sourceSlot
@@ -183,6 +192,12 @@ fun Home(
                 if (nextSlots[targetIndex] == null) {
                     nextSlots[targetIndex] = drag.widgetId
                     saveHomeWidgetSlots(nextSlots)
+                    behaviorRuntime.recordCommittedMutationAsync(
+                        MutationId.HOME_WIDGET_ADDED,
+                        null,
+                        drag.widgetId,
+                        coarseValueBucket = drag.widgetId.uppercase()
+                    )
                 }
             } else if (sourceSlot != targetSlot) {
                 val sourceIndex = sourceSlot - 1
@@ -190,6 +205,12 @@ fun Home(
                 nextSlots[targetIndex] = drag.widgetId
                 nextSlots[sourceIndex] = targetWidget
                 saveHomeWidgetSlots(nextSlots)
+                behaviorRuntime.recordCommittedMutationAsync(
+                    MutationId.HOME_WIDGET_MOVED,
+                    sourceSlot,
+                    targetSlot,
+                    coarseValueBucket = drag.widgetId.uppercase()
+                )
             }
         }
 
@@ -202,13 +223,26 @@ fun Home(
         if (targetIndex == -1 || widgetId in nextSlots) return
         nextSlots[targetIndex] = widgetId
         saveHomeWidgetSlots(nextSlots)
+        behaviorRuntime.recordCommittedMutationAsync(
+            MutationId.HOME_WIDGET_ADDED,
+            null,
+            widgetId,
+            coarseValueBucket = widgetId.uppercase()
+        )
     }
 
     fun removeHomeWidget(slotIndex: Int) {
         val nextSlots = homeWidgetSlots.toMutableList()
         if (slotIndex !in 1..nextSlots.size) return
+        val removedWidget = nextSlots[slotIndex - 1] ?: return
         nextSlots[slotIndex - 1] = null
         saveHomeWidgetSlots(nextSlots)
+        behaviorRuntime.recordCommittedMutationAsync(
+            MutationId.HOME_WIDGET_REMOVED,
+            removedWidget,
+            null,
+            coarseValueBucket = removedWidget.uppercase()
+        )
     }
 
     fun exitHomeEditMode() {

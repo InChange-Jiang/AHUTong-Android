@@ -236,6 +236,53 @@ class LocalPromotionManager @Inject constructor(
         var model = modelStateStore.loadOrCreate(profileKey)
         dao.promotionState(profileKey)?.let { persisted ->
             if (
+                persisted.featureSchemaVersion == 3 &&
+                FeatureExtractor.FEATURE_SCHEMA_VERSION == 4 &&
+                persisted.outputSchemaVersion == AppActionCatalog.OUTPUT_SCHEMA_VERSION &&
+                persisted.actionCatalogVersion == AppActionCatalog.ACTION_CATALOG_VERSION &&
+                persisted.promotionConfigVersion == PROMOTION_CONFIG_VERSION
+            ) {
+                if (persisted.activeCheckpointId == model.active.checkpointId) {
+                    return persisted.copy(
+                        activeCheckpointId = model.active.checkpointId,
+                        activeChecksum = model.active.checksum,
+                        candidateCheckpointId = model.candidate?.checkpointId,
+                        trainingRevision = model.training.trainingRevision,
+                        featureSchemaVersion = FeatureExtractor.FEATURE_SCHEMA_VERSION,
+                        lastTransitionReason = "FEATURE_SCHEMA_V3_TO_V4_MIGRATED",
+                        updatedAtEpochMs = System.currentTimeMillis()
+                    ).also { dao.upsertPromotionState(it) }
+                }
+
+                // A successful v3 -> v4 expansion deliberately keeps the checkpoint id.
+                // A different id means the old file could not be migrated and loadOrCreate
+                // recovered with a fresh model. Preserve accumulated samples/statistics, but
+                // never let that unproven replacement inherit the previous promotion stage.
+                val today = LocalDate.now(ZoneOffset.UTC).toEpochDay()
+                return initialState(
+                    profileKey = profileKey,
+                    activeCheckpointId = model.active.checkpointId,
+                    activeChecksum = model.active.checksum,
+                    candidateCheckpointId = model.candidate?.checkpointId,
+                    trainingRevision = model.training.trainingRevision
+                ).copy(
+                    holdoutSeed = persisted.holdoutSeed,
+                    modelGenerationVersion = persisted.modelGenerationVersion + 1,
+                    stageGeneration = persisted.stageGeneration + 1,
+                    transitionSequence = persisted.transitionSequence + 1,
+                    enteredEpochDay = today,
+                    evidenceHighWatermark = persisted.evidenceHighWatermark,
+                    featureSchemaVersion = FeatureExtractor.FEATURE_SCHEMA_VERSION,
+                    healthState = "LATCHED_STAT_ONLY",
+                    cooldownUntilEpochDay = today + HARD_COOLDOWN_DAYS,
+                    minimumNewEvidenceSeq = maxOf(
+                        persisted.minimumNewEvidenceSeq,
+                        persisted.evidenceHighWatermark + 1
+                    ),
+                    lastTransitionReason = "FEATURE_SCHEMA_MIGRATION_FAILED_STAT_ONLY"
+                ).also { dao.upsertPromotionState(it) }
+            }
+            if (
                 persisted.featureSchemaVersion != FeatureExtractor.FEATURE_SCHEMA_VERSION ||
                 persisted.outputSchemaVersion != AppActionCatalog.OUTPUT_SCHEMA_VERSION ||
                 persisted.actionCatalogVersion != AppActionCatalog.ACTION_CATALOG_VERSION ||

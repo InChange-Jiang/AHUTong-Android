@@ -397,6 +397,204 @@ abstract class BehaviorDao {
         deleteTelemetryState(profileKey)
     }
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertSemanticEvent(value: SemanticEventEntity)
+
+    @Query("SELECT * FROM semantic_event WHERE profileKey = :profileKey ORDER BY sequenceNo DESC LIMIT :limit")
+    abstract suspend fun recentSemanticEvents(profileKey: String, limit: Int): List<SemanticEventEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertSemanticChangeSet(value: SemanticChangeSetEntity)
+
+    @Query("SELECT * FROM semantic_change_set WHERE profileKey = :profileKey AND sessionId = :sessionId AND state IN ('PREPARED', 'OPEN', 'COMMITTED') AND route IS :route AND lastOccurredAtElapsedMs >= :minimumElapsedMs ORDER BY lastOccurredAtElapsedMs DESC LIMIT 1")
+    abstract suspend fun mergeableSemanticChangeSet(
+        profileKey: String,
+        sessionId: String,
+        route: String?,
+        minimumElapsedMs: Long
+    ): SemanticChangeSetEntity?
+
+    @Query("SELECT * FROM semantic_change_set WHERE profileKey = :profileKey ORDER BY lastOccurredAtElapsedMs DESC LIMIT :limit")
+    abstract suspend fun recentSemanticChangeSets(profileKey: String, limit: Int): List<SemanticChangeSetEntity>
+
+    @Query("UPDATE semantic_change_set SET state = :state WHERE changeSetId = :changeSetId")
+    abstract suspend fun updateSemanticChangeSetState(changeSetId: String, state: String): Int
+
+    @Query("UPDATE semantic_change_set SET state = 'RECOVERED' WHERE profileKey = :profileKey AND state = 'PREPARED'")
+    abstract suspend fun recoverPreparedSemanticChangeSets(profileKey: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertPendingJourney(value: PendingJourneyEntity)
+
+    @Update
+    abstract suspend fun updatePendingJourney(value: PendingJourneyEntity)
+
+    @Query("SELECT * FROM pending_journey WHERE journeyId = :journeyId")
+    abstract suspend fun pendingJourney(journeyId: String): PendingJourneyEntity?
+
+    @Query("SELECT * FROM pending_journey WHERE profileKey = :profileKey AND resolutionStatus = 'PENDING' ORDER BY sequenceNo DESC LIMIT 1")
+    abstract suspend fun latestPendingJourney(profileKey: String): PendingJourneyEntity?
+
+    @Query("SELECT * FROM pending_journey WHERE profileKey = :profileKey AND resolutionStatus = 'PENDING' AND processInstanceId = :processInstanceId AND deadlineElapsedMs <= :elapsedMs")
+    abstract suspend fun expiredPendingJourneys(profileKey: String, processInstanceId: String, elapsedMs: Long): List<PendingJourneyEntity>
+
+    @Query("UPDATE pending_journey SET resolutionStatus = 'CENSORED', censorReason = :reason WHERE journeyId = :journeyId AND profileKey = :profileKey AND resolutionStatus = 'PENDING'")
+    abstract suspend fun censorJourneyCas(journeyId: String, profileKey: String, reason: String): Int
+
+    @Query("UPDATE pending_journey SET resolutionStatus = 'RESOLVED', finalTargetActionId = :targetActionId, consumedTerminalEventId = :terminalEventId WHERE journeyId = :journeyId AND profileKey = :profileKey AND resolutionStatus = 'PENDING' AND interventionState = 'NONE'")
+    abstract suspend fun resolveJourneyCas(
+        journeyId: String,
+        profileKey: String,
+        targetActionId: String,
+        terminalEventId: String
+    ): Int
+
+    @Query("UPDATE pending_journey SET resolutionStatus = 'CENSORED', censorReason = 'PROCESS_RESTART' WHERE profileKey = :profileKey AND resolutionStatus = 'PENDING' AND processInstanceId != :processInstanceId")
+    abstract suspend fun censorStaleProcessJourneys(profileKey: String, processInstanceId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertJourneyActionStat(value: JourneyActionStatEntity)
+
+    @Query("SELECT * FROM journey_action_stat WHERE profileKey = :profileKey")
+    abstract suspend fun journeyActionStats(profileKey: String): List<JourneyActionStatEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertJourneyTrainingSample(value: JourneyTrainingSampleEntity): Long
+
+    @Query("SELECT COUNT(*) FROM journey_training_sample WHERE profileKey = :profileKey")
+    abstract suspend fun journeyTrainingSampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(*) FROM journey_training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE'")
+    abstract suspend fun journeyNonNoneSampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(DISTINCT targetFamily) FROM journey_training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE'")
+    abstract suspend fun journeyTargetFamilyCount(profileKey: String): Int
+
+    @Query("SELECT * FROM journey_training_sample WHERE profileKey = :profileKey ORDER BY rowId DESC LIMIT :limit")
+    abstract suspend fun recentJourneyTrainingSamples(profileKey: String, limit: Int): List<JourneyTrainingSampleEntity>
+
+    @Query("UPDATE journey_training_sample SET trainingCount = trainingCount + 1 WHERE rowId IN (:rowIds)")
+    abstract suspend fun incrementJourneyTrainingCounts(rowIds: List<Long>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertJourneyEvaluation(value: JourneyShadowEvaluationEntity)
+
+    @Query("SELECT COALESCE(MAX(evaluationSeq), 0) FROM journey_shadow_evaluation WHERE profileKey = :profileKey")
+    abstract suspend fun maxJourneyEvaluationSeq(profileKey: String): Long
+
+    @Query("SELECT * FROM journey_shadow_evaluation WHERE profileKey = :profileKey ORDER BY evaluationSeq DESC LIMIT :limit")
+    abstract suspend fun recentJourneyEvaluations(profileKey: String, limit: Int): List<JourneyShadowEvaluationEntity>
+
+    @Query("SELECT * FROM journey_shadow_evaluation WHERE profileKey = :profileKey AND evaluationSeq > :afterSeq AND tinyCheckpointId = :checkpointId ORDER BY evaluationSeq ASC LIMIT :limit")
+    abstract suspend fun journeyEvaluationsAfter(
+        profileKey: String,
+        checkpointId: String,
+        afterSeq: Long,
+        limit: Int
+    ): List<JourneyShadowEvaluationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertLocalPreset(value: LocalParameterPresetEntity)
+
+    @Query("SELECT * FROM local_parameter_preset WHERE profileKey = :profileKey AND domainId = :domainId ORDER BY lastOrganicUsedAtEpochMs DESC, createdAtEpochMs DESC LIMIT :limit")
+    abstract suspend fun recentLocalPresets(profileKey: String, domainId: String, limit: Int): List<LocalParameterPresetEntity>
+
+    @Query("SELECT * FROM local_parameter_preset WHERE presetId = :presetId AND profileKey = :profileKey")
+    abstract suspend fun localPreset(profileKey: String, presetId: String): LocalParameterPresetEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertPresetUsageStat(value: PresetUsageStatEntity)
+
+    @Query("SELECT * FROM preset_usage_stat WHERE profileKey = :profileKey AND domainId = :domainId")
+    abstract suspend fun presetUsageStats(profileKey: String, domainId: String): List<PresetUsageStatEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertTargetedFeedback(value: TargetedPredictionFeedbackEntity)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertPresetInteraction(value: PresetRecommendationInteractionEntity): Long
+
+    @Query("SELECT * FROM preset_recommendation_interaction WHERE interactionId = :interactionId AND profileKey = :profileKey")
+    abstract suspend fun presetInteraction(profileKey: String, interactionId: String): PresetRecommendationInteractionEntity?
+
+    @Query("SELECT * FROM preset_recommendation_interaction WHERE profileKey = :profileKey AND domainId = :domainId AND state IN ('EXPOSED', 'APPLIED') ORDER BY shownAtEpochMs DESC LIMIT 1")
+    abstract suspend fun activePresetInteraction(profileKey: String, domainId: String): PresetRecommendationInteractionEntity?
+
+    @Query("SELECT * FROM preset_recommendation_interaction WHERE profileKey = :profileKey ORDER BY shownAtEpochMs DESC LIMIT :limit")
+    abstract suspend fun recentPresetInteractions(profileKey: String, limit: Int): List<PresetRecommendationInteractionEntity>
+
+    @Query("SELECT * FROM preset_recommendation_interaction WHERE profileKey = :profileKey AND opportunityId = :opportunityId AND candidateId = :candidateId LIMIT 1")
+    abstract suspend fun presetInteractionForCandidate(profileKey: String, opportunityId: String, candidateId: String): PresetRecommendationInteractionEntity?
+
+    @Query("UPDATE preset_recommendation_interaction SET state = 'APPLIED', appliedAtEpochMs = :appliedAtEpochMs WHERE interactionId = :interactionId AND profileKey = :profileKey AND state = 'EXPOSED'")
+    abstract suspend fun markPresetInteractionAppliedCas(profileKey: String, interactionId: String, appliedAtEpochMs: Long): Int
+
+    @Query("UPDATE preset_recommendation_interaction SET state = :resolvedState, resolvedAtEpochMs = :resolvedAtEpochMs, resolutionFingerprint = :resolutionFingerprint, feedbackWeight = :feedbackWeight WHERE interactionId = :interactionId AND profileKey = :profileKey AND state = 'APPLIED'")
+    abstract suspend fun resolvePresetInteractionCas(
+        profileKey: String,
+        interactionId: String,
+        resolvedState: String,
+        resolvedAtEpochMs: Long,
+        resolutionFingerprint: String?,
+        feedbackWeight: Float?
+    ): Int
+
+    @Query("UPDATE preset_recommendation_interaction SET state = 'EXPIRED_NO_LABEL', resolvedAtEpochMs = :resolvedAtEpochMs WHERE interactionId = :interactionId AND profileKey = :profileKey AND state IN ('EXPOSED', 'APPLIED')")
+    abstract suspend fun expirePresetInteractionCas(profileKey: String, interactionId: String, resolvedAtEpochMs: Long): Int
+
+    @Query("UPDATE preset_recommendation_interaction SET state = 'EXPIRED_NO_LABEL', resolvedAtEpochMs = :resolvedAtEpochMs WHERE profileKey = :profileKey AND domainId = :domainId AND state IN ('EXPOSED', 'APPLIED')")
+    abstract suspend fun expireActivePresetInteractions(profileKey: String, domainId: String, resolvedAtEpochMs: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertTaskModelState(value: TaskModelStateEntity)
+
+    @Query("SELECT * FROM task_model_state WHERE profileKey = :profileKey AND modelTask = :modelTask")
+    abstract suspend fun taskModelState(profileKey: String, modelTask: String): TaskModelStateEntity?
+
+    @Query("SELECT * FROM task_model_state WHERE profileKey = :profileKey ORDER BY modelTask")
+    abstract suspend fun taskModelStates(profileKey: String): List<TaskModelStateEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertTaskTrainingJournal(value: TaskTrainingBatchJournalEntity): Long
+
+    @Query("SELECT * FROM task_training_batch_journal WHERE profileKey = :profileKey AND modelTask = :modelTask AND state = 'PREPARED' ORDER BY createdAtEpochMs LIMIT 1")
+    abstract suspend fun preparedTaskTrainingJournal(profileKey: String, modelTask: String): TaskTrainingBatchJournalEntity?
+
+    @Query("UPDATE task_training_batch_journal SET state = 'COMMITTED', committedAtEpochMs = :committedAtEpochMs WHERE batchId = :batchId AND state = 'PREPARED'")
+    abstract suspend fun commitTaskTrainingJournal(batchId: String, committedAtEpochMs: Long): Int
+
+    @Query("UPDATE task_training_batch_journal SET state = 'ABANDONED', committedAtEpochMs = :committedAtEpochMs WHERE batchId = :batchId AND state = 'PREPARED'")
+    abstract suspend fun abandonTaskTrainingJournal(batchId: String, committedAtEpochMs: Long): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertPresetTrainingSample(value: PresetTrainingSampleEntity): Long
+
+    @Query("SELECT * FROM preset_training_sample WHERE profileKey = :profileKey ORDER BY rowId DESC LIMIT :limit")
+    abstract suspend fun recentPresetTrainingSamples(profileKey: String, limit: Int): List<PresetTrainingSampleEntity>
+
+    @Query("SELECT COUNT(*) FROM preset_training_sample WHERE profileKey = :profileKey")
+    abstract suspend fun presetTrainingSampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(*) FROM preset_training_sample WHERE profileKey = :profileKey AND naturalHoldoutEligible = 1 AND feedbackSource = 'NATURAL_COMMIT'")
+    abstract suspend fun naturalPresetTrainingSampleCount(profileKey: String): Int
+
+    @Query("UPDATE preset_training_sample SET trainingCount = trainingCount + 1 WHERE rowId IN (:rowIds)")
+    abstract suspend fun incrementPresetTrainingCounts(rowIds: List<Long>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertPresetShadowEvaluation(value: PresetShadowEvaluationEntity)
+
+    @Query("SELECT * FROM preset_shadow_evaluation WHERE profileKey = :profileKey ORDER BY rowId DESC LIMIT :limit")
+    abstract suspend fun recentPresetShadowEvaluations(profileKey: String, limit: Int): List<PresetShadowEvaluationEntity>
+
+    @Query("SELECT * FROM preset_shadow_evaluation WHERE profileKey = :profileKey AND rowId > :afterSeq AND tinyCheckpointId = :checkpointId AND naturalHoldoutEligible = 1 AND evaluationSource = 'ORGANIC' ORDER BY rowId ASC LIMIT :limit")
+    abstract suspend fun presetShadowEvaluationsAfter(
+        profileKey: String,
+        checkpointId: String,
+        afterSeq: Long,
+        limit: Int
+    ): List<PresetShadowEvaluationEntity>
+
     @Query("DELETE FROM behavior_event WHERE profileKey = :profileKey") abstract suspend fun deleteEvents(profileKey: String)
     @Query("DELETE FROM pending_prediction WHERE profileKey = :profileKey") abstract suspend fun deletePending(profileKey: String)
     @Query("DELETE FROM product_execution_lease WHERE profileKey = :profileKey") abstract suspend fun deleteLeases(profileKey: String)
@@ -411,6 +609,20 @@ abstract class BehaviorDao {
     @Query("DELETE FROM promotion_action_qualification WHERE profileKey = :profileKey") abstract suspend fun deleteActionQualifications(profileKey: String)
     @Query("DELETE FROM promotion_transition_journal WHERE profileKey = :profileKey") abstract suspend fun deleteTransitionJournals(profileKey: String)
     @Query("DELETE FROM learning_state WHERE profileKey = :profileKey") abstract suspend fun deleteLearningState(profileKey: String)
+    @Query("DELETE FROM semantic_event WHERE profileKey = :profileKey") abstract suspend fun deleteSemanticEvents(profileKey: String)
+    @Query("DELETE FROM semantic_change_set WHERE profileKey = :profileKey") abstract suspend fun deleteSemanticChangeSets(profileKey: String)
+    @Query("DELETE FROM pending_journey WHERE profileKey = :profileKey") abstract suspend fun deletePendingJourneys(profileKey: String)
+    @Query("DELETE FROM journey_action_stat WHERE profileKey = :profileKey") abstract suspend fun deleteJourneyStats(profileKey: String)
+    @Query("DELETE FROM journey_training_sample WHERE profileKey = :profileKey") abstract suspend fun deleteJourneySamples(profileKey: String)
+    @Query("DELETE FROM journey_shadow_evaluation WHERE profileKey = :profileKey") abstract suspend fun deleteJourneyEvaluations(profileKey: String)
+    @Query("DELETE FROM local_parameter_preset WHERE profileKey = :profileKey") abstract suspend fun deleteLocalPresets(profileKey: String)
+    @Query("DELETE FROM preset_usage_stat WHERE profileKey = :profileKey") abstract suspend fun deletePresetStats(profileKey: String)
+    @Query("DELETE FROM targeted_prediction_feedback WHERE profileKey = :profileKey") abstract suspend fun deleteTargetedFeedback(profileKey: String)
+    @Query("DELETE FROM preset_recommendation_interaction WHERE profileKey = :profileKey") abstract suspend fun deletePresetInteractions(profileKey: String)
+    @Query("DELETE FROM task_model_state WHERE profileKey = :profileKey") abstract suspend fun deleteTaskModelStates(profileKey: String)
+    @Query("DELETE FROM task_training_batch_journal WHERE profileKey = :profileKey") abstract suspend fun deleteTaskTrainingJournals(profileKey: String)
+    @Query("DELETE FROM preset_training_sample WHERE profileKey = :profileKey") abstract suspend fun deletePresetTrainingSamples(profileKey: String)
+    @Query("DELETE FROM preset_shadow_evaluation WHERE profileKey = :profileKey") abstract suspend fun deletePresetShadowEvaluations(profileKey: String)
 
     @Transaction
     open suspend fun deletePredictionModelStateForSchema(profileKey: String) {
@@ -426,13 +638,27 @@ abstract class BehaviorDao {
         deleteActionQualifications(profileKey)
         deleteTransitionJournals(profileKey)
         deleteLearningState(profileKey)
+        deletePendingJourneys(profileKey)
+        deleteJourneyStats(profileKey)
+        deleteJourneySamples(profileKey)
+        deleteLocalPresets(profileKey)
+        deletePresetStats(profileKey)
+        deleteTaskModelStates(profileKey)
+        deleteTaskTrainingJournals(profileKey)
+        deletePresetTrainingSamples(profileKey)
+        deletePresetInteractions(profileKey)
     }
 
     @Transaction
     open suspend fun deleteProfileLearningState(profileKey: String, keepDeletionTombstones: Boolean = true) {
         deleteEvents(profileKey)
+        deleteSemanticEvents(profileKey)
+        deleteSemanticChangeSets(profileKey)
         deletePredictionModelStateForSchema(profileKey)
         deleteEvaluations(profileKey)
+        deleteJourneyEvaluations(profileKey)
+        deletePresetShadowEvaluations(profileKey)
+        deleteTargetedFeedback(profileKey)
         deleteTelemetryReports(profileKey)
         deleteTelemetryAggregateWindows(profileKey)
         deleteTelemetryState(profileKey)

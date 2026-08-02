@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
@@ -63,8 +64,11 @@ import androidx.compose.ui.text.style.TextAlign
 
 @Composable
 fun FreeClassroom(
-    freeClassroomViewModel: FreeClassroomViewModel = viewModel()
+    freeClassroomViewModel: FreeClassroomViewModel = hiltViewModel()
 ) {
+    DisposableEffect(freeClassroomViewModel) {
+        onDispose { freeClassroomViewModel.onPresetSurfaceDisposed() }
+    }
     val campusOptions = freeClassroomViewModel.campusOptions
     val selectedCampusId by freeClassroomViewModel.selectedCampusId.collectAsState()
     val buildings by freeClassroomViewModel.buildings.collectAsState()
@@ -76,6 +80,7 @@ fun FreeClassroom(
     val isSearching by freeClassroomViewModel.isSearching.collectAsState()
     val rooms by freeClassroomViewModel.freeRooms.collectAsState()
     val errorMessage by freeClassroomViewModel.errorMessage.collectAsState()
+    val presetCandidates by freeClassroomViewModel.presetCandidates.collectAsState()
     val context = LocalContext.current
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
     var isFilterCollapsed by rememberSaveable { mutableStateOf(false) }
@@ -110,6 +115,23 @@ fun FreeClassroom(
                 .padding(24.dp, 32.dp),
             style = MaterialTheme.typography.headlineMedium
         )
+
+        presetCandidates.firstOrNull()?.let { candidate ->
+            LaunchedEffect(candidate.opportunityId, candidate.presetId) {
+                freeClassroomViewModel.onPresetCandidateVisible(candidate)
+            }
+            Text(
+                text = "使用常用条件",
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .clip(ContinuousCapsule)
+                    .background(90.a1)
+                    .clickable { freeClassroomViewModel.applyPresetCandidate(candidate) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                color = 0.n1,
+                style = MaterialTheme.typography.titleMedium
+            )
+        }
         
         Spacer(modifier = Modifier.height(24.dp))
 

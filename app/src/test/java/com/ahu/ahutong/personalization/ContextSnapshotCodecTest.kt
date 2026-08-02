@@ -7,6 +7,14 @@ import com.ahu.ahutong.personalization.context.ContextSnapshot
 import com.ahu.ahutong.personalization.context.ContextSnapshotCodec
 import com.ahu.ahutong.personalization.context.DayType
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
+import com.ahu.ahutong.personalization.semantic.ContentContext
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticChangeKind
+import com.ahu.ahutong.personalization.semantic.SemanticContext
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import com.ahu.ahutong.personalization.semantic.SemanticEventFamily
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -54,8 +62,26 @@ class ContextSnapshotCodecTest {
             ContextSnapshotCodec.decode(encoded.replace("VIEW_SCHEDULE", "UNKNOWN_ACTION"))
         }
         assertFailsWith<IllegalArgumentException> {
-            ContextSnapshotCodec.decode(encoded.replace("\"schemaVersion\":1", "\"schemaVersion\":999"))
+            ContextSnapshotCodec.decode(
+                encoded.replace(
+                    "\"schemaVersion\":${ContextSnapshotCodec.SCHEMA_VERSION}",
+                    "\"schemaVersion\":999"
+                )
+            )
         }
+    }
+
+    @Test
+    fun schemaOnePayloadDecodesWithNeutralNewFields() {
+        val encoded = ContextSnapshotCodec.encode(snapshot())
+            .replace("\"schemaVersion\":${ContextSnapshotCodec.SCHEMA_VERSION}", "\"schemaVersion\":1")
+
+        val decoded = ContextSnapshotCodec.decode(encoded)
+
+        assertEquals(null, decoded.semanticContext)
+        assertEquals(null, decoded.contentContext)
+        assertEquals(0, decoded.candidateSetSize)
+        assertEquals(0, decoded.journeyPosition)
     }
 
     private fun snapshot(
@@ -82,6 +108,24 @@ class ContextSnapshotCodecTest {
         pageDwellBucket = 3,
         recentActionSources = recentActionSources,
         personalFamilyFrequencies = listOf(0.1f, 0.25f, 0.65f),
-        personalFamilyRecencies = listOf(1f, 0.5f, 0.125f)
+        personalFamilyRecencies = listOf(1f, 0.5f, 0.125f),
+        semanticContext = SemanticContext(
+            SemanticEventFamily.SETTING_CHANGED,
+            SemanticDomain.WEATHER,
+            "WEATHER_HOME_CONFIG_CHANGED",
+            SemanticChangeKind.ENABLED,
+            1,
+            2,
+            true
+        ),
+        contentContext = ContentContext(
+            SemanticDomain.WEATHER,
+            ContentStateBucket.READY,
+            1,
+            ResultCountBucket.ONE_TO_FIVE,
+            ErrorTypeBucket.NONE
+        ),
+        candidateSetSize = 2,
+        journeyPosition = 1
     )
 }

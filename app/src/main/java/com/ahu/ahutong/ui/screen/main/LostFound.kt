@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
@@ -47,8 +47,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LostFound(
-    lostFoundViewModel: LostFoundViewModel = viewModel()
+    lostFoundViewModel: LostFoundViewModel = hiltViewModel()
 ) {
+    DisposableEffect(lostFoundViewModel) {
+        onDispose { lostFoundViewModel.onPresetSurfaceDisposed() }
+    }
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
@@ -74,14 +77,6 @@ fun LostFound(
     }
     var searchQuery by rememberSaveable {
         mutableStateOf("")
-    }
-
-    var selectedCampus by rememberSaveable {
-        mutableStateOf<String?>(null)
-    }
-
-    var selectedType by rememberSaveable {
-        mutableStateOf<String?>(null)
     }
 
     var selectedItem by remember {
@@ -167,12 +162,12 @@ fun LostFound(
      */
     val filteredList = lostFoundList.filter { item ->
         val campusMatch =
-            selectedCampus == null ||
-                    item.campusid == selectedCampus
+            lostFoundViewModel.selectedCampus == null ||
+                    item.campusid == lostFoundViewModel.selectedCampus
 
         val typeMatch =
-            selectedType == null ||
-                    item.typeid == selectedType
+            lostFoundViewModel.selectedType == null ||
+                    item.typeid == lostFoundViewModel.selectedType
 
         val searchMatch =
             searchQuery.isBlank() ||
@@ -398,6 +393,21 @@ fun LostFound(
                             }
                         )
                     }
+                    lostFoundViewModel.presetCandidates.firstOrNull()?.let { candidate ->
+                        LaunchedEffect(candidate.opportunityId, candidate.presetId) {
+                            lostFoundViewModel.onPresetCandidateVisible(candidate)
+                        }
+                        Text(
+                            text = "使用常用条件",
+                            modifier = Modifier
+                                .clip(ContinuousCapsule)
+                                .background(90.a1)
+                                .clickable { lostFoundViewModel.applyPresetCandidate(candidate) }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            color = 0.n1,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
                 }
             }
 
@@ -420,9 +430,9 @@ fun LostFound(
                     ) {
                         FilterChip(
                             selected =
-                                selectedCampus == null,
+                                lostFoundViewModel.selectedCampus == null,
                             onClick = {
-                                selectedCampus = null
+                                lostFoundViewModel.selectCampusFilter(null)
                             },
                             label = {
                                 Text("全部校区")
@@ -442,8 +452,7 @@ fun LostFound(
                         ) {
                             items(allCampus) { campus ->
                                 val selected =
-                                    selectedCampus ==
-                                            campus.id
+                                    lostFoundViewModel.selectedCampus == campus.id
 
                                 Text(
                                     text =
@@ -460,8 +469,7 @@ fun LostFound(
                                                     Color.Unspecified
                                             )
                                             .clickable {
-                                                selectedCampus =
-                                                    campus.id
+                                                lostFoundViewModel.selectCampusFilter(campus.id)
                                             }
                                             .padding(
                                                 16.dp,
@@ -496,9 +504,9 @@ fun LostFound(
                     ) {
                         FilterChip(
                             selected =
-                                selectedType == null,
+                                lostFoundViewModel.selectedType == null,
                             onClick = {
-                                selectedType = null
+                                lostFoundViewModel.selectTypeFilter(null)
                             },
                             label = {
                                 Text("全部类型")
@@ -518,8 +526,7 @@ fun LostFound(
                         ) {
                             items(allLostFoundType) { type ->
                                 val selected =
-                                    selectedType ==
-                                            type.typeId
+                                    lostFoundViewModel.selectedType == type.typeId
 
                                 Text(
                                     text =
@@ -536,8 +543,7 @@ fun LostFound(
                                                     Color.Unspecified
                                             )
                                             .clickable {
-                                                selectedType =
-                                                    type.typeId
+                                                lostFoundViewModel.selectTypeFilter(type.typeId)
                                             }
                                             .padding(
                                                 16.dp,

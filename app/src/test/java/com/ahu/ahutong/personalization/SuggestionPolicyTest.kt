@@ -17,6 +17,18 @@ class SuggestionPolicyTest {
     }
 
     @Test
+    fun targetedCandidatesCanBeRankedBeforeOrganicHistoryExists() {
+        val candidates = SuggestionPolicy.rankedCandidates(
+            vector(AppActionId.OPEN_HOME to 0.02f),
+            organicActionIds = emptySet(),
+            requireOrganicHistory = false
+        )
+
+        assertEquals(AppActionId.OPEN_HOME, candidates.single().action)
+        assertEquals(0.02f, candidates.single().probability)
+    }
+
+    @Test
     fun firstOrganicSampleIsEligibleWithoutProbabilityOrMarginGate() {
         val candidates = SuggestionPolicy.rankedCandidates(
             vector(AppActionId.VIEW_SCHEDULE to 0.01f),

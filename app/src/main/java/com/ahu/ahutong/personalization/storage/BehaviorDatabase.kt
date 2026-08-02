@@ -31,9 +31,23 @@ import javax.inject.Singleton
         TelemetryReportEntity::class,
         TelemetryStateEntity::class,
         TelemetryAggregateWindowEntity::class,
-        TelemetryDeletionTombstoneEntity::class
+        TelemetryDeletionTombstoneEntity::class,
+        SemanticEventEntity::class,
+        SemanticChangeSetEntity::class,
+        PendingJourneyEntity::class,
+        JourneyActionStatEntity::class,
+        JourneyTrainingSampleEntity::class,
+        JourneyShadowEvaluationEntity::class,
+        LocalParameterPresetEntity::class,
+        PresetUsageStatEntity::class,
+        TargetedPredictionFeedbackEntity::class,
+        PresetRecommendationInteractionEntity::class,
+        TaskModelStateEntity::class,
+        TaskTrainingBatchJournalEntity::class,
+        PresetTrainingSampleEntity::class,
+        PresetShadowEvaluationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class BehaviorDatabase : RoomDatabase() {
@@ -48,6 +62,7 @@ object BehaviorStorageModule {
     fun provideBehaviorDatabase(@ApplicationContext context: Context): BehaviorDatabase =
         Room.databaseBuilder(context, BehaviorDatabase::class.java, "behavior_prediction.db")
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+            .addMigrations(BehaviorDatabaseMigrations.MIGRATION_1_2)
             .build()
 
     @Provides

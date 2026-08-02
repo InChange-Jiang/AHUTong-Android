@@ -88,9 +88,18 @@ import android.widget.Toast
 import com.ahu.ahutong.ui.screen.main.schedule.CourseCardSpec.cellSpacing
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.semantic.ContentStateBucket
+import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
+import com.ahu.ahutong.personalization.semantic.MutationId
+import com.ahu.ahutong.personalization.semantic.ResultCountBucket
+import com.ahu.ahutong.personalization.semantic.SemanticDomain
 
 @Composable
-fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
+fun Schedule(
+    scheduleViewModel: ScheduleViewModel = hiltViewModel(),
+    behaviorRuntime: BehaviorPredictionRuntime
+) {
     val behaviorReporter = rememberBehaviorActionReporter()
     val scope = rememberCoroutineScope()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
@@ -143,6 +152,25 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
     LaunchedEffect(nextScheduleResult) {
         nextScheduleResult?.exceptionOrNull()?.let {
             Toast.makeText(context, "加载下学期课表失败: ${it.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    LaunchedEffect(activeScheduleResult, isPreviewNextSemester) {
+        when {
+            activeScheduleResult == null -> Unit
+            activeScheduleResult.isFailure -> behaviorRuntime.onContentStateChanged(
+                SemanticDomain.SCHEDULE,
+                ContentStateBucket.ERROR,
+                freshnessBucket = 7,
+                resultCount = ResultCountBucket.ZERO,
+                errorType = ErrorTypeBucket.NETWORK
+            )
+            else -> behaviorRuntime.onContentStateChanged(
+                SemanticDomain.SCHEDULE,
+                if (schedule.isEmpty()) ContentStateBucket.EMPTY else ContentStateBucket.READY,
+                freshnessBucket = 1,
+                resultCount = scheduleResultBucket(schedule.size)
+            )
         }
     }
 
@@ -217,6 +245,14 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                                     ).value
                                 )
                                 .clickable {
+                                    if (currentWeek != week) {
+                                        behaviorRuntime.recordCommittedMutationAsync(
+                                            MutationId.SCHEDULE_WEEK_CHANGED,
+                                            currentWeek,
+                                            week,
+                                            coarseValueBucket = if (week == scheduleConfig?.week) "CURRENT_WEEK" else "OTHER_WEEK"
+                                        )
+                                    }
                                     scope.launch {
                                         pagerState.animateScrollToPage(week - 1)
                                     }
@@ -247,6 +283,12 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                     modifier = Modifier.size(38.dp),
                     onClick = {
                         if (isPreviewNextSemester) {
+                            behaviorRuntime.recordCommittedMutationAsync(
+                                MutationId.SCHEDULE_SEMESTER_PREVIEW_CHANGED,
+                                true,
+                                false,
+                                coarseValueBucket = "CURRENT_SEMESTER"
+                            )
                             isPreviewNextSemester = false
                         }
                         scope.launch {
@@ -443,8 +485,25 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
                 isOverviewSchedule = isOverviewSchedule,
                 isPreviewNextSemester = isPreviewNextSemester,
                 backdropColor = settingsCardColor,
-                onOverviewChange = { isOverviewSchedule = it },
-                onPreviewNextSemesterChange = { isPreviewNextSemester = it },
+                onOverviewChange = { enabled ->
+                    val oldValue = isOverviewSchedule
+                    isOverviewSchedule = enabled
+                    behaviorRuntime.recordCommittedMutationAsync(
+                        MutationId.SCHEDULE_OVERVIEW_CHANGED,
+                        oldValue,
+                        enabled
+                    )
+                },
+                onPreviewNextSemesterChange = { enabled ->
+                    val oldValue = isPreviewNextSemester
+                    isPreviewNextSemester = enabled
+                    behaviorRuntime.recordCommittedMutationAsync(
+                        MutationId.SCHEDULE_SEMESTER_PREVIEW_CHANGED,
+                        oldValue,
+                        enabled,
+                        coarseValueBucket = if (enabled) "NEXT_SEMESTER" else "CURRENT_SEMESTER"
+                    )
+                },
                 onDismiss = { isSettingsVisible = false }
             )
         }
@@ -456,6 +515,13 @@ fun Schedule(scheduleViewModel: ScheduleViewModel = hiltViewModel()) {
             )
         }
     }
+}
+
+private fun scheduleResultBucket(count: Int): ResultCountBucket = when (count) {
+    0 -> ResultCountBucket.ZERO
+    in 1..5 -> ResultCountBucket.ONE_TO_FIVE
+    in 6..20 -> ResultCountBucket.SIX_TO_TWENTY
+    else -> ResultCountBucket.TWENTY_ONE_PLUS
 }
 
 @Composable

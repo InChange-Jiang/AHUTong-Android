@@ -75,6 +75,31 @@ class TinyMlpMathTest {
         }
     }
 
+    @Test
+    fun zeroWeightedRowsDoNotInfluenceLossOrGradients() {
+        val parameters = TinyMlpParameters.initialize(
+            inputSize = 2,
+            hidden1Size = 4,
+            hidden2Size = 3,
+            outputSize = 2,
+            seed = 23
+        )
+        val firstInput = floatArrayOf(1f, 0f)
+        val ignoredInput = floatArrayOf(0f, 1f)
+        val weighted = TinyMlpBackprop.gradients(
+            parameters,
+            listOf(firstInput, ignoredInput),
+            intArrayOf(0, 1),
+            floatArrayOf(1f, 0f)
+        )
+        val firstOnly = TinyMlpBackprop.gradients(parameters, listOf(firstInput), intArrayOf(0))
+
+        assertEquals(firstOnly.averageLoss, weighted.averageLoss)
+        firstOnly.values.zip(weighted.values).forEach { (expected, actual) ->
+            assertTrue(expected.contentEquals(actual))
+        }
+    }
+
     private fun crossEntropy(
         parameters: TinyMlpParameters,
         inputs: List<FloatArray>,

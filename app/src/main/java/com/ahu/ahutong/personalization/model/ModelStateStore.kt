@@ -177,6 +177,7 @@ class ModelStateStore @Inject constructor(
     suspend fun reset(profileKey: String): Unit = lock(profileKey).withLock {
         val target = file(profileKey)
         AtomicFile(target).delete()
+        AtomicFile(migrationJournal(profileKey)).delete()
         directory.listFiles { value -> value.name.startsWith("${target.name}.corrupt.") }
             ?.forEach(File::delete)
         Unit
@@ -257,37 +258,116 @@ class ModelStateStore @Inject constructor(
         val target = file(profileKey)
         if (!target.exists()) return null
         return runCatching {
-            DataInputStream(AtomicFile(target).openRead()).use { input ->
-                require(input.readInt() == FILE_MAGIC)
-                require(input.readInt() == SERIALIZATION_VERSION)
+            val payload = readPayload(target)
+            val decoded = decode(payload)
+            val migrated = migrateIfSupported(decoded)
+            if (migrated !== decoded) {
+                writeMigrationJournal(profileKey, payload)
+                write(profileKey, migrated)
+                migrationJournal(profileKey).delete()
+            }
+            validateStoredState(profileKey, migrated)
+        }.getOrElse {
+            recoverMigrationJournal(profileKey) ?: run {
+                quarantineCorrupt(target)
+                null
+            }
+        }
+    }
+
+    private fun readPayload(target: File): ByteArray = DataInputStream(AtomicFile(target).openRead()).use { input ->
+        require(input.readInt() == FILE_MAGIC)
+        require(input.readInt() == SERIALIZATION_VERSION)
+        val length = input.readInt()
+        require(length in 1..MAX_STATE_BYTES)
+        val payload = ByteArray(length).also(input::readFully)
+        val digestLength = input.readInt()
+        require(digestLength == 32)
+        val expected = ByteArray(digestLength).also(input::readFully)
+        val actual = MessageDigest.getInstance("SHA-256").digest(payload)
+        require(MessageDigest.isEqual(expected, actual))
+        payload
+    }
+
+    private fun validateStoredState(profileKey: String, state: StoredModelState): StoredModelState = state.also {
+        require(it.profileKey == profileKey)
+        require(it.tinyModelVersion == TinyMlpParameters.MODEL_VERSION)
+        require(it.featureSchemaVersion == FeatureExtractor.FEATURE_SCHEMA_VERSION)
+        require(it.outputSchemaVersion == AppActionCatalog.OUTPUT_SCHEMA_VERSION)
+        require(it.actionCatalogVersion == AppActionCatalog.ACTION_CATALOG_VERSION)
+        require(it.trainingConfigVersion == TRAINING_CONFIG_VERSION)
+        require(it.active.checksum == checksum(it.active.parameters))
+        require(it.training.checksum == checksum(it.training.parameters))
+        require(it.lastGoodActive.checksum == checksum(it.lastGoodActive.parameters))
+        it.candidate?.let { candidate -> require(candidate.checksum == checksum(candidate.parameters)) }
+        validate(it.active.parameters, null)
+        validate(it.training.parameters, it.optimizer)
+        validate(it.lastGoodActive.parameters, null)
+    }
+
+    private fun migrateIfSupported(state: StoredModelState): StoredModelState {
+        if (state.featureSchemaVersion == FeatureExtractor.FEATURE_SCHEMA_VERSION) return state
+        require(state.featureSchemaVersion == LEGACY_FEATURE_SCHEMA_VERSION)
+        require(state.outputSchemaVersion == AppActionCatalog.OUTPUT_SCHEMA_VERSION)
+        require(state.actionCatalogVersion == AppActionCatalog.ACTION_CATALOG_VERSION)
+        require(state.trainingConfigVersion == TRAINING_CONFIG_VERSION)
+        val migratedActive = migrateCheckpoint(state.active)
+        val migratedCandidate = state.candidate?.let(::migrateCheckpoint)
+        val migratedTraining = migrateCheckpoint(state.training)
+        val migratedLastGood = migrateCheckpoint(state.lastGoodActive)
+        return state.copy(
+            featureSchemaVersion = FeatureExtractor.FEATURE_SCHEMA_VERSION,
+            active = migratedActive,
+            candidate = migratedCandidate,
+            training = migratedTraining,
+            lastGoodActive = migratedLastGood,
+            optimizer = NextActionSchemaMigrator.migrateOptimizer(state.optimizer, state.training.parameters),
+            updatedAtEpochMs = System.currentTimeMillis()
+        )
+    }
+
+    private fun migrateCheckpoint(checkpoint: ModelCheckpoint): ModelCheckpoint {
+        val parameters = NextActionSchemaMigrator.migrateParameters(checkpoint.parameters)
+        return checkpoint.copy(checksum = checksum(parameters), parameters = parameters)
+    }
+
+    private fun writeMigrationJournal(profileKey: String, legacyPayload: ByteArray) {
+        val atomic = AtomicFile(migrationJournal(profileKey))
+        val output = atomic.startWrite()
+        try {
+            DataOutputStream(output).also { stream ->
+                stream.writeInt(MIGRATION_JOURNAL_MAGIC)
+                stream.writeInt(legacyPayload.size)
+                stream.write(legacyPayload)
+                stream.write(MessageDigest.getInstance("SHA-256").digest(legacyPayload))
+                stream.flush()
+            }
+            atomic.finishWrite(output)
+        } catch (error: Throwable) {
+            atomic.failWrite(output)
+            throw error
+        }
+    }
+
+    private fun recoverMigrationJournal(profileKey: String): StoredModelState? {
+        val journal = migrationJournal(profileKey)
+        if (!journal.exists()) return null
+        return runCatching {
+            val payload = DataInputStream(AtomicFile(journal).openRead()).use { input ->
+                require(input.readInt() == MIGRATION_JOURNAL_MAGIC)
                 val length = input.readInt()
                 require(length in 1..MAX_STATE_BYTES)
-                val payload = ByteArray(length).also(input::readFully)
-                val digestLength = input.readInt()
-                require(digestLength == 32)
-                val expected = ByteArray(digestLength).also(input::readFully)
-                val actual = MessageDigest.getInstance("SHA-256").digest(payload)
-                require(MessageDigest.isEqual(expected, actual))
-                decode(payload).also {
-                    require(it.profileKey == profileKey)
-                    require(it.tinyModelVersion == TinyMlpParameters.MODEL_VERSION)
-                    require(it.featureSchemaVersion == FeatureExtractor.FEATURE_SCHEMA_VERSION)
-                    require(it.outputSchemaVersion == AppActionCatalog.OUTPUT_SCHEMA_VERSION)
-                    require(it.actionCatalogVersion == AppActionCatalog.ACTION_CATALOG_VERSION)
-                    require(it.trainingConfigVersion == TRAINING_CONFIG_VERSION)
-                    require(it.active.checksum == checksum(it.active.parameters))
-                    require(it.training.checksum == checksum(it.training.parameters))
-                    require(it.lastGoodActive.checksum == checksum(it.lastGoodActive.parameters))
-                    it.candidate?.let { candidate -> require(candidate.checksum == checksum(candidate.parameters)) }
-                    validate(it.active.parameters, null)
-                    validate(it.training.parameters, it.optimizer)
-                    validate(it.lastGoodActive.parameters, null)
-                }
+                val bytes = ByteArray(length).also(input::readFully)
+                val expected = ByteArray(32).also(input::readFully)
+                require(MessageDigest.isEqual(expected, MessageDigest.getInstance("SHA-256").digest(bytes)))
+                bytes
             }
-        }.getOrElse {
-            quarantineCorrupt(target)
-            null
-        }
+            val migrated = migrateIfSupported(decode(payload))
+            validateStoredState(profileKey, migrated)
+            write(profileKey, migrated)
+            journal.delete()
+            migrated
+        }.getOrNull()
     }
 
     private fun encode(state: StoredModelState): ByteArray = ByteArrayOutputStream().use { bytes ->
@@ -433,6 +513,8 @@ class ModelStateStore @Inject constructor(
         return File(directory, "$profileKey.model")
     }
 
+    private fun migrationJournal(profileKey: String): File = File(directory, "$profileKey.v3-v4.journal")
+
     private fun lock(profileKey: String): Mutex = locks.getOrPut(profileKey) { Mutex() }
 
     private fun StoredModelState.deepCopy() = copy(
@@ -454,6 +536,8 @@ class ModelStateStore @Inject constructor(
     private companion object {
         const val FILE_MAGIC = 0x4148554D
         const val SERIALIZATION_VERSION = 4
+        const val LEGACY_FEATURE_SCHEMA_VERSION = 3
+        const val MIGRATION_JOURNAL_MAGIC = 0x56335434
         const val MIN_CANDIDATE_NEW_REVISIONS = 32L
         const val MIN_CANDIDATE_NEW_SAMPLES = 64
         const val MAX_STATE_BYTES = 512 * 1024

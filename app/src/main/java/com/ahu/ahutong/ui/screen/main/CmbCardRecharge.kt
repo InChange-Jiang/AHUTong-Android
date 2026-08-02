@@ -17,17 +17,28 @@ import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -35,51 +46,34 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
 import com.ahu.ahutong.data.crawler.manager.CookieManager as YcardCookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
-import com.kyant.monet.n1
-import com.kyant.monet.withNight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
+import java.net.URI
 
-private const val CMB_RECHARGE_STYLE_SCRIPT = """
-(function(){
-  var styleId = 'ahutong-cmb-style';
-  if (document.getElementById(styleId)) return;
-  var style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = [
-    'html,body,#app,#app-box{background:#eef2f5 !important;color:#1f2328 !important;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif !important;}',
-    'body{overscroll-behavior:none !important;-webkit-font-smoothing:antialiased !important;}',
-    '#app,#app-box,.page,.container,.main,.weui-tab__panel{max-width:720px;margin:0 auto !important;}',
-    '.weui-btn_primary,.weui-btn_warn,.weui-btn_default{border-radius:16px !important;box-shadow:none !important;}',
-    '.weui-btn_primary{background:#1e88e5 !important;border-color:#1e88e5 !important;}',
-    '.weui-btn_warn{background:#d94f4f !important;border-color:#d94f4f !important;}',
-    '.weui-btn_default{background:#ffffff !important;color:#1f2328 !important;border-color:#d0d7de !important;}',
-    '.weui-cells,.weui-panel,.card,.panel{border-radius:20px !important;overflow:hidden !important;background:#ffffff !important;}',
-    '.weui-cell{padding-top:14px !important;padding-bottom:14px !important;}',
-    '.van-cell,.van-field,.cell,.form-item,.pay-item{border-radius:16px !important;background:#ffffff !important;}',
-    '.van-button,.el-button,button{border-radius:16px !important;box-shadow:none !important;}',
-    '.van-button--primary,.el-button--primary,button[type=submit]{background:#1e88e5 !important;border-color:#1e88e5 !important;color:#ffffff !important;}',
-    '.van-field__label,.label,.title{color:#1f2328 !important;}',
-    '.van-field__control,input,textarea,select{color:#1f2328 !important;}',
-    '.van-cell-group,.form,.charge-box,.cashier-box{border-radius:20px !important;overflow:hidden !important;background:#ffffff !important;}',
-    'input,textarea,select{font-family:inherit !important;}',
-    'a{color:#1e88e5 !important;}'
-  ].join('');
-  document.head.appendChild(style);
-})();
-"""
+internal data class CmbRechargeNormalizedBounds(
+    val left: Float,
+    val top: Float,
+    val width: Float,
+    val height: Float
+)
 
 private const val CMB_SUBMIT_OBSERVER_SCRIPT = """
 (function(){
@@ -102,27 +96,55 @@ private const val CMB_SUBMIT_OBSERVER_SCRIPT = """
 })();
 """
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CmbCardRecharge() {
+fun CmbCardRecharge(
+    onExit: () -> Unit,
+    onRechargeSuccessExit: () -> Unit
+) {
     val context = LocalContext.current
     val behaviorReporter = rememberBehaviorActionReporter()
+    val colorScheme = MaterialTheme.colorScheme
+    val isDarkTheme = colorScheme.background.luminance() < 0.5f
+    val pageBackgroundColor = colorScheme.background
+    val pageStylePalette = CmbRechargePagePalette(
+        colorScheme = if (isDarkTheme) "dark" else "light",
+        background = pageBackgroundColor.toCssColor(),
+        surface = colorScheme.surface.toCssColor(),
+        surfaceVariant = colorScheme.surfaceVariant.toCssColor(),
+        text = colorScheme.onBackground.toCssColor(),
+        secondaryText = colorScheme.onSurfaceVariant.toCssColor(),
+        outline = colorScheme.outline.toCssColor(),
+        accent = colorScheme.primary.toCssColor(),
+        onAccent = colorScheme.onPrimary.toCssColor(),
+        success = (if (isDarkTheme) Color(0xFF81C784) else Color(0xFF2E7D32)).toCssColor(),
+        scrim = if (isDarkTheme) "rgba(0, 0, 0, 0.62)" else "rgba(0, 0, 0, 0.38)"
+    )
+    val pageStyleScript = remember(pageStylePalette) {
+        buildCmbRechargeStyleScript(pageStylePalette)
+    }
+    val latestPageStyleScript = rememberUpdatedState(pageStyleScript)
+    val latestRechargeSuccessExit = rememberUpdatedState(onRechargeSuccessExit)
     var entryUrl by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     var progress by remember { mutableIntStateOf(0) }
     var tokenRequestVersion by remember { mutableIntStateOf(0) }
     var loadRequestVersion by remember { mutableIntStateOf(0) }
     var isLoading by remember { mutableStateOf(true) }
-    var canGoBack by remember { mutableStateOf(false) }
+    var isRechargeSuccessPage by remember { mutableStateOf(false) }
+    var successReturnBounds by remember {
+        mutableStateOf<CmbRechargeNormalizedBounds?>(null)
+    }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    BackHandler(enabled = canGoBack) {
-        webView?.goBack()
-    }
+    BackHandler(onBack = onExit)
 
     fun reloadEntry() {
         progress = 0
         isLoading = true
         errorMessage = null
+        isRechargeSuccessPage = false
+        successReturnBounds = null
         webView?.stopLoading()
         loadRequestVersion += 1
     }
@@ -132,7 +154,8 @@ fun CmbCardRecharge() {
         isLoading = true
         errorMessage = null
         entryUrl = null
-        canGoBack = false
+        isRechargeSuccessPage = false
+        successReturnBounds = null
         val token = withContext(Dispatchers.IO) { TokenManager.awaitToken() }
         if (token.isNullOrBlank()) {
             errorMessage = "校园卡登录凭证暂未就绪，请稍后重试"
@@ -146,67 +169,53 @@ fun CmbCardRecharge() {
     DisposableEffect(Unit) {
         onDispose {
             webView?.stopLoading()
+            webView?.cmbRechargeState?.boundsLocator?.dispose()
             webView?.destroy()
             webView = null
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-    ) {
-        Text(
-            text = "招商银行充值",
-            modifier = Modifier.padding(24.dp, 32.dp, 24.dp, 16.dp),
-            style = MaterialTheme.typography.headlineMedium
-        )
+    LaunchedEffect(pageStyleScript) {
+        webView?.let { currentView ->
+            applyCmbRechargePageStyle(currentView, currentView.url, pageStyleScript)
+            currentView.cmbRechargeState?.boundsLocator?.locate(currentView.url)
+        }
+    }
 
-        if (progress in 1..99) {
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+    val pageContentColor = colorScheme.onBackground
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        containerColor = pageBackgroundColor,
+        contentColor = pageContentColor,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "招商银行充值",
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onExit) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = pageBackgroundColor,
+                    navigationIconContentColor = pageContentColor,
+                    titleContentColor = pageContentColor
+                )
             )
         }
-
-        errorMessage?.let { message ->
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .background(100.n1 withNight 20.n1, SmoothRoundedCornerShape(24.dp))
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = message,
-                    color = 10.n1 withNight 90.n1,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "重试",
-                    modifier = Modifier.clickable {
-                        if (entryUrl == null) {
-                            errorMessage = null
-                            isLoading = true
-                            tokenRequestVersion += 1
-                        } else {
-                            reloadEntry()
-                        }
-                    },
-                    color = 30.n1 withNight 70.n1,
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-        }
-
+    ) { contentPadding ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .background(100.n1 withNight 20.n1, SmoothRoundedCornerShape(24.dp))
+                .padding(contentPadding)
+                .background(pageBackgroundColor)
         ) {
             entryUrl?.let { url ->
                 val requestVersion = loadRequestVersion
@@ -215,9 +224,15 @@ fun CmbCardRecharge() {
                     factory = { viewContext ->
                         createCmbRechargeWebView(
                             context = viewContext,
+                            pageBackgroundColor = pageBackgroundColor.toArgb(),
+                            pageStyleScript = { latestPageStyleScript.value },
                             onLoadingChanged = { isLoading = it },
                             onProgressChanged = { progress = it },
-                            onNavigationChanged = { canGoBack = it },
+                            onSuccessPageChanged = { isSuccessPage ->
+                                isRechargeSuccessPage = isSuccessPage
+                                if (!isSuccessPage) successReturnBounds = null
+                            },
+                            onSuccessReturnBoundsChanged = { successReturnBounds = it },
                             onMainFrameError = { error ->
                                 errorMessage = error
                             },
@@ -229,15 +244,16 @@ fun CmbCardRecharge() {
                             }
                         ).also { created ->
                             syncYcardCookiesToWebView(created)
-                            created.tag = requestVersion
+                            created.cmbRechargeState?.requestVersion = requestVersion
                             created.loadUrl(url)
                             webView = created
                         }
                     },
                     update = { currentView ->
-                        if (currentView.tag != requestVersion) {
+                        currentView.setBackgroundColor(pageBackgroundColor.toArgb())
+                        if (currentView.cmbRechargeState?.requestVersion != requestVersion) {
                             syncYcardCookiesToWebView(currentView)
-                            currentView.tag = requestVersion
+                            currentView.cmbRechargeState?.requestVersion = requestVersion
                             currentView.loadUrl(url)
                         }
                         webView = currentView
@@ -245,27 +261,110 @@ fun CmbCardRecharge() {
                 )
             }
 
+            if (isRechargeSuccessPage) {
+                successReturnBounds?.let { bounds ->
+                    CmbRechargeSuccessReturnOverlay(
+                        bounds = bounds,
+                        onClick = {
+                            successReturnBounds = null
+                            latestRechargeSuccessExit.value()
+                        }
+                    )
+                }
+            }
+
             if (isLoading) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.Center),
-                    color = 30.n1 withNight 70.n1
+                    color = colorScheme.primary
                 )
             }
+
+            if (progress in 1..99) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                )
+            }
+
+            errorMessage?.let { message ->
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp)
+                        .fillMaxWidth()
+                        .background(colorScheme.surface, SmoothRoundedCornerShape(24.dp))
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = message,
+                        color = pageContentColor,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "重试",
+                        modifier = Modifier.clickable {
+                            if (entryUrl == null) {
+                                errorMessage = null
+                                isLoading = true
+                                tokenRequestVersion += 1
+                            } else {
+                                reloadEntry()
+                            }
+                        },
+                        color = colorScheme.primary,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CmbRechargeSuccessReturnOverlay(
+    bounds: CmbRechargeNormalizedBounds,
+    onClick: () -> Unit
+) {
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier
+                .absoluteOffset(
+                    x = maxWidth * bounds.left,
+                    y = maxHeight * bounds.top
+                )
+                .width(maxWidth * bounds.width)
+                .height(maxHeight * bounds.height)
+                .clip(SmoothRoundedCornerShape(20.dp))
+                .clickable(
+                    onClickLabel = "返回应用首页",
+                    role = Role.Button,
+                    onClick = onClick
+                )
+        )
     }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun createCmbRechargeWebView(
     context: android.content.Context,
+    pageBackgroundColor: Int,
+    pageStyleScript: () -> String,
     onLoadingChanged: (Boolean) -> Unit,
     onProgressChanged: (Int) -> Unit,
-    onNavigationChanged: (Boolean) -> Unit,
+    onSuccessPageChanged: (Boolean) -> Unit,
+    onSuccessReturnBoundsChanged: (CmbRechargeNormalizedBounds?) -> Unit,
     onMainFrameError: (String) -> Unit,
     onExternalLink: (String) -> Unit,
     onSubmitIntent: () -> Unit
 ): WebView {
     return WebView(context).apply {
+        setBackgroundColor(pageBackgroundColor)
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
         settings.loadsImagesAutomatically = true
@@ -282,6 +381,8 @@ private fun createCmbRechargeWebView(
         }
         android.webkit.CookieManager.getInstance().setAcceptCookie(true)
         addJavascriptInterface(CmbBehaviorBridge(this, onSubmitIntent), "AhuTongBehaviorBridge")
+        val boundsLocator = CmbRechargeBoundsLocator(this, onSuccessReturnBoundsChanged)
+        tag = CmbRechargeWebViewState(boundsLocator = boundsLocator)
 
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
@@ -293,6 +394,13 @@ private fun createCmbRechargeWebView(
         }
 
         webViewClient = object : WebViewClient() {
+            private fun updateSuccessPage(url: String?): Boolean {
+                val isSuccessPage = isCmbRechargeSuccessUrl(url)
+                onSuccessPageChanged(isSuccessPage)
+                if (!isSuccessPage) boundsLocator.clear()
+                return isSuccessPage
+            }
+
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
@@ -314,18 +422,31 @@ private fun createCmbRechargeWebView(
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 onLoadingChanged(true)
-                onNavigationChanged(view?.canGoBack() == true)
+                boundsLocator.clear()
+                updateSuccessPage(url)
                 super.onPageStarted(view, url, favicon)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 onLoadingChanged(false)
-                onNavigationChanged(view?.canGoBack() == true)
-                if (url?.let(Uri::parse)?.let(::isAuditedCmbSubmitPage) == true) {
-                    view?.evaluateJavascript(CMB_RECHARGE_STYLE_SCRIPT, null)
-                    view?.evaluateJavascript(CMB_SUBMIT_OBSERVER_SCRIPT, null)
+                updateSuccessPage(url)
+                if (view != null) {
+                    applyCmbRechargePageStyle(view, url, pageStyleScript())
+                    if (url?.let(Uri::parse)?.let(::isAuditedCmbSubmitPage) == true) {
+                        view.evaluateJavascript(CMB_SUBMIT_OBSERVER_SCRIPT, null)
+                    }
+                    boundsLocator.locate(url)
                 }
                 super.onPageFinished(view, url)
+            }
+
+            override fun doUpdateVisitedHistory(
+                view: WebView?,
+                url: String?,
+                isReload: Boolean
+            ) {
+                if (updateSuccessPage(url) && view != null) boundsLocator.locate(url)
+                super.doUpdateVisitedHistory(view, url, isReload)
             }
 
             override fun onReceivedError(
@@ -335,6 +456,8 @@ private fun createCmbRechargeWebView(
             ) {
                 if (request?.isForMainFrame == true) {
                     onLoadingChanged(false)
+                    boundsLocator.clear()
+                    onSuccessPageChanged(false)
                     onMainFrameError(error?.description?.toString() ?: "页面加载失败，请稍后重试")
                 }
                 super.onReceivedError(view, request, error)
@@ -364,6 +487,172 @@ private class CmbBehaviorBridge(
     }
 
     private companion object { const val NATIVE_SUBMIT_DEBOUNCE_MS = 1_000L }
+}
+
+private class CmbRechargeWebViewState(
+    val boundsLocator: CmbRechargeBoundsLocator,
+    var requestVersion: Int = -1
+)
+
+private val WebView.cmbRechargeState: CmbRechargeWebViewState?
+    get() = tag as? CmbRechargeWebViewState
+
+private class CmbRechargeBoundsLocator(
+    private val webView: WebView,
+    private val onBoundsChanged: (CmbRechargeNormalizedBounds?) -> Unit
+) {
+    private var generation = 0
+    private var consecutiveMisses = 0
+    private var lastBounds: CmbRechargeNormalizedBounds? = null
+    private var pendingPoll: Runnable? = null
+    private var isDisposed = false
+
+    fun clear() {
+        if (isDisposed) return
+        generation += 1
+        cancelPendingPoll()
+        consecutiveMisses = 0
+        publish(null)
+    }
+
+    fun locate(url: String?) {
+        if (isDisposed) return
+        generation += 1
+        cancelPendingPoll()
+        consecutiveMisses = 0
+        val currentGeneration = generation
+        if (!isCmbRechargeSuccessUrl(url)) {
+            publish(null)
+            return
+        }
+        publish(null)
+        locate(currentGeneration)
+    }
+
+    fun dispose() {
+        if (isDisposed) return
+        isDisposed = true
+        generation += 1
+        cancelPendingPoll()
+        lastBounds = null
+    }
+
+    private fun locate(currentGeneration: Int) {
+        if (
+            isDisposed ||
+            currentGeneration != generation ||
+            !isCmbRechargeSuccessUrl(webView.url)
+        ) {
+            return
+        }
+        webView.evaluateJavascript(buildCmbRechargeSuccessReturnBoundsScript()) { rawResult ->
+            if (
+                isDisposed ||
+                currentGeneration != generation ||
+                !isCmbRechargeSuccessUrl(webView.url)
+            ) {
+                return@evaluateJavascript
+            }
+            val bounds = parseCmbRechargeNormalizedBounds(rawResult)
+            if (bounds != null) {
+                consecutiveMisses = 0
+                publish(bounds)
+            } else {
+                consecutiveMisses += 1
+                publish(null)
+            }
+            scheduleNextPoll(
+                currentGeneration = currentGeneration,
+                delayMillis = when {
+                    bounds != null -> 250L
+                    consecutiveMisses <= 30 -> 100L
+                    else -> 1_000L
+                }
+            )
+        }
+    }
+
+    private fun scheduleNextPoll(currentGeneration: Int, delayMillis: Long) {
+        val poll = Runnable {
+            pendingPoll = null
+            locate(currentGeneration)
+        }
+        pendingPoll = poll
+        if (!webView.postDelayed(poll, delayMillis)) pendingPoll = null
+    }
+
+    private fun cancelPendingPoll() {
+        pendingPoll?.let(webView::removeCallbacks)
+        pendingPoll = null
+    }
+
+    private fun publish(bounds: CmbRechargeNormalizedBounds?) {
+        if (lastBounds == bounds) return
+        lastBounds = bounds
+        onBoundsChanged(bounds)
+    }
+}
+
+internal fun parseCmbRechargeNormalizedBounds(rawResult: String?): CmbRechargeNormalizedBounds? {
+    val value = rawResult?.trim().orEmpty()
+    if (!value.startsWith('[') || !value.endsWith(']')) return null
+    val parts = value.substring(1, value.length - 1).split(',')
+    if (parts.size != 4) return null
+    val numbers = parts.map { it.trim().toDoubleOrNull() ?: return null }
+    return validateCmbRechargeNormalizedBounds(
+        left = numbers[0],
+        top = numbers[1],
+        width = numbers[2],
+        height = numbers[3]
+    )
+}
+
+internal fun validateCmbRechargeNormalizedBounds(
+    left: Double,
+    top: Double,
+    width: Double,
+    height: Double
+): CmbRechargeNormalizedBounds? {
+    val values = listOf(left, top, width, height)
+    if (values.any { !it.isFinite() }) return null
+    if (left !in 0.0..1.0 || top !in 0.0..1.0) return null
+    if (width !in 0.05..1.0 || height !in 0.01..0.35) return null
+    if (left + width > 1.001 || top + height > 1.001) return null
+    return CmbRechargeNormalizedBounds(
+        left = left.toFloat(),
+        top = top.toFloat(),
+        width = width.toFloat(),
+        height = height.toFloat()
+    )
+}
+
+private fun applyCmbRechargePageStyle(webView: WebView, url: String?, script: String) {
+    if (!isCmbRechargeStyleTarget(url)) return
+    webView.evaluateJavascript(script, null)
+}
+
+internal fun isCmbRechargeSuccessUrl(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val scheme = uri.scheme.orEmpty().lowercase()
+    val host = uri.host.orEmpty().lowercase()
+    val path = uri.path.orEmpty().trimEnd('/').lowercase()
+    return scheme == "https" &&
+        host == "epay92.ahu.edu.cn" &&
+        uri.port in setOf(-1, 443) &&
+        path == "/cashier-mobile/chargeresult"
+}
+
+internal fun isCmbRechargeStyleTarget(url: String?): Boolean {
+    if (url.isNullOrBlank()) return false
+    val uri = runCatching { URI(url) }.getOrNull() ?: return false
+    val host = uri.host.orEmpty().lowercase()
+    val path = uri.path.orEmpty().lowercase()
+    return when (host) {
+        "epay92.ahu.edu.cn" -> path == "/cashier-mobile" || path.startsWith("/cashier-mobile/")
+        "ycard.ahu.edu.cn" -> path.startsWith("/charge-app")
+        else -> false
+    }
 }
 
 private fun buildCmbRechargeEntryUrl(token: String): String {
@@ -431,3 +720,5 @@ private fun buildCookieTargetUrl(cookie: Cookie): String {
     val domain = cookie.domain.trimStart('.')
     return "$scheme://$domain"
 }
+
+private fun Color.toCssColor(): String = "#%06X".format(toArgb() and 0xFFFFFF)

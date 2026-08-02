@@ -54,6 +54,7 @@ import com.ahu.ahutong.personalization.promotion.LocalPromotionManager
 import com.ahu.ahutong.personalization.promotion.PromotionSnapshot
 import com.ahu.ahutong.personalization.storage.BehaviorDao
 import com.ahu.ahutong.personalization.storage.BehaviorDatabase
+import com.ahu.ahutong.personalization.storage.BehaviorDatabaseCompatibilityStore
 import com.ahu.ahutong.personalization.storage.BehaviorEventEntity
 import com.ahu.ahutong.personalization.storage.BinaryCodec
 import com.ahu.ahutong.personalization.storage.LearningStateEntity
@@ -123,6 +124,7 @@ sealed interface PredictionUiState {
         val title: String,
         val reason: String,
         val confidenceBucket: ConfidenceBucket,
+        val exposureConfirmed: Boolean,
         val shownAtElapsedMs: Long,
         val expiresAtElapsedMs: Long,
         val visibilityPaused: Boolean = false
@@ -180,6 +182,7 @@ data class SanitizedDiagnosticsSnapshot(
 class BehaviorPredictionRuntime @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val database: BehaviorDatabase,
+    private val databaseCompatibilityStore: BehaviorDatabaseCompatibilityStore,
     private val dao: BehaviorDao,
     private val profileKeyManager: ProfileKeyManager,
     private val statPredictor: DecayedFrequencyPredictor,
@@ -214,6 +217,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val _uiState = MutableStateFlow<PredictionUiState>(PredictionUiState.Hidden)
     private val _telemetryConsentEnabled = MutableStateFlow(false)
     private val _sensitiveUiVisible = MutableStateFlow(false)
+    private val _suggestionOverlayBlocked = MutableStateFlow(false)
     private val recentActions = ArrayDeque<AppActionId>()
     private val recentActionSources = ArrayDeque<ActionSource>()
     private val organicActionHistory = ArrayDeque<AppActionId>()
@@ -224,6 +228,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     val uiState: StateFlow<PredictionUiState> = _uiState.asStateFlow()
     val telemetryConsentEnabled: StateFlow<Boolean> = _telemetryConsentEnabled.asStateFlow()
     val sensitiveUiVisible: StateFlow<Boolean> = _sensitiveUiVisible.asStateFlow()
+    val suggestionOverlayBlocked: StateFlow<Boolean> = _suggestionOverlayBlocked.asStateFlow()
 
     @Volatile private var profileKey: String? = null
     @Volatile private var profileReady = false
@@ -807,7 +812,8 @@ class BehaviorPredictionRuntime @Inject constructor(
         source: ActionSource,
         route: String?,
         ttlMillis: Long = 10_000L,
-        allowHoldoutInvalidation: Boolean = false
+        allowHoldoutInvalidation: Boolean = false,
+        requestedExecutionId: String? = null
     ): ProductExecutionLeaseEntity? {
         val activeProfile = profileKey ?: return null
         val lock = profileLocks.getOrPut(activeProfile) { Mutex() }
@@ -819,7 +825,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             val elapsed = SystemClock.elapsedRealtime()
             if (elapsed >= pending.labelDeadlineElapsedMs) return@withLock null
             val epoch = executionEpoch.incrementAndGet()
-            val executionId = UUID.randomUUID().toString()
+            val executionId = requestedExecutionId ?: UUID.randomUUID().toString()
             val lease = ProductExecutionLeaseEntity(
                 executionId,
                 decisionId,
@@ -862,14 +868,17 @@ class BehaviorPredictionRuntime @Inject constructor(
         if (!preferencesManager.personalizationEnabled.first()) return false
         val spec = AppActionCatalog.spec(action)
         if (!spec.suggestible || spec.sideEffect == SideEffect.TRANSACTION || !foreground || !interactive ||
-            _sensitiveUiVisible.value || !isSuggestionSurfaceAllowed(lastRoute)
+            _sensitiveUiVisible.value || _suggestionOverlayBlocked.value ||
+            !isSuggestionSurfaceAllowed(lastRoute) || _uiState.value != PredictionUiState.Hidden
         ) return false
-        val lease = prepareVisibleIntervention(decisionId, action, "SUGGESTION", ActionSource.SUGGESTION, spec.route) ?: return false
-        val consumed = consumeIntervention(lease.executionId) ?: return false
-        profileKey?.let { journeyEngine.censorProfile(it, "CENSORED_RECOMMENDATION_EXPOSURE") }
-        val shownAtElapsedMs = SystemClock.elapsedRealtime()
+        val activeProfile = profileKey ?: return false
+        val pending = dao.pending(decisionId) ?: return false
+        if (pending.profileKey != activeProfile || pending.resolutionStatus != "PENDING" ||
+            pending.isPromotionHoldout || SystemClock.elapsedRealtime() >= pending.labelDeadlineElapsedMs
+        ) return false
+        val executionId = UUID.randomUUID().toString()
         _uiState.value = PredictionUiState.Suggestion(
-            consumed.executionId,
+            executionId,
             decisionId,
             action,
             spec.title,
@@ -879,17 +888,62 @@ class BehaviorPredictionRuntime @Inject constructor(
                 probability >= 0.50f -> ConfidenceBucket.MEDIUM
                 else -> ConfidenceBucket.LOW
             },
-            shownAtElapsedMs = shownAtElapsedMs,
-            expiresAtElapsedMs = shownAtElapsedMs + SUGGESTION_VISIBLE_TTL_MS,
+            exposureConfirmed = false,
+            shownAtElapsedMs = 0L,
+            expiresAtElapsedMs = 0L,
             visibilityPaused = false
         )
-        scheduleSuggestionExpiry(consumed.executionId)
+        return true
+    }
+
+    suspend fun confirmSuggestionVisible(executionId: String): Boolean {
+        val offered = _uiState.value as? PredictionUiState.Suggestion ?: return false
+        if (offered.executionId != executionId) return false
+        if (offered.exposureConfirmed) return true
+        if (!foreground || !interactive || _suggestionOverlayBlocked.value ||
+            !isSuggestionSurfaceAllowed(lastRoute)
+        ) {
+            hideSuggestionIfCurrent(executionId)
+            return false
+        }
+        val spec = AppActionCatalog.spec(offered.action)
+        val lease = prepareVisibleIntervention(
+            offered.decisionId,
+            offered.action,
+            "SUGGESTION",
+            ActionSource.SUGGESTION,
+            spec.route,
+            requestedExecutionId = executionId
+        ) ?: run {
+            hideSuggestionIfCurrent(executionId)
+            return false
+        }
+        if (consumeIntervention(lease.executionId) == null) {
+            hideSuggestionIfCurrent(executionId)
+            return false
+        }
+        profileKey?.let { journeyEngine.censorProfile(it, "CENSORED_RECOMMENDATION_EXPOSURE") }
+        val shownAtElapsedMs = SystemClock.elapsedRealtime()
+        val current = _uiState.value as? PredictionUiState.Suggestion
+        if (current?.executionId != executionId) return false
+        _uiState.value = current.copy(
+            exposureConfirmed = true,
+            shownAtElapsedMs = shownAtElapsedMs,
+            expiresAtElapsedMs = shownAtElapsedMs + SUGGESTION_VISIBLE_TTL_MS
+        )
+        lastSuggestionElapsedMs = shownAtElapsedMs
+        prefetchCoordinator.prefetchSuggestedAction(
+            action = current.action,
+            holdout = false,
+            foreground = foreground
+        )
+        scheduleSuggestionExpiry(executionId)
         return true
     }
 
     fun pauseSuggestionVisibility(executionId: String) {
         val current = _uiState.value as? PredictionUiState.Suggestion ?: return
-        if (current.executionId != executionId) return
+        if (current.executionId != executionId || !current.exposureConfirmed) return
         suggestionVisibilityGeneration.incrementAndGet()
         suggestionExpiryJob?.cancel()
         suggestionExpiryJob = null
@@ -898,7 +952,7 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     fun restartSuggestionVisibility(executionId: String) {
         val current = _uiState.value as? PredictionUiState.Suggestion ?: return
-        if (current.executionId != executionId) return
+        if (current.executionId != executionId || !current.exposureConfirmed) return
         val restartedAtElapsedMs = SystemClock.elapsedRealtime()
         _uiState.value = current.copy(
             shownAtElapsedMs = restartedAtElapsedMs,
@@ -915,9 +969,19 @@ class BehaviorPredictionRuntime @Inject constructor(
         _uiState.value = PredictionUiState.Hidden
     }
 
+    private fun hideSuggestionIfCurrent(executionId: String) {
+        val current = _uiState.value as? PredictionUiState.Suggestion ?: return
+        if (current.executionId == executionId) hideSuggestion()
+    }
+
     fun setSensitiveUiVisible(visible: Boolean) {
         _sensitiveUiVisible.value = visible
+        _suggestionOverlayBlocked.value = visible
         if (visible) hideSuggestion()
+    }
+
+    fun setInlineSensitiveUiVisible(visible: Boolean) {
+        _sensitiveUiVisible.value = visible
     }
 
     fun dismissSuggestionByUser() {
@@ -926,7 +990,7 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     suspend fun acceptSuggestion(executionId: String): AppActionId? {
         val state = _uiState.value as? PredictionUiState.Suggestion ?: return null
-        if (state.executionId != executionId) return null
+        if (state.executionId != executionId || !state.exposureConfirmed) return null
         hideSuggestion()
         AppActionCatalog.spec(state.action).route?.let(::suppressNextRoute)
         recordActionIntent(
@@ -974,19 +1038,29 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     suspend fun clearLearningRecord() {
-        val activeProfile = profileKey ?: return
+        val activeProfile = profileKey
+        if (activeProfile == null) {
+            databaseCompatibilityStore.clearLegacyLearningDatabase()
+            return
+        }
         val account = activeAccountIdentifier
         telemetryManager.revoke(activeProfile, deleteRemote = true)
         stopSession("CLEARED_BY_USER", clearProfile = true)
+        databaseCompatibilityStore.clearLegacyLearningDatabase()
         profileKey = null
         if (account != null) startProfile(account)
     }
 
     suspend fun logoutAndClear() {
-        val activeProfile = profileKey ?: return
+        val activeProfile = profileKey
+        if (activeProfile == null) {
+            databaseCompatibilityStore.clearLegacyLearningDatabase()
+            return
+        }
         telemetryManager.setConsent(activeProfile, enabled = false)
         _telemetryConsentEnabled.value = false
         stopSession("LOGOUT", clearProfile = true)
+        databaseCompatibilityStore.clearLegacyLearningDatabase()
         profileKey = null
         activeAccountIdentifier = null
     }
@@ -1041,6 +1115,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         hideSuggestion()
         _telemetryConsentEnabled.value = false
         _sensitiveUiVisible.value = false
+        _suggestionOverlayBlocked.value = false
         _diagnostics.value = RuntimeDiagnosticsState()
     }
 
@@ -1527,13 +1602,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             return
         }
         if (showSuggestion(proposal.decisionId, proposal.action, proposal.probability)) {
-            lastSuggestionElapsedMs = nowElapsed
             _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = null)
-            prefetchCoordinator.prefetchSuggestedAction(
-                action = proposal.action,
-                holdout = pending.isPromotionHoldout,
-                foreground = foreground
-            )
         } else {
             _diagnostics.value = _diagnostics.value.copy(candidateRejectionReason = "SURFACE_OR_SAFETY_GATE_REJECTED")
         }

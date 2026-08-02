@@ -47,6 +47,7 @@ enum class MutationId(
     val defaultFamily: SemanticEventFamily = SemanticEventFamily.SETTING_CHANGED
 ) {
     HOME_DEFAULT_QR_CHANGED(SemanticDomain.HOME),
+    CMB_RECHARGE_PREFERENCE_CHANGED(SemanticDomain.PAYMENT),
     COURSE_REMINDER_CHANGED(SemanticDomain.SCHEDULE),
     COURSE_LIVE_COUNTDOWN_CHANGED(SemanticDomain.SCHEDULE),
     SCHEDULE_OVERVIEW_CHANGED(SemanticDomain.SCHEDULE),
@@ -145,10 +146,14 @@ object SemanticEventCatalog {
 }
 
 object AffectedActionCatalog {
-    const val VERSION = 2
+    const val VERSION = 3
 
     private val mappings: Map<MutationId, Set<AppActionId>> = mapOf(
         MutationId.HOME_DEFAULT_QR_CHANGED to setOf(AppActionId.OPEN_HOME),
+        MutationId.CMB_RECHARGE_PREFERENCE_CHANGED to setOf(
+            AppActionId.OPEN_CMB_CARD_RECHARGE,
+            AppActionId.OPEN_CARD_RECHARGE
+        ),
         MutationId.COURSE_REMINDER_CHANGED to setOf(AppActionId.VIEW_SCHEDULE),
         MutationId.COURSE_LIVE_COUNTDOWN_CHANGED to setOf(AppActionId.VIEW_SCHEDULE),
         MutationId.SCHEDULE_OVERVIEW_CHANGED to setOf(AppActionId.VIEW_SCHEDULE),
@@ -179,8 +184,19 @@ object AffectedActionCatalog {
         "REPOSITORY" to AppActionId.OPEN_REPOSITORY
     )
 
-    fun affectedActions(mutationId: MutationId, coarseValueBucket: String? = null): Set<AppActionId> {
+    fun affectedActions(
+        mutationId: MutationId,
+        coarseValueBucket: String? = null,
+        changeKind: SemanticChangeKind = SemanticChangeKind.UNKNOWN
+    ): Set<AppActionId> {
         val base = mappings[mutationId].orEmpty()
+        if (mutationId == MutationId.CMB_RECHARGE_PREFERENCE_CHANGED) {
+            return when (changeKind) {
+                SemanticChangeKind.ENABLED -> setOf(AppActionId.OPEN_CMB_CARD_RECHARGE)
+                SemanticChangeKind.DISABLED -> setOf(AppActionId.OPEN_CARD_RECHARGE)
+                else -> base
+            }
+        }
         if (mutationId != MutationId.HOME_WIDGET_ADDED) return base
         return homeWidgetActions[coarseValueBucket]?.let { base + it } ?: base
     }
@@ -213,6 +229,11 @@ object ProductCandidateResolver {
         }
         return when {
             semantic.semanticId == MutationId.HOME_DEFAULT_QR_CHANGED.name -> targeted(AppActionId.OPEN_HOME)
+            semantic.semanticId == MutationId.CMB_RECHARGE_PREFERENCE_CHANGED.name -> when (semantic.changeKind) {
+                SemanticChangeKind.ENABLED -> targeted(AppActionId.OPEN_CMB_CARD_RECHARGE)
+                SemanticChangeKind.DISABLED -> targeted(AppActionId.OPEN_CARD_RECHARGE)
+                else -> ProductCandidateScope.Suppress
+            }
             semantic.semanticId == MutationId.WEATHER_HOME_CONFIG_CHANGED.name -> targeted(AppActionId.OPEN_HOME)
             semantic.semanticId == MutationId.COURSE_REMINDER_CHANGED.name -> targeted(AppActionId.VIEW_SCHEDULE)
             semantic.semanticId == MutationId.COURSE_LIVE_COUNTDOWN_CHANGED.name -> targeted(AppActionId.VIEW_SCHEDULE)
@@ -256,15 +277,20 @@ class SemanticEventRecorder @Inject constructor() {
             mutation.mutationId.name
         }
         require(SemanticEventCatalog.isStableSemanticId(semanticId))
+        val normalizedChangeKind = changeKind(mutation.oldValue, mutation.newValue)
         return NormalizedSemanticEvent(
             eventId = UUID.randomUUID().toString(),
             eventFamily = mutation.familyOverride ?: mutation.mutationId.defaultFamily,
             domain = mutation.domainOverride ?: mutation.mutationId.domain,
             semanticId = semanticId,
-            changeKind = changeKind(mutation.oldValue, mutation.newValue),
+            changeKind = normalizedChangeKind,
             coarseValueBucket = stableBucket ?: "CHANGED",
             route = mutation.route,
-            affectedActionIds = AffectedActionCatalog.affectedActions(mutation.mutationId, stableBucket),
+            affectedActionIds = AffectedActionCatalog.affectedActions(
+                mutation.mutationId,
+                stableBucket,
+                normalizedChangeKind
+            ),
             affectedCandidateSetVersion = AffectedActionCatalog.VERSION,
             source = mutation.source,
             committedAtEpochDay = mutation.committedAtEpochDay,

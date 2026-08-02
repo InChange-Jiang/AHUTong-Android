@@ -6,11 +6,12 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -24,19 +25,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.runtime.PredictionUiState
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
@@ -62,6 +72,7 @@ fun SmartSuggestionHost(
     runtime: BehaviorPredictionRuntime,
     backdrop: Backdrop,
     blocked: Boolean,
+    bottomSpacing: Dp,
     onSuggestionClick: (PredictionUiState.Suggestion) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -73,6 +84,7 @@ fun SmartSuggestionHost(
     val suggestion = state as? PredictionUiState.Suggestion ?: return
     val suggestionShape = ContinuousCapsule
     val lifetimeOpacity = remember(suggestion.executionId) { Animatable(1f) }
+    var popupLaidOut by remember(suggestion.executionId) { mutableStateOf(false) }
     val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope, suggestion.executionId) {
         InteractiveHighlight(
@@ -93,22 +105,22 @@ fun SmartSuggestionHost(
         )
     }
     val isLiquidGlass = LocalIsLiquidGlassEnabled.current
-    val isLightTheme = !isSystemInDarkTheme()
-    val glassContainerColor = if (isLightTheme) {
-        Color(0xFFFAFAFA).copy(alpha = 0.4f)
-    } else {
-        Color(0xFF121212).copy(alpha = 0.4f)
-    }
+    val glassContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.64f)
     val accentContentColor = MaterialTheme.colorScheme.primary.copy(alpha = lifetimeOpacity.value)
     val primaryContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = lifetimeOpacity.value)
     val secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = lifetimeOpacity.value)
 
     LaunchedEffect(
         suggestion.executionId,
+        suggestion.exposureConfirmed,
         suggestion.shownAtElapsedMs,
         suggestion.expiresAtElapsedMs,
         suggestion.visibilityPaused
     ) {
+        if (!suggestion.exposureConfirmed) {
+            lifetimeOpacity.snapTo(1f)
+            return@LaunchedEffect
+        }
         if (suggestion.visibilityPaused) {
             lifetimeOpacity.snapTo(1f)
             return@LaunchedEffect
@@ -133,9 +145,39 @@ fun SmartSuggestionHost(
         }
     }
 
-    Box(
-        modifier = modifier
-            .then(
+    LaunchedEffect(suggestion.executionId, popupLaidOut, suggestion.exposureConfirmed) {
+        if (popupLaidOut && !suggestion.exposureConfirmed) {
+            withFrameNanos { }
+            runtime.confirmSuggestionVisible(suggestion.executionId)
+        }
+    }
+
+    val density = LocalDensity.current
+    val navigationBarInset = WindowInsets.navigationBars.getBottom(density)
+    val popupOffset = with(density) {
+        IntOffset(
+            x = -12.dp.roundToPx(),
+            y = -(bottomSpacing.roundToPx() + navigationBarInset)
+        )
+    }
+    Popup(
+        alignment = Alignment.BottomEnd,
+        offset = popupOffset,
+        properties = PopupProperties(
+            focusable = false,
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            clippingEnabled = true
+        )
+    ) {
+        Box(
+            modifier = modifier
+                .onGloballyPositioned { coordinates ->
+                    if (coordinates.size.width > 0 && coordinates.size.height > 0) {
+                        popupLaidOut = true
+                    }
+                }
+                .then(
                 if (isLiquidGlass) {
                     Modifier.drawBackdrop(
                         backdrop = backdrop,
@@ -183,7 +225,9 @@ fun SmartSuggestionHost(
                             spotColor = Color.Black.copy(alpha = 0.12f * lifetimeOpacity.value)
                         )
                         .background(
-                            color = MaterialTheme.colorScheme.surface.copy(alpha = lifetimeOpacity.value),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                                alpha = lifetimeOpacity.value
+                            ),
                             shape = suggestionShape
                         )
                 }
@@ -198,36 +242,42 @@ fun SmartSuggestionHost(
             .clip(suggestionShape)
             .then(interactiveHighlight.modifier)
             .then(interactiveHighlight.gestureModifier)
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(
-                Icons.Rounded.Lightbulb,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                tint = accentContentColor
-            )
-            Column {
-                Text(
-                    "猜你想用 · ${suggestion.title}",
-                    color = primaryContentColor,
-                    style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    suggestion.reason,
-                    color = secondaryContentColor,
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            IconButton(onClick = runtime::dismissSuggestionByUser) {
+            Row(
+                modifier = Modifier.padding(
+                    start = 12.dp,
+                    top = 8.dp,
+                    bottom = 8.dp,
+                    end = 4.dp
+                ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Icon(
-                    Icons.Rounded.Close,
-                    contentDescription = "关闭建议",
-                    tint = primaryContentColor
+                    Icons.Rounded.Lightbulb,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = accentContentColor
                 )
+                Column {
+                    Text(
+                        "猜你想用 · ${suggestion.title}",
+                        color = primaryContentColor,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        suggestion.reason,
+                        color = secondaryContentColor,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                IconButton(onClick = runtime::dismissSuggestionByUser) {
+                    Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "关闭建议",
+                        tint = secondaryContentColor
+                    )
+                }
             }
         }
     }

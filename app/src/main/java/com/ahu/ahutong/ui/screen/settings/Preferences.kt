@@ -44,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.notification.CourseReminderCapability
 import com.ahu.ahutong.notification.CourseReminderNotifier
@@ -53,6 +52,7 @@ import com.ahu.ahutong.ui.components.SettingsActionRow
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsDialogSelectRow
+import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
 import com.ahu.ahutong.ui.components.SettingsPageHeader
 import com.ahu.ahutong.ui.components.SettingsSection
 import com.ahu.ahutong.ui.components.SettingsToggleRow
@@ -64,7 +64,6 @@ fun Preferences(onBack: () -> Unit = {}) {
     val viewModel: PreferencesViewModel = hiltViewModel()
     val context = LocalContext.current
     var isRequestingPermission by remember { mutableStateOf(false) }
-    var useCmbCardRecharge by remember { mutableStateOf(AHUCache.isCmbCardRechargePreferred()) }
     var showClearLearningConfirm by remember { mutableStateOf(false) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
     var isToggleHorizontalDragActive by remember { mutableStateOf(false) }
@@ -75,6 +74,7 @@ fun Preferences(onBack: () -> Unit = {}) {
 
     val appThemeMode by viewModel.appThemeMode.collectAsState()
     val showQRCode by viewModel.showQRCode.collectAsState()
+    val useCmbCardRecharge by viewModel.useCmbCardRecharge.collectAsState()
     val personalizationEnabled by viewModel.personalizationEnabled.collectAsState()
     val predictivePrefetchEnabled by viewModel.predictivePrefetchEnabled.collectAsState()
     val wifiOnlyPrefetch by viewModel.wifiOnlyPrefetch.collectAsState()
@@ -205,10 +205,7 @@ fun Preferences(onBack: () -> Unit = {}) {
                 title = "总是使用招商银行充值",
                 subtitle = "校园卡充值将直接进入招商银行页面",
                 selected = useCmbCardRecharge,
-                onSelectedChange = { enabled ->
-                    useCmbCardRecharge = enabled
-                    AHUCache.setCmbCardRechargePreferred(enabled)
-                },
+                onSelectedChange = viewModel::setUseCmbCardRecharge,
                 backdrop = backdrop,
                 showDivider = false,
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
@@ -307,25 +304,16 @@ fun Preferences(onBack: () -> Unit = {}) {
     }
 
     if (showClearLearningConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearLearningConfirm = false },
-            title = { Text("清除本地学习记录？") },
-            text = { Text("行为统计、训练样本、本地模型与晋级状态将被删除，且无法恢复。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearPersonalizationLearning()
-                        showClearLearningConfirm = false
-                    }
-                ) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
-                }
+        SettingsConfirmationDialog(
+            title = "清除本地学习记录？",
+            message = "行为统计、训练样本、本地模型与晋级状态将被删除，且无法恢复。",
+            confirmLabel = "清除",
+            destructive = true,
+            onConfirm = {
+                viewModel.clearPersonalizationLearning()
+                showClearLearningConfirm = false
             },
-            dismissButton = {
-                TextButton(onClick = { showClearLearningConfirm = false }) {
-                    Text("取消")
-                }
-            }
+            onDismiss = { showClearLearningConfirm = false }
         )
     }
 

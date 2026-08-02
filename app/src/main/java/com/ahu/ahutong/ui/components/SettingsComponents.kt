@@ -37,6 +37,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +69,78 @@ data class SettingsChoice<T>(
     val value: T,
     val label: String
 )
+
+@Composable
+fun SettingsDialogSurface(
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(onDismissRequest = onDismissRequest) {
+        Surface(
+            modifier = modifier
+                .fillMaxWidth()
+                .widthIn(max = 560.dp),
+            shape = SmoothRoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 6.dp,
+            shadowElevation = 10.dp
+        ) {
+            Column(content = content)
+        }
+    }
+}
+
+@Composable
+fun SettingsConfirmationDialog(
+    title: String,
+    message: String,
+    confirmLabel: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    destructive: Boolean = false
+) {
+    SettingsDialogSurface(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = message,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onDismiss) {
+                    Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onConfirm) {
+                    Text(
+                        confirmLabel,
+                        color = if (destructive) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun settingsScreenBackground(): Color = if (LocalIsLiquidGlassEnabled.current) {
@@ -540,21 +613,12 @@ fun <T> SettingsDialogSelectRow(
     )
 
     if (dialogVisible) {
-        Dialog(onDismissRequest = { dialogVisible = false }) {
-            Surface(
+        SettingsDialogSurface(onDismissRequest = { dialogVisible = false }) {
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .widthIn(max = 560.dp),
-                shape = SmoothRoundedCornerShape(28.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
-                shadowElevation = 10.dp
+                    .padding(vertical = 18.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
-                Column(
-                    modifier = Modifier
-                        .padding(vertical = 18.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
                     Text(
                         text = dialogTitle,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
@@ -594,7 +658,6 @@ fun <T> SettingsDialogSelectRow(
                             )
                         }
                     }
-                }
             }
         }
     }

@@ -2,7 +2,6 @@ package com.ahu.ahutong.personalization.storage
 
 import android.content.Context
 import androidx.room.Database
-import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
 import dagger.Module
@@ -60,10 +59,7 @@ object BehaviorStorageModule {
     @Provides
     @Singleton
     fun provideBehaviorDatabase(@ApplicationContext context: Context): BehaviorDatabase =
-        Room.databaseBuilder(context, BehaviorDatabase::class.java, "behavior_prediction.db")
-            .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(BehaviorDatabaseMigrations.MIGRATION_1_2)
-            .build()
+        BehaviorDatabaseFactory.open(context)
 
     @Provides
     fun provideBehaviorDao(database: BehaviorDatabase): BehaviorDao = database.behaviorDao()

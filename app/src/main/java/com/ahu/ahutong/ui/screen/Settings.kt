@@ -59,6 +59,7 @@ import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.components.SettingsActionRow
+import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsInfoRow
 import com.ahu.ahutong.ui.components.SettingsHeroCard
@@ -252,36 +253,28 @@ fun Settings(
     }
 
     if (isClearDataDialogShown) {
-        AlertDialog(
-            onDismissRequest = { isClearDataDialogShown = false },
-            title = { Text("清除所有数据？") },
-            text = { Text("登录状态、课表及本机设置将被永久清除。") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        scope.launch {
-                            CourseReminderScheduler.cancel(context)
-                            preferencesManager.clearAll()
-                            behaviorRuntime.logoutAndClear()
-                            mainViewModel.logout()
-                            AHUCache.clearAll()
-                            RustSDK.initSafe("")
-                            CookieManager.cookieJar.clear()
-                            CookieManager.cookieJar.clearSession()
-                            AHUApplication.sessionExpired = true
-                            Toast.makeText(context, "已清除所有数据", Toast.LENGTH_SHORT).show()
-                            navController.navigate("login") { popUpTo(0) }
-                        }
-                    }
-                ) {
-                    Text("清除", color = MaterialTheme.colorScheme.error)
+        SettingsConfirmationDialog(
+            title = "清除所有数据？",
+            message = "登录状态、课表及本机设置将被永久清除。",
+            confirmLabel = "清除",
+            destructive = true,
+            onConfirm = {
+                isClearDataDialogShown = false
+                scope.launch {
+                    CourseReminderScheduler.cancel(context)
+                    preferencesManager.clearAll()
+                    behaviorRuntime.logoutAndClear()
+                    mainViewModel.logout()
+                    AHUCache.clearAll()
+                    RustSDK.initSafe("")
+                    CookieManager.cookieJar.clear()
+                    CookieManager.cookieJar.clearSession()
+                    AHUApplication.sessionExpired = true
+                    Toast.makeText(context, "已清除所有数据", Toast.LENGTH_SHORT).show()
+                    navController.navigate("login") { popUpTo(0) }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { isClearDataDialogShown = false }) {
-                    Text("取消")
-                }
-            }
+            onDismiss = { isClearDataDialogShown = false }
         )
     }
 

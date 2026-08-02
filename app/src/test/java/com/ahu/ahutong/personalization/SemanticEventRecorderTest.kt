@@ -1,6 +1,7 @@
 package com.ahu.ahutong.personalization
 
 import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.semantic.CommittedMutation
 import com.ahu.ahutong.personalization.semantic.AffectedActionCatalog
@@ -51,6 +52,33 @@ class SemanticEventRecorderTest {
     }
 
     @Test
+    fun cmbRechargePreferenceTargetsOnlyThePersistedChoice() {
+        val enabled = requireNotNull(
+            recorder.normalize(
+                mutation(false, true).copy(
+                    mutationId = MutationId.CMB_RECHARGE_PREFERENCE_CHANGED,
+                    coarseValueBucket = "ENABLED"
+                )
+            )
+        )
+        val disabled = requireNotNull(
+            recorder.normalize(
+                mutation(true, false).copy(
+                    mutationId = MutationId.CMB_RECHARGE_PREFERENCE_CHANGED,
+                    coarseValueBucket = "DISABLED"
+                )
+            )
+        )
+
+        assertEquals(SemanticChangeKind.ENABLED, enabled.changeKind)
+        assertEquals(setOf(AppActionId.OPEN_CMB_CARD_RECHARGE), enabled.affectedActionIds)
+        assertEquals(SemanticChangeKind.DISABLED, disabled.changeKind)
+        assertEquals(setOf(AppActionId.OPEN_CARD_RECHARGE), disabled.affectedActionIds)
+        assertTrue(AppActionCatalog.spec(AppActionId.OPEN_CMB_CARD_RECHARGE).suggestible)
+        assertFalse(AppActionCatalog.spec(AppActionId.SUBMIT_CMB_CARD_RECHARGE).suggestible)
+    }
+
+    @Test
     fun homeWidgetTypeScopesItsStableSemanticIdAndCandidates() {
         val event = requireNotNull(recorder.normalize(
             mutation(null, "grade").copy(
@@ -71,6 +99,28 @@ class SemanticEventRecorderTest {
         assertEquals(
             ProductCandidateScope.Targeted(setOf(AppActionId.OPEN_HOME)),
             ProductCandidateResolver.resolve(context(MutationId.HOME_DEFAULT_QR_CHANGED), null, "preferences")
+        )
+        assertEquals(
+            ProductCandidateScope.Targeted(setOf(AppActionId.OPEN_CMB_CARD_RECHARGE)),
+            ProductCandidateResolver.resolve(
+                context(
+                    MutationId.CMB_RECHARGE_PREFERENCE_CHANGED.name,
+                    SemanticChangeKind.ENABLED
+                ),
+                null,
+                "preferences"
+            )
+        )
+        assertEquals(
+            ProductCandidateScope.Targeted(setOf(AppActionId.OPEN_CARD_RECHARGE)),
+            ProductCandidateResolver.resolve(
+                context(
+                    MutationId.CMB_RECHARGE_PREFERENCE_CHANGED.name,
+                    SemanticChangeKind.DISABLED
+                ),
+                null,
+                "preferences"
+            )
         )
         assertFalse(
             AppActionId.OPEN_PAYMENT_QR in
@@ -139,11 +189,14 @@ class SemanticEventRecorderTest {
 
     private fun context(mutationId: MutationId) = context(mutationId.name)
 
-    private fun context(semanticId: String) = SemanticContext(
+    private fun context(
+        semanticId: String,
+        changeKind: SemanticChangeKind = SemanticChangeKind.REPLACED
+    ) = SemanticContext(
         eventFamily = SemanticEventFamily.SETTING_CHANGED,
         domain = SemanticDomain.HOME,
         semanticId = semanticId,
-        changeKind = SemanticChangeKind.REPLACED,
+        changeKind = changeKind,
         ageBucket = 0,
         changeSetSize = 1,
         stable = true

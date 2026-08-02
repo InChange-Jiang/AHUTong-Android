@@ -283,9 +283,9 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
 
     DisposableEffect(activity) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        behaviorRuntime.setSensitiveUiVisible(true)
+        behaviorRuntime.setInlineSensitiveUiVisible(true)
         onDispose {
-            behaviorRuntime.setSensitiveUiVisible(false)
+            behaviorRuntime.setInlineSensitiveUiVisible(false)
             activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
     }

@@ -472,7 +472,11 @@ fun CardBalanceDeposit(
                         text = "以后都用",
                         modifier = Modifier
                             .clickable {
+                                val oldPreference = AHUCache.isCmbCardRechargePreferred()
                                 AHUCache.setCmbCardRechargePreferred(true)
+                                if (!oldPreference && AHUCache.isCmbCardRechargePreferred()) {
+                                    behaviorReporter.cmbRechargePreferenceChanged(false, true)
+                                }
                                 showCmbPreferenceDialog = false
                                 navController.navigate("cmb_card_recharge")
                             }

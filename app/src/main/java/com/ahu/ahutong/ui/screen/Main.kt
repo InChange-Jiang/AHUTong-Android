@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -118,7 +117,7 @@ fun Main(
     val currentRoute = currentBackStackEntry?.destination?.route
     val currentBackStack by navController.currentBackStack.collectAsState()
     val currentBackStackDepth = currentBackStack.size
-    val sensitiveUiVisible by behaviorRuntime.sensitiveUiVisible.collectAsState()
+    val suggestionOverlayBlocked by behaviorRuntime.suggestionOverlayBlocked.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
 
     LaunchedEffect(currentRoute, currentBackStackDepth) {
@@ -353,11 +352,16 @@ fun Main(
         val productUiBlocked = currentRoute == "login" || currentRoute == "setup" ||
             currentRoute == "splash" || currentRoute?.contains("deposit") == true ||
             currentRoute?.contains("recharge") == true || currentRoute == "electricity_pay" ||
-            isReLoginShown || sensitiveUiVisible || imeVisible
+            isReLoginShown || suggestionOverlayBlocked || imeVisible
         SmartSuggestionHost(
             runtime = behaviorRuntime,
             backdrop = backdrop,
             blocked = productUiBlocked,
+            bottomSpacing = if (currentRoute in setOf("home", "schedule", "tools", "settings")) {
+                88.dp
+            } else {
+                16.dp
+            },
             onSuggestionClick = { suggestion ->
                 scope.launch {
                     val action = behaviorRuntime.acceptSuggestion(suggestion.executionId) ?: return@launch
@@ -377,12 +381,6 @@ fun Main(
                 }
             },
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(
-                    end = 12.dp,
-                    bottom = if (currentRoute in setOf("home", "schedule", "tools", "settings")) 88.dp else 16.dp
-                )
         )
         with(diagnosticsContribution) {
             Overlay(navController, behaviorRuntime, productUiBlocked)

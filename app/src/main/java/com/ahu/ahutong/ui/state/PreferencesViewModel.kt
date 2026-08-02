@@ -2,6 +2,7 @@ package com.ahu.ahutong.ui.state
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
@@ -33,6 +34,9 @@ class PreferencesViewModel @Inject constructor(
 
     private val _showQRCode = MutableStateFlow(false)
     val showQRCode: StateFlow<Boolean> = _showQRCode.asStateFlow()
+
+    private val _useCmbCardRecharge = MutableStateFlow(AHUCache.isCmbCardRechargePreferred())
+    val useCmbCardRecharge: StateFlow<Boolean> = _useCmbCardRecharge.asStateFlow()
 
     private val _isShowAllCourse = MutableStateFlow(false)
     val isShowAllCourse: StateFlow<Boolean> = _isShowAllCourse.asStateFlow()
@@ -162,6 +166,27 @@ class PreferencesViewModel @Inject constructor(
             val oldValue = _courseReminderEnabled.value
             preferencesManager.setCourseReminderEnabled(value)
             behaviorRuntime.recordCommittedMutation(MutationId.COURSE_REMINDER_CHANGED, oldValue, value)
+        }
+    }
+
+    fun setUseCmbCardRecharge(value: Boolean) {
+        viewModelScope.launch {
+            val oldValue = AHUCache.isCmbCardRechargePreferred()
+            if (oldValue == value) {
+                _useCmbCardRecharge.value = oldValue
+                return@launch
+            }
+            AHUCache.setCmbCardRechargePreferred(value)
+            val committedValue = AHUCache.isCmbCardRechargePreferred()
+            _useCmbCardRecharge.value = committedValue
+            if (committedValue == value) {
+                behaviorRuntime.recordCommittedMutation(
+                    MutationId.CMB_RECHARGE_PREFERENCE_CHANGED,
+                    oldValue,
+                    committedValue,
+                    coarseValueBucket = if (committedValue) "ENABLED" else "DISABLED"
+                )
+            }
         }
     }
 

@@ -36,6 +36,10 @@ private val Context.dataStore by preferencesDataStore(name = "user_pref")
 
 class PreferencesManager @Inject constructor(@param:ApplicationContext private val context: Context) {
 
+    suspend fun clearAll() {
+        context.dataStore.edit { preferences -> preferences.clear() }
+    }
+
     val personalizationEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PreferencesKeys.PERSONALIZATION_ENABLED] ?: true
     }

@@ -292,7 +292,7 @@ fun Main(
             }
 
             animatedComposable("preferences") {
-                Preferences()
+                Preferences(onBack = { navController.popBackStack() })
             }
 
             animatedComposable("electricity_pay") {

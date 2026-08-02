@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
+import com.ahu.ahutong.data.model.AppThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -20,6 +21,7 @@ object PreferencesKeys {
     val COURSE_REMINDER_LIVE_COUNTDOWN_ENABLED =
         booleanPreferencesKey("course_reminder_live_countdown_enabled")
     val THEME_COLOR = stringPreferencesKey("theme_color_hex")
+    val THEME_MODE = stringPreferencesKey("theme_mode")
     val REPOSITORY_ACCELERATION_SOURCE = stringPreferencesKey("repository_acceleration_source")
     val PERSONALIZATION_ENABLED = booleanPreferencesKey("personalization_enabled")
     val PREDICTIVE_PREFETCH_ENABLED = booleanPreferencesKey("predictive_prefetch_enabled")
@@ -86,6 +88,20 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
 
     suspend fun setBehaviorRetentionDays(value: Int) {
         context.dataStore.edit { it[PreferencesKeys.BEHAVIOR_RETENTION_DAYS] = value.coerceIn(7, 30) }
+    }
+
+    val themeMode: Flow<AppThemeMode> = context.dataStore.data.map { prefs ->
+        AppThemeMode.fromStorage(prefs[PreferencesKeys.THEME_MODE])
+    }
+
+    suspend fun setThemeMode(value: AppThemeMode) {
+        context.dataStore.edit { prefs ->
+            if (value == AppThemeMode.FOLLOW_SYSTEM) {
+                prefs.remove(PreferencesKeys.THEME_MODE)
+            } else {
+                prefs[PreferencesKeys.THEME_MODE] = value.storageValue
+            }
+        }
     }
 
     val themeColor: Flow<String?> = context.dataStore.data.map { prefs ->

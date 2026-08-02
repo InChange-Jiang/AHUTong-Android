@@ -1,11 +1,11 @@
 package com.ahu.ahutong.ui.components
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -20,12 +20,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.LayoutDirection
@@ -57,7 +59,8 @@ fun LiquidToggle(
     selected: () -> Boolean,
     onSelect: (Boolean) -> Unit,
     backdrop: Backdrop,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    userInputEnabled: Boolean = true
 ) {
     val isLiquid = LocalIsLiquidGlassEnabled.current
     if (!isLiquid) {
@@ -70,14 +73,14 @@ fun LiquidToggle(
         )
         Switch(
             checked = selected(),
-            onCheckedChange = onSelect,
+            onCheckedChange = onSelect.takeIf { userInputEnabled },
             modifier = modifier.height(28f.dp),
             colors = switchColor
         )
         return
     }
 
-    val isLightTheme = !isSystemInDarkTheme()
+    val isLightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
     val accentColor =
         if (isLightTheme) Color(0xFF34C759)
         else Color(0xFF30D158)
@@ -99,6 +102,7 @@ fun LiquidToggle(
             visibilityThreshold = 0.001f,
             initialScale = 1f,
             pressedScale = 1.5f,
+            userDragEnabled = userInputEnabled,
             onDragStarted = {},
             onDragStopped = {
                 if (didDrag) {
@@ -164,10 +168,15 @@ fun LiquidToggle(
                         if (isLtr) lerp(padding, padding + dragWidth, fraction)
                         else lerp(-padding, -(padding + dragWidth), fraction)
                 }
-                .semantics {
-                    role = Role.Switch
-                }
-                .then(dampedDragAnimation.modifier)
+                .then(
+                    if (userInputEnabled) {
+                        Modifier
+                            .semantics { role = Role.Switch }
+                            .then(dampedDragAnimation.modifier)
+                    } else {
+                        Modifier.clearAndSetSemantics { }
+                    }
+                )
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(
                         backdrop,

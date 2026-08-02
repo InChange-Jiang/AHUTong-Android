@@ -18,14 +18,14 @@ class PreferencesViewModel @Inject constructor(
     private val behaviorRuntime: BehaviorPredictionRuntime
 ) : ViewModel() {
 
-    private val _personalizationEnabled = MutableStateFlow(true)
-    val personalizationEnabled: StateFlow<Boolean> = _personalizationEnabled.asStateFlow()
+    private val _personalizationEnabled = MutableStateFlow<Boolean?>(null)
+    val personalizationEnabled: StateFlow<Boolean?> = _personalizationEnabled.asStateFlow()
 
-    private val _predictivePrefetchEnabled = MutableStateFlow(true)
-    val predictivePrefetchEnabled: StateFlow<Boolean> = _predictivePrefetchEnabled.asStateFlow()
+    private val _predictivePrefetchEnabled = MutableStateFlow<Boolean?>(null)
+    val predictivePrefetchEnabled: StateFlow<Boolean?> = _predictivePrefetchEnabled.asStateFlow()
 
-    private val _wifiOnlyPrefetch = MutableStateFlow(false)
-    val wifiOnlyPrefetch: StateFlow<Boolean> = _wifiOnlyPrefetch.asStateFlow()
+    private val _wifiOnlyPrefetch = MutableStateFlow<Boolean?>(null)
+    val wifiOnlyPrefetch: StateFlow<Boolean?> = _wifiOnlyPrefetch.asStateFlow()
 
     private val _behaviorRetentionDays = MutableStateFlow(30)
     val behaviorRetentionDays: StateFlow<Int> = _behaviorRetentionDays.asStateFlow()
@@ -109,12 +109,19 @@ class PreferencesViewModel @Inject constructor(
     fun setPredictivePrefetchEnabled(value: Boolean) {
         viewModelScope.launch {
             preferencesManager.setPredictivePrefetchEnabled(value)
-            if (!value) behaviorRuntime.cancelPredictivePrefetch()
+            if (!value) {
+                preferencesManager.setWifiOnlyPrefetch(false)
+                behaviorRuntime.cancelPredictivePrefetch()
+            }
         }
     }
 
     fun setWifiOnlyPrefetch(value: Boolean) {
-        viewModelScope.launch { preferencesManager.setWifiOnlyPrefetch(value) }
+        viewModelScope.launch {
+            preferencesManager.setWifiOnlyPrefetch(
+                value && _predictivePrefetchEnabled.value == true
+            )
+        }
     }
 
     fun clearPersonalizationLearning() {

@@ -1,7 +1,6 @@
 package com.ahu.ahutong.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -62,7 +62,6 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 
 data class SettingsChoice<T>(
@@ -99,6 +98,7 @@ fun SettingsBackdropContainer(
         Box(
             modifier = Modifier
                 .matchParentSize()
+                .clipToBounds()
                 .layerBackdrop(backdrop)
                 .background(
                     if (liquid) {
@@ -147,7 +147,11 @@ fun SettingsPageHeader(
                     .size(48.dp)
                     .then(
                         if (isLiquid && backdrop != null) {
-                            Modifier.liquidGlassSurface(backdrop, backShape, glassTint, isDark)
+                            Modifier.liquidGlassSurface(
+                                backdrop = backdrop,
+                                shape = backShape,
+                                surfaceColor = glassTint
+                            )
                         } else {
                             Modifier
                                 .clip(backShape)
@@ -197,7 +201,7 @@ fun SettingsHeroCard(
             .fillMaxWidth()
             .then(
                 if (isLiquid) {
-                    Modifier.liquidGlassSurface(backdrop, shape, glassTint, isDark)
+                    Modifier.liquidGlassSurface(backdrop, shape, glassTint)
                 } else {
                     Modifier
                         .clip(shape)
@@ -247,7 +251,7 @@ fun SettingsSection(
                 .fillMaxWidth()
                 .then(
                     if (isLiquid && backdrop != null) {
-                        Modifier.liquidGlassSurface(backdrop, shape, glassTint, isDark)
+                        Modifier.liquidGlassSurface(backdrop, shape, glassTint)
                     } else {
                         Modifier
                             .clip(shape)
@@ -262,8 +266,7 @@ fun SettingsSection(
 private fun Modifier.liquidGlassSurface(
     backdrop: Backdrop,
     shape: Shape,
-    surfaceColor: Color,
-    isDark: Boolean
+    surfaceColor: Color
 ): Modifier = drawBackdrop(
     backdrop = backdrop,
     shape = { shape },
@@ -271,7 +274,6 @@ private fun Modifier.liquidGlassSurface(
         vibrancy()
         blur(18.dp.toPx())
     },
-    highlight = { Highlight.Ambient.copy(alpha = if (isDark) 0.42f else 0.72f) },
     shadow = {
         Shadow(
             radius = 14.dp,
@@ -281,10 +283,6 @@ private fun Modifier.liquidGlassSurface(
     onDrawSurface = {
         drawRect(surfaceColor)
     }
-).border(
-    width = 0.5.dp,
-    color = Color.White.copy(alpha = if (isDark) 0.16f else 0.5f),
-    shape = shape
 )
 
 @Composable
@@ -393,7 +391,8 @@ fun SettingsToggleRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     enabled: Boolean = true,
-    showDivider: Boolean = true
+    showDivider: Boolean = true,
+    onHorizontalDragActiveChange: (Boolean) -> Unit = {}
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -420,7 +419,9 @@ fun SettingsToggleRow(
                 selected = { selected },
                 onSelect = onSelectedChange,
                 backdrop = backdrop,
-                userInputEnabled = false
+                userInputEnabled = enabled,
+                toggleOnTap = false,
+                onHorizontalDragActiveChange = onHorizontalDragActiveChange
             )
         }
         SettingsDivider(visible = showDivider)

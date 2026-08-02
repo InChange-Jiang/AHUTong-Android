@@ -67,6 +67,11 @@ fun Preferences(onBack: () -> Unit = {}) {
     var useCmbCardRecharge by remember { mutableStateOf(AHUCache.isCmbCardRechargePreferred()) }
     var showClearLearningConfirm by remember { mutableStateOf(false) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
+    var isToggleHorizontalDragActive by remember { mutableStateOf(false) }
+    val pageScrollState = rememberScrollState()
+    val onToggleHorizontalDragActiveChange: (Boolean) -> Unit = { active ->
+        isToggleHorizontalDragActive = active
+    }
 
     val appThemeMode by viewModel.appThemeMode.collectAsState()
     val showQRCode by viewModel.showQRCode.collectAsState()
@@ -118,7 +123,10 @@ fun Preferences(onBack: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(
+                    state = pageScrollState,
+                    enabled = !isToggleHorizontalDragActive
+                )
                 .systemBarsPadding()
                 .padding(bottom = 112.dp),
             verticalArrangement = Arrangement.spacedBy(26.dp)
@@ -130,28 +138,56 @@ fun Preferences(onBack: () -> Unit = {}) {
                 modifier = Modifier.padding(horizontal = 16.dp),
                 backdrop = backdrop
             ) {
-            SettingsToggleRow(
-                title = "显示快捷建议",
-                subtitle = "根据本机使用习惯显示常用入口",
-                selected = personalizationEnabled,
-                onSelectedChange = viewModel::setPersonalizationEnabled,
-                backdrop = backdrop
-            )
-            SettingsToggleRow(
-                title = "提前加载预测内容",
-                subtitle = "预测下一步并预加载只读内容",
-                selected = predictivePrefetchEnabled,
-                onSelectedChange = viewModel::setPredictivePrefetchEnabled,
-                backdrop = backdrop
-            )
-            SettingsToggleRow(
-                title = "仅在 Wi-Fi 下预加载",
-                selected = wifiOnlyPrefetch,
-                onSelectedChange = viewModel::setWifiOnlyPrefetch,
-                backdrop = backdrop,
-                showDivider = false
-            )
-        }
+                personalizationEnabled?.let { enabled ->
+                    SettingsToggleRow(
+                        title = "显示快捷建议",
+                        subtitle = "根据本机使用习惯显示常用入口",
+                        selected = enabled,
+                        onSelectedChange = viewModel::setPersonalizationEnabled,
+                        backdrop = backdrop,
+                        onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
+                    )
+                }
+                val predictiveEnabled = predictivePrefetchEnabled
+                val wifiOnly = wifiOnlyPrefetch
+                if (predictiveEnabled != null && wifiOnly != null) {
+                    SettingsToggleRow(
+                        title = "提前加载预测内容",
+                        subtitle = "预测下一步并预加载只读内容",
+                        selected = predictiveEnabled,
+                        onSelectedChange = viewModel::setPredictivePrefetchEnabled,
+                        backdrop = backdrop,
+                        onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
+                    )
+                    SettingsToggleRow(
+                        title = "仅在 Wi-Fi 下预加载",
+                        selected = predictiveEnabled && wifiOnly,
+                        onSelectedChange = viewModel::setWifiOnlyPrefetch,
+                        backdrop = backdrop,
+                        enabled = predictiveEnabled,
+                        onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
+                    )
+                }
+                SettingsDialogSelectRow(
+                    title = "本地记录保留期",
+                    dialogTitle = "选择本地记录保留期",
+                    selected = behaviorRetentionDays,
+                    choices = listOf(
+                        SettingsChoice(7, "7 天"),
+                        SettingsChoice(14, "14 天"),
+                        SettingsChoice(30, "30 天")
+                    ),
+                    onSelected = viewModel::setBehaviorRetentionDays
+                )
+                SettingsActionRow(
+                    title = "清除本地学习记录",
+                    subtitle = "删除行为统计、训练样本和本地模型",
+                    destructive = true,
+                    showChevron = false,
+                    showDivider = false,
+                    onClick = { showClearLearningConfirm = true }
+                )
+            }
 
             SettingsSection(
                 title = "主页与充值",
@@ -162,7 +198,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                 title = "主页默认显示付款码",
                 selected = showQRCode,
                 onSelectedChange = viewModel::setShowQRCode,
-                backdrop = backdrop
+                backdrop = backdrop,
+                onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
             SettingsToggleRow(
                 title = "总是使用招商银行充值",
@@ -173,33 +210,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                     AHUCache.setCmbCardRechargePreferred(enabled)
                 },
                 backdrop = backdrop,
-                showDivider = false
-            )
-        }
-
-            SettingsSection(
-                title = "学习记录",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                backdrop = backdrop
-            ) {
-            SettingsDialogSelectRow(
-                title = "本地记录保留期",
-                dialogTitle = "选择本地记录保留期",
-                selected = behaviorRetentionDays,
-                choices = listOf(
-                    SettingsChoice(7, "7 天"),
-                    SettingsChoice(14, "14 天"),
-                    SettingsChoice(30, "30 天")
-                ),
-                onSelected = viewModel::setBehaviorRetentionDays
-            )
-            SettingsActionRow(
-                title = "清除本地学习记录",
-                subtitle = "删除行为统计、训练样本和本地模型",
-                destructive = true,
-                showChevron = false,
                 showDivider = false,
-                onClick = { showClearLearningConfirm = true }
+                onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
         }
 
@@ -213,7 +225,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                 subtitle = "上课前 10 分钟提醒下一节课",
                 selected = courseReminderEnabled,
                 onSelectedChange = requestCourseReminder,
-                backdrop = backdrop
+                backdrop = backdrop,
+                onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
             SettingsToggleRow(
                 title = "课前倒计时岛卡",
@@ -235,7 +248,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                         if (!enabled) CourseReminderNotifier.cancelActiveReminder(context)
                     }
                 },
-                backdrop = backdrop
+                backdrop = backdrop,
+                onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
             SettingsActionRow(
                 title = "管理系统岛卡权限",
@@ -280,7 +294,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                     subtitle = "使用 Apple 风格的玻璃控件和浮动导航",
                     selected = useLiquidGlass,
                     onSelectedChange = viewModel::setUseLiquidGlass,
-                    backdrop = backdrop
+                    backdrop = backdrop,
+                    onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
                 )
                 ThemeColorPicker(
                     selectedColor = themeColor,

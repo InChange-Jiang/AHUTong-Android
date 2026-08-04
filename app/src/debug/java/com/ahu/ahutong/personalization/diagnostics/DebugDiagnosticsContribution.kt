@@ -1,6 +1,7 @@
 package com.ahu.ahutong.personalization.diagnostics
 
 import android.content.Context
+import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
@@ -265,41 +266,7 @@ private fun DiagnosticsScreen(
             LearningSection(state, snapshot)
         }
         item {
-            DiagnosticsSection(title = "针对性语义事件") {
-                LabeledValue("候选域", state.candidateScope, monospace = true)
-                LabeledValue("投递通道", state.suggestionDeliveryLane, monospace = true)
-                LabeledValue("上下文代次", state.contextGeneration.toString(), monospace = true)
-                LabeledValue(
-                    "剩余展示间隔",
-                    "${state.suggestionIntervalRemainingMs}ms",
-                    monospace = true
-                )
-                LabeledValue(
-                    "计划重试时间",
-                    state.suggestionRetryAtElapsedMs?.let { "$it elapsed-ms" } ?: "--",
-                    monospace = true
-                )
-                LabeledValue(
-                    "定向动作",
-                    state.targetedActions.sorted().joinToString().ifBlank { "--" },
-                    monospace = true
-                )
-                state.candidateRejectionReason?.let {
-                    LabeledValue("拒绝原因", it, monospace = true)
-                }
-                HorizontalDivider()
-                if (snapshot.recentSemanticEvents.isEmpty()) {
-                    EmptyDiagnosticsText("尚未记录已提交的语义变化")
-                } else {
-                    snapshot.recentSemanticEvents.take(12).forEach { line ->
-                        Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                    }
-                }
-                HorizontalDivider()
-                snapshot.recentSemanticChangeSets.take(8).forEach { line ->
-                    Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
-                }
-            }
+            TargetedPredictionSection(state, snapshot)
         }
         item {
             DiagnosticsSection(title = "多跳旅程与参数模型") {
@@ -453,6 +420,213 @@ private fun LearningSection(
         LabeledValue("统计模型开始学习", formatEpochDay(snapshot.statLearningStartedDay))
         LabeledValue("Tiny MLP 首次训练", formatEpochDay(snapshot.tinyTrainingStartedDay))
         LabeledValue("模型文件大小", formatBytes(snapshot.modelSizeBytes))
+    }
+}
+
+@Composable
+private fun TargetedPredictionSection(
+    state: RuntimeDiagnosticsState,
+    snapshot: SanitizedDiagnosticsSnapshot
+) {
+    val now = SystemClock.elapsedRealtime()
+    val retryRemainingMs = state.suggestionRetryAtElapsedMs
+        ?.let { (it - now).coerceAtLeast(0L) }
+    val displayRemainingMs = retryRemainingMs ?: state.suggestionIntervalRemainingMs.coerceAtLeast(0L)
+    val actions = state.targetedActions.sorted()
+    val recentSettingEvents = snapshot.recentSemanticEvents.filter { "SETTING_CHANGED/" in it }
+    val rawReason = state.candidateRejectionReason
+    val waitingReason = rawReason?.let(::readableSuggestionBlockReason)
+    val transientReason = rawReason?.let(::isTransientSuggestionBlockReason) == true
+    val active = state.suggestionDeliveryLane == "TARGETED" ||
+        state.candidateScope == "TARGETED" || actions.isNotEmpty()
+    val status = when {
+        !active -> "暂无机会"
+        waitingReason != null && transientReason -> "等待展示"
+        waitingReason != null -> "暂未投递"
+        displayRemainingMs > 0L -> "等待展示"
+        state.suggestionDeliveryLane == "TARGETED" -> "候选已就绪"
+        else -> "语义上下文有效"
+    }
+
+    DiagnosticsSection(title = "针对性预测") {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            StatusBadge(status, active && (waitingReason == null || transientReason))
+            Spacer(Modifier.weight(1f))
+            Text(
+                "采纳权重 25%",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        Text("当前候选", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (actions.isEmpty()) {
+            EmptyDiagnosticsText("当前没有明确、安全且可展示的语义候选")
+        } else {
+            actions.forEach { actionId ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            readableAction(actionId),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            actionId,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile(
+                "投递通道",
+                readableSuggestionLane(state.suggestionDeliveryLane),
+                Modifier.weight(1f)
+            )
+            MetricTile("上下文代次", "#${state.contextGeneration}", Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile(
+                "展示时机",
+                formatSuggestionTiming(active, displayRemainingMs),
+                Modifier.weight(1f)
+            )
+            MetricTile(
+                "已采纳奖励",
+                "${snapshot.suggestionAcceptedSamples} 次",
+                Modifier.weight(1f)
+            )
+        }
+
+        waitingReason?.let { reason ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = if (transientReason) {
+                    MaterialTheme.colorScheme.secondaryContainer
+                } else {
+                    MaterialTheme.colorScheme.errorContainer
+                }
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        if (transientReason) "等待原因" else "暂未展示",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (transientReason) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        }
+                    )
+                    Text(
+                        reason,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (transientReason) {
+                            MaterialTheme.colorScheme.onSecondaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onErrorContainer
+                        }
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
+        Text("最近设置变化", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (recentSettingEvents.isEmpty()) {
+            EmptyDiagnosticsText("尚未记录保存成功的设置变化")
+        } else {
+            recentSettingEvents.take(4).forEachIndexed { index, line ->
+                SemanticEventRow(line)
+                if (index != minOf(recentSettingEvents.lastIndex, 3)) HorizontalDivider()
+            }
+        }
+        TargetedTechnicalDetails(state, snapshot.recentSemanticChangeSets)
+    }
+}
+
+@Composable
+private fun SemanticEventRow(raw: String) {
+    val parts = raw.split(' ', limit = 4)
+    val familyAndDomain = parts.getOrNull(1)
+    val semanticId = parts.getOrNull(2)
+    val change = parts.getOrNull(3)?.substringBefore(' ')
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            parts.getOrNull(0) ?: "--",
+            modifier = Modifier.width(44.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontFamily = FontFamily.Monospace
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                readableSemanticEvent(semanticId),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                "${readableSemanticChange(change)} · ${readableSemanticDomain(familyAndDomain)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun TargetedTechnicalDetails(
+    state: RuntimeDiagnosticsState,
+    changeSets: List<String>
+) {
+    var expanded by remember { mutableStateOf(false) }
+    HorizontalDivider()
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("技术详情", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(
+                "原始候选域、代次和 change-set",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            if (expanded) Icons.Rounded.KeyboardArrowUp else Icons.Rounded.KeyboardArrowDown,
+            contentDescription = if (expanded) "收起针对性预测技术详情" else "展开针对性预测技术详情"
+        )
+    }
+    if (expanded) {
+        LabeledValue("候选域", state.candidateScope, monospace = true)
+        LabeledValue("投递通道", state.suggestionDeliveryLane, monospace = true)
+        LabeledValue("上下文代次", state.contextGeneration.toString(), monospace = true)
+        if (changeSets.isEmpty()) {
+            EmptyDiagnosticsText("暂无 change-set")
+        } else {
+            changeSets.take(4).forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+        }
     }
 }
 
@@ -667,6 +841,76 @@ private fun readableAction(id: String?): String {
     if (id == AppActionCatalog.NONE_OUTPUT_ID) return "没有后续动作"
     if (id == AppActionCatalog.OTHER_OUTPUT_ID) return "其他动作"
     return AppActionId.fromStableId(id)?.let(AppActionCatalog::spec)?.title ?: id
+}
+
+private fun readableSuggestionLane(value: String): String = when (value) {
+    "TARGETED" -> "针对性"
+    "ORDINARY_JOURNEY" -> "多跳旅程"
+    "ORDINARY_NEXT_ACTION" -> "下一步动作"
+    "NONE" -> "暂无"
+    else -> value
+}
+
+private fun formatSuggestionTiming(active: Boolean, remainingMs: Long): String = when {
+    !active -> "暂无计划"
+    remainingMs <= 0L -> "可立即展示"
+    remainingMs < 1_000L -> "约 $remainingMs 毫秒后"
+    else -> "约 ${"%.1f".format(remainingMs / 1_000.0)} 秒后"
+}
+
+private fun readableSuggestionBlockReason(value: String): String = when (value) {
+    "DEBOUNCE", "TARGETED_DEBOUNCE" -> "正在等待快速切换防抖"
+    "INTERVAL" -> "仍在针对性建议的 10 秒展示冷却期"
+    "OCCUPIED", "SURFACE_TEMPORARILY_OCCUPIED" -> "建议浮层暂时被其他内容占用"
+    "SAFETY_GATE" -> "当前页面、键盘或安全状态不允许展示"
+    "HOLDOUT" -> "本次进入自然 holdout，不展示建议"
+    "ENTRY_UNAVAILABLE" -> "目标入口当前不可用"
+    "EMPTY_TARGETS" -> "该设置变化没有安全候选"
+    "STALE_GENERATION" -> "已有更新的设置变化，本次结果已失效"
+    "EXPIRED" -> "建议机会已超过有效期"
+    "CHANGE_SET_ALREADY_EXPOSED" -> "同一组设置变化已经展示过"
+    "TARGETED_ACTION_UNAVAILABLE_OR_UNSAFE" -> "定向入口当前不可用或不满足安全要求"
+    "TARGETED_CONTEXT_HAS_PRIORITY" -> "正在优先处理更明确的设置变化"
+    "HIGHER_PRIORITY_OFFER_ACTIVE" -> "已有更高优先级的建议正在处理"
+    "WAITING_FOR_MODEL_RANKING" -> "多个合法候选正在等待模型排序"
+    "CENSORED_UNTRACKED_OR_DEBUG_ROUTE" -> "进入调试或未跟踪页面，当前建议已取消"
+    else -> value
+}
+
+private fun isTransientSuggestionBlockReason(value: String): Boolean = value in setOf(
+    "DEBOUNCE",
+    "TARGETED_DEBOUNCE",
+    "INTERVAL",
+    "OCCUPIED",
+    "SURFACE_TEMPORARILY_OCCUPIED",
+    "WAITING_FOR_MODEL_RANKING"
+)
+
+private fun readableSemanticEvent(value: String?): String = when (value) {
+    "CMB_RECHARGE_PREFERENCE_CHANGED" -> "招商银行充值偏好"
+    "HOME_DEFAULT_QR_CHANGED" -> "首页付款码设置"
+    "WEATHER_HOME_CONFIG_CHANGED" -> "首页天气设置"
+    "COURSE_REMINDER_CHANGED" -> "课程提醒设置"
+    "COURSE_LIVE_COUNTDOWN_CHANGED" -> "课程倒计时设置"
+    "REPOSITORY_ACCELERATION_CHANGED" -> "学习资料加速设置"
+    else -> value ?: "未知设置变化"
+}
+
+private fun readableSemanticChange(value: String?): String = when (value) {
+    "ENABLED" -> "已开启"
+    "DISABLED" -> "已关闭"
+    "UPDATED" -> "已更新"
+    "CLEARED" -> "已清除"
+    else -> value ?: "变化类型未知"
+}
+
+private fun readableSemanticDomain(value: String?): String = when (value?.substringAfter('/')) {
+    "PAYMENT" -> "支付入口"
+    "CAMPUS_SERVICE" -> "校园服务"
+    "ACADEMIC" -> "教务与课程"
+    "REPOSITORY" -> "学习资料"
+    "SETTINGS" -> "应用设置"
+    else -> value?.substringAfter('/') ?: "领域未知"
 }
 
 private fun readableStage(value: String?): String = when (value) {

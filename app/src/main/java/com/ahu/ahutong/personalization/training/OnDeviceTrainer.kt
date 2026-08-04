@@ -20,7 +20,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.min
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -63,7 +62,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
     private val cancelledGenerations = ConcurrentHashMap<String, Long>()
 
     override suspend fun enqueue(sample: OrganicTrainingSample) {
-        require(sample.labelSource == "ORGANIC_ACTION" || sample.labelSource == "INTERVENTION_FREE_TIMEOUT")
+        require(TrainingFeedbackPolicy.isTrainable(sample.labelSource))
         val targetIndex = AppActionCatalog.outputIndex.getValue(sample.targetOutputId)
         dao.insertTrainingSample(
             TrainingSampleEntity(
@@ -97,7 +96,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
         val profileKey = pendingProfiles.firstOrNull()
             ?: return@withContext TrainingSliceResult(false, null, 0, 0, null, null, 0, "NO_PENDING_PROFILE")
         val generation = cancelledGenerations[profileKey] ?: 0L
-        val total = dao.trainingSampleCount(profileKey)
+        val total = dao.naturalTrainingSampleCount(profileKey)
         val nonNone = dao.organicNonNoneTrainingSampleCount(profileKey)
         val families = dao.trainingActionFamilyCount(profileKey)
         val qualifiedActions = dao.qualifiedTrainingActionCount(profileKey, MIN_PER_ACTION)
@@ -121,7 +120,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
                 dao.recentTrainingSamples(profileKey, RECENT_CANDIDATES) +
                     dao.historicalReplayCandidates(profileKey, HISTORICAL_CANDIDATES)
                 ).distinctBy(TrainingSampleEntity::rowId)
-            val selected = balancedBatch(candidates, BATCH_SIZE)
+            val selected = TrainingReplayPolicy.select(candidates, BATCH_SIZE, MAX_WEAK_ROWS)
             if (selected.size < BATCH_SIZE) break
             val state = stateStore.state(profileKey)
             val parameters = state.training.parameters.deepCopy(state.optimizer.step)
@@ -130,7 +129,8 @@ class KotlinOnDeviceTrainer @Inject constructor(
                 parameters,
                 optimizer,
                 selected.map { V3ToV4FeatureAdapter.adapt(BinaryCodec.floats(it.features), it.featureSchemaVersion) },
-                selected.map(TrainingSampleEntity::targetIndex).toIntArray()
+                selected.map(TrainingSampleEntity::targetIndex).toIntArray(),
+                selected.map { TrainingFeedbackPolicy.sampleWeight(it.labelSource) }.toFloatArray()
             )
             require(result.averageLoss.isFinite() && result.gradientNorm.isFinite())
             val rowIds = selected.map(TrainingSampleEntity::rowId)
@@ -222,7 +222,8 @@ class KotlinOnDeviceTrainer @Inject constructor(
             parameters,
             optimizer,
             samples.map { V3ToV4FeatureAdapter.adapt(BinaryCodec.floats(it.features), it.featureSchemaVersion) },
-            samples.map(TrainingSampleEntity::targetIndex).toIntArray()
+            samples.map(TrainingSampleEntity::targetIndex).toIntArray(),
+            samples.map { TrainingFeedbackPolicy.sampleWeight(it.labelSource) }.toFloatArray()
         )
         require(result.averageLoss.isFinite() && result.gradientNorm.isFinite())
         stateStore.commitTrainingBatch(
@@ -242,38 +243,6 @@ class KotlinOnDeviceTrainer @Inject constructor(
     }
 
     private data class TrainingStep(val averageLoss: Float?, val gradientNorm: Float?)
-
-    private fun balancedBatch(values: List<TrainingSampleEntity>, size: Int): List<TrainingSampleEntity> {
-        val nonNoneGroups = values.filter { it.targetActionId != AppActionCatalog.NONE_OUTPUT_ID }
-            .groupBy(TrainingSampleEntity::targetActionId)
-            .values
-            .map { group ->
-                ArrayDeque(group.sortedWith(
-                    compareBy<TrainingSampleEntity> { it.trainingCount }
-                        .thenByDescending { it.replayPriority }
-                        .thenByDescending { it.rowId }
-                ))
-            }
-            .sortedBy { it.size }
-        val none = values.filter { it.targetActionId == AppActionCatalog.NONE_OUTPUT_ID }
-            .sortedWith(
-                compareBy<TrainingSampleEntity> { it.trainingCount }
-                    .thenByDescending { it.replayPriority }
-                    .thenByDescending { it.rowId }
-            )
-        val result = ArrayList<TrainingSampleEntity>(size)
-        val nonNoneTarget = size - min(none.size, size / 2)
-        while (result.size < nonNoneTarget && nonNoneGroups.any(ArrayDeque<TrainingSampleEntity>::isNotEmpty)) {
-            nonNoneGroups.forEach { group ->
-                if (result.size < nonNoneTarget && group.isNotEmpty()) result += group.removeFirst()
-            }
-        }
-        result += none.take(min(size / 2, size - result.size))
-        if (result.size < size) {
-            result += nonNoneGroups.flatMap(ArrayDeque<TrainingSampleEntity>::toList).take(size - result.size)
-        }
-        return result.distinctBy(TrainingSampleEntity::rowId).take(size)
-    }
 
     private fun replayPriority(decisionId: String, targetOutputId: String): Float {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -295,6 +264,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
         const val MIN_QUALIFIED_ACTIONS = 2
         const val MIN_PER_ACTION = 8
         const val BATCH_SIZE = 16
+        const val MAX_WEAK_ROWS = BATCH_SIZE / 4
         const val MAX_BATCHES = 4
         const val MAX_SLICE_MS = 50L
         const val REPLAY_LIMIT = 2_048

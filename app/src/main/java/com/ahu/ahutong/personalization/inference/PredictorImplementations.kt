@@ -59,8 +59,9 @@ class DecayedFrequencyPredictor @Inject constructor(
         )
     }
 
-    suspend fun update(input: PredictionInput, targetOutputId: String) {
+    suspend fun update(input: PredictionInput, targetOutputId: String, weight: Double = 1.0) {
         require(targetOutputId in AppActionCatalog.outputIndex)
+        require(weight.isFinite() && weight > 0.0 && weight <= 1.0)
         locks.getOrPut(input.profileKey) { Mutex() }.withLock {
             val today = input.snapshot.epochDay
             val existing = dao.actionStats(input.profileKey).associateBy { it.contextKey to it.actionId }
@@ -73,7 +74,7 @@ class DecayedFrequencyPredictor @Inject constructor(
                         key,
                         TOTAL,
                         0.0,
-                        (total?.decayedExposure(today) ?: 0.0) + 1.0,
+                        (total?.decayedExposure(today) ?: 0.0) + weight,
                         today
                     )
                 )
@@ -84,7 +85,7 @@ class DecayedFrequencyPredictor @Inject constructor(
                         input.profileKey,
                         key,
                         targetOutputId,
-                        (action?.decayedPositive(today) ?: 0.0) + 1.0,
+                        (action?.decayedPositive(today) ?: 0.0) + weight,
                         0.0,
                         today
                     )

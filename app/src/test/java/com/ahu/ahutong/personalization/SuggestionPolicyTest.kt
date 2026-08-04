@@ -170,7 +170,7 @@ class SuggestionPolicyTest {
             Regex("acceptSuggestion[\\s\\S]*?recordActionIntent\\([\\s\\S]*?deferNextOpportunity = true")
                 .containsMatchIn(runtime)
         )
-        assertTrue(runtime.contains("TARGETED_CHANGE_SETTLE_MS"))
+        assertTrue(runtime.contains("SuggestionPolicy.TARGETED_CHANGE_DEBOUNCE_MS"))
         assertTrue(runtime.contains("SuggestionDeliveryLane.TARGETED"))
         val showBody = Regex("suspend fun showSuggestion[\\s\\S]*?\\n    }\\n\\n    suspend fun confirmSuggestionVisible")
             .find(runtime)

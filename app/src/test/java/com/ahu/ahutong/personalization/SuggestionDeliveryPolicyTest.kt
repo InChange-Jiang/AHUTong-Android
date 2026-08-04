@@ -212,6 +212,34 @@ class SuggestionDeliveryPolicyTest {
         assertTrue(weather.contains("if (committed != config) return"))
     }
 
+    @Test
+    fun diagnosticsRouteObservesWithoutCancellingOrExposingSuggestion() {
+        val root = repositoryRoot()
+        val runtime = File(
+            root,
+            "app/src/main/java/com/ahu/ahutong/personalization/runtime/PredictionRuntime.kt"
+        ).readText()
+        val main = File(
+            root,
+            "app/src/main/java/com/ahu/ahutong/ui/screen/Main.kt"
+        ).readText()
+        val host = File(
+            root,
+            "app/src/main/java/com/ahu/ahutong/personalization/ui/SmartSuggestionHost.kt"
+        ).readText()
+        val diagnostics = File(
+            root,
+            "app/src/debug/java/com/ahu/ahutong/personalization/diagnostics/DebugDiagnosticsContribution.kt"
+        ).readText()
+
+        assertTrue(runtime.contains("if (source == ActionSource.DEBUG)"))
+        assertTrue(runtime.contains("setDiagnosticsObservationActive(true)"))
+        assertTrue(runtime.contains("setDiagnosticsObservationActive(false)"))
+        assertTrue(main.contains("hiddenForDiagnostics = diagnosticsRouteVisible"))
+        assertTrue(host.contains("if (blocked || hiddenForDiagnostics) return"))
+        assertTrue(diagnostics.contains("进入调试或未跟踪页面，当前建议已取消"))
+    }
+
     private fun assess(
         offer: PendingSuggestionOffer,
         currentGeneration: Long = offer.contextGeneration,

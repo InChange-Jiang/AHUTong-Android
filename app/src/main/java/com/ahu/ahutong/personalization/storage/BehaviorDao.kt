@@ -125,13 +125,19 @@ abstract class BehaviorDao {
     @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey")
     abstract suspend fun trainingSampleCount(profileKey: String): Int
 
-    @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE'")
+    @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey AND labelSource IN ('ORGANIC_ACTION', 'INTERVENTION_FREE_TIMEOUT')")
+    abstract suspend fun naturalTrainingSampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey AND labelSource = 'SUGGESTION_ACCEPTED'")
+    abstract suspend fun suggestionAcceptedTrainingSampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(*) FROM training_sample WHERE profileKey = :profileKey AND labelSource IN ('ORGANIC_ACTION', 'INTERVENTION_FREE_TIMEOUT') AND targetActionId != 'NONE'")
     abstract suspend fun organicNonNoneTrainingSampleCount(profileKey: String): Int
 
-    @Query("SELECT COUNT(DISTINCT actionFamily) FROM training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE'")
+    @Query("SELECT COUNT(DISTINCT actionFamily) FROM training_sample WHERE profileKey = :profileKey AND labelSource IN ('ORGANIC_ACTION', 'INTERVENTION_FREE_TIMEOUT') AND targetActionId != 'NONE'")
     abstract suspend fun trainingActionFamilyCount(profileKey: String): Int
 
-    @Query("SELECT COUNT(*) FROM (SELECT targetActionId FROM training_sample WHERE profileKey = :profileKey AND targetActionId != 'NONE' GROUP BY targetActionId HAVING COUNT(*) >= :minimumPerAction)")
+    @Query("SELECT COUNT(*) FROM (SELECT targetActionId FROM training_sample WHERE profileKey = :profileKey AND labelSource IN ('ORGANIC_ACTION', 'INTERVENTION_FREE_TIMEOUT') AND targetActionId != 'NONE' GROUP BY targetActionId HAVING COUNT(*) >= :minimumPerAction)")
     abstract suspend fun qualifiedTrainingActionCount(profileKey: String, minimumPerAction: Int): Int
 
     @Query("SELECT DISTINCT targetActionId FROM training_sample WHERE profileKey = :profileKey AND labelSource = 'ORGANIC_ACTION' AND targetActionId != 'NONE'")

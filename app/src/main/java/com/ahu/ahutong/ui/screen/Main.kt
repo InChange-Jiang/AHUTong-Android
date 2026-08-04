@@ -119,6 +119,8 @@ fun Main(
     val currentBackStackDepth = currentBackStack.size
     val suggestionOverlayBlocked by behaviorRuntime.suggestionOverlayBlocked.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
+    val diagnosticsRouteVisible = diagnosticsContribution.isDiagnosticsRoute(currentRoute) ||
+        currentRoute == "debug"
 
     LaunchedEffect(currentRoute, currentBackStackDepth) {
         val route = currentRoute ?: return@LaunchedEffect
@@ -126,7 +128,7 @@ fun Main(
         behaviorRuntime.onRouteChanged(
             route,
             when {
-                diagnosticsContribution.isDiagnosticsRoute(route) || route == "debug" -> ActionSource.DEBUG
+                diagnosticsRouteVisible -> ActionSource.DEBUG
                 firstDestination || isBackStackRestore -> ActionSource.RESTORE
                 else -> ActionSource.ORGANIC
             }
@@ -357,6 +359,7 @@ fun Main(
             runtime = behaviorRuntime,
             backdrop = backdrop,
             blocked = productUiBlocked,
+            hiddenForDiagnostics = diagnosticsRouteVisible,
             bottomSpacing = if (currentRoute in setOf("home", "schedule", "tools", "settings")) {
                 88.dp
             } else {

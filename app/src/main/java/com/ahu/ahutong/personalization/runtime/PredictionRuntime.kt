@@ -65,6 +65,7 @@ import com.ahu.ahutong.personalization.storage.SemanticEventEntity
 import com.ahu.ahutong.personalization.storage.transaction
 import com.ahu.ahutong.personalization.training.OnDeviceTrainer
 import com.ahu.ahutong.personalization.training.OrganicTrainingSample
+import com.ahu.ahutong.personalization.training.TrainingFeedbackPolicy
 import com.ahu.ahutong.personalization.training.TrainingSliceResult
 import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
@@ -166,6 +167,7 @@ data class RuntimeDiagnosticsState(
 data class SanitizedDiagnosticsSnapshot(
     val trainingSamples: Int = 0,
     val organicNonNoneSamples: Int = 0,
+    val suggestionAcceptedSamples: Int = 0,
     val actionFamilies: Int = 0,
     val statLearningStartedDay: Long? = null,
     val tinyTrainingStartedDay: Long? = null,
@@ -241,6 +243,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     @Volatile private var externalSuggestionHostBlocked = false
     @Volatile private var lastTargetedSuggestionElapsedMs = 0L
     @Volatile private var lastOrdinarySuggestionElapsedMs = 0L
+    @Volatile private var diagnosticsObservationActive = false
     private val exposedTargetedChangeSets = ConcurrentHashMap.newKeySet<String>()
 
     val diagnostics: StateFlow<RuntimeDiagnosticsState> = _diagnostics.asStateFlow()
@@ -391,6 +394,11 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     fun onRouteChanged(route: String?, source: ActionSource = ActionSource.ORGANIC) {
         if (route == null) return
+        if (source == ActionSource.DEBUG) {
+            setDiagnosticsObservationActive(true)
+            return
+        }
+        setDiagnosticsObservationActive(false)
         val externallyMarkedSource = nextNavigationSource.also { nextNavigationSource = null }
         if (route == lastRoute) return
         cancelSuggestionDeliveryState("ROUTE_CHANGED")
@@ -1125,6 +1133,18 @@ class BehaviorPredictionRuntime @Inject constructor(
         scheduleSuggestionExpiry(executionId)
     }
 
+    private fun setDiagnosticsObservationActive(active: Boolean) {
+        if (diagnosticsObservationActive == active) return
+        diagnosticsObservationActive = active
+        val current = _uiState.value as? PredictionUiState.Suggestion ?: return
+        if (!current.exposureConfirmed) return
+        if (active) {
+            pauseSuggestionVisibility(current.executionId)
+        } else if (current.visibilityPaused) {
+            restartSuggestionVisibility(current.executionId)
+        }
+    }
+
     fun hideSuggestion() {
         suggestionVisibilityGeneration.incrementAndGet()
         suggestionExpiryJob?.cancel()
@@ -1167,6 +1187,12 @@ class BehaviorPredictionRuntime @Inject constructor(
     suspend fun acceptSuggestion(executionId: String): AppActionId? {
         val state = _uiState.value as? PredictionUiState.Suggestion ?: return null
         if (state.executionId != executionId || !state.exposureConfirmed) return null
+        val rewardedPending = dao.pending(state.decisionId)?.takeIf {
+            it.profileKey == profileKey &&
+                !it.isPromotionHoldout &&
+                it.resolutionStatus == "INVALIDATED_INTERVENTION_PREPARED" &&
+                it.interventionState == "PREPARED_SUGGESTION"
+        }
         hideSuggestion()
         AppActionCatalog.spec(state.action).route?.let(::suppressNextRoute)
         recordActionIntent(
@@ -1175,6 +1201,9 @@ class BehaviorPredictionRuntime @Inject constructor(
             AppActionCatalog.spec(state.action).route,
             deferNextOpportunity = true
         )
+        rewardedPending?.let { pending ->
+            scope.launch { recordAcceptedSuggestionReward(pending, state.action) }
+        }
         return state.action
     }
 
@@ -1340,8 +1369,9 @@ class BehaviorPredictionRuntime @Inject constructor(
         val assistedNegativeMass = presetSamples.filter { !it.naturalHoldoutEligible && !it.label }.sumOf { it.sampleWeight.toDouble() }
         val weakRatio = if (presetSamples.isEmpty()) 0.0 else presetSamples.count { !it.naturalHoldoutEligible }.toDouble() / presetSamples.size
         return SanitizedDiagnosticsSnapshot(
-            trainingSamples = dao.trainingSampleCount(activeProfile),
+            trainingSamples = dao.naturalTrainingSampleCount(activeProfile),
             organicNonNoneSamples = dao.organicNonNoneTrainingSampleCount(activeProfile),
+            suggestionAcceptedSamples = dao.suggestionAcceptedTrainingSampleCount(activeProfile),
             actionFamilies = dao.trainingActionFamilyCount(activeProfile),
             statLearningStartedDay = learning?.statLearningStartedEpochDay,
             tinyTrainingStartedDay = learning?.tinyTrainingStartedEpochDay,
@@ -1851,6 +1881,28 @@ class BehaviorPredictionRuntime @Inject constructor(
             return
         }
         attemptSuggestionOffer(offer, pending, proposal.action, proposal.probability, allowRetry = false)
+    }
+
+    private suspend fun recordAcceptedSuggestionReward(
+        pending: PendingPredictionEntity,
+        action: AppActionId
+    ) {
+        val targetIndex = AppActionCatalog.outputIndex[action.stableId] ?: return
+        if (!BinaryCodec.booleans(pending.availabilityMask).getOrElse(targetIndex) { false }) return
+        val input = runCatching { restoreInput(pending) }.getOrElse {
+            _diagnostics.value = _diagnostics.value.copy(lastFailure = "SUGGESTION_REWARD_CONTEXT_DECODE_FAILED")
+            return
+        }
+        val weight = TrainingFeedbackPolicy.SUGGESTION_POSITIVE_WEIGHT
+        statPredictor.update(input, action.stableId, weight.toDouble())
+        trainer.enqueue(
+            OrganicTrainingSample(
+                input = input,
+                targetOutputId = action.stableId,
+                actionFamily = AppActionCatalog.spec(action).family,
+                labelSource = TrainingFeedbackPolicy.SUGGESTION_ACCEPTED
+            )
+        )
     }
 
     @Synchronized

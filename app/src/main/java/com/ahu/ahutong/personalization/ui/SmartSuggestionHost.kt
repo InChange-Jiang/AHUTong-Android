@@ -72,6 +72,7 @@ fun SmartSuggestionHost(
     runtime: BehaviorPredictionRuntime,
     backdrop: Backdrop,
     blocked: Boolean,
+    hiddenForDiagnostics: Boolean = false,
     bottomSpacing: Dp,
     onSuggestionClick: (PredictionUiState.Suggestion) -> Unit,
     modifier: Modifier = Modifier
@@ -80,7 +81,7 @@ fun SmartSuggestionHost(
     LaunchedEffect(blocked) {
         runtime.setSuggestionHostBlocked(blocked)
     }
-    if (blocked) return
+    if (blocked || hiddenForDiagnostics) return
     val suggestion = state as? PredictionUiState.Suggestion ?: return
     val suggestionShape = ContinuousCapsule
     val lifetimeOpacity = remember(suggestion.executionId) { Animatable(1f) }

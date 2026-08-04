@@ -1,6 +1,7 @@
 package com.ahu.ahutong.personalization.preset
 
 import com.ahu.ahutong.personalization.context.ContextSnapshot
+import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
 import com.ahu.ahutong.personalization.inference.AdamWState
 import com.ahu.ahutong.personalization.inference.TinyMlpBackprop
 import com.ahu.ahutong.personalization.inference.TinyMlpMath
@@ -125,7 +126,8 @@ internal object PresetReplayPolicy {
 class PresetRankingEngine @Inject constructor(
     private val dao: BehaviorDao,
     private val store: PresetModelStateStore,
-    private val telemetryAggregateStore: TelemetryAggregateStore
+    private val telemetryAggregateStore: TelemetryAggregateStore,
+    private val bootstrapTrainingDataManager: BootstrapTrainingDataManager? = null
 ) {
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val pendingProfiles = ConcurrentHashMap.newKeySet<String>()
@@ -252,8 +254,7 @@ class PresetRankingEngine @Inject constructor(
             val statScore = candidate.statScore
             val tinyScore = candidate.tinyScore
             if (!candidate.promotionHoldout) {
-                dao.insertPresetTrainingSample(
-                    PresetTrainingSampleEntity(
+                val trainingSample = PresetTrainingSampleEntity(
                     profileKey = profileKey,
                     domainId = submission.domain.name,
                     opportunityId = opportunityId,
@@ -268,9 +269,23 @@ class PresetRankingEngine @Inject constructor(
                     weightConfigVersion = WEIGHT_CONFIG_VERSION,
                     naturalHoldoutEligible = true,
                     interactionId = null
-                    )
                 )
+                if (dao.insertPresetTrainingSample(trainingSample) != -1L) {
+                    runCatching { bootstrapTrainingDataManager?.capturePreset(trainingSample, index) }
+                }
             } else {
+                runCatching {
+                    bootstrapTrainingDataManager?.capturePresetOpportunity(
+                        profileKey = profileKey,
+                        domainId = submission.domain.name,
+                        rawOpportunityId = opportunityId,
+                        candidateOrdinal = index,
+                        features = BinaryCodec.floats(features),
+                        label = label,
+                        occurredEpochDay = snapshot.epochDay,
+                        naturalHoldoutEligible = true
+                    )
+                }
                 val shadowEvaluation = PresetShadowEvaluationEntity(
                     profileKey = profileKey,
                     domainId = submission.domain.name,
@@ -449,8 +464,7 @@ class PresetRankingEngine @Inject constructor(
             positiveDelta = if (label) weight.toDouble() else 0.0,
             exposureDelta = weight.toDouble()
         )
-        dao.insertPresetTrainingSample(
-            PresetTrainingSampleEntity(
+        val trainingSample = PresetTrainingSampleEntity(
                 profileKey = profileKey,
                 domainId = interaction.domainId,
                 opportunityId = interaction.opportunityId,
@@ -465,8 +479,10 @@ class PresetRankingEngine @Inject constructor(
                 weightConfigVersion = WEIGHT_CONFIG_VERSION,
                 naturalHoldoutEligible = false,
                 interactionId = interaction.interactionId
-            )
         )
+        if (dao.insertPresetTrainingSample(trainingSample) != -1L) {
+            runCatching { bootstrapTrainingDataManager?.capturePreset(trainingSample, index) }
+        }
         insertFeedback(profileKey, interaction.opportunityId, interaction.candidateId, source.name)
         telemetryAggregateStore.recordPresetInteraction(
             profileKey,

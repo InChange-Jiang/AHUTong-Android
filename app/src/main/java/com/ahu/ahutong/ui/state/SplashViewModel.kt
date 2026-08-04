@@ -17,6 +17,11 @@ sealed interface TelemetryOnboardingState {
     data class Ready(val choice: Boolean?) : TelemetryOnboardingState
 }
 
+sealed interface BootstrapTrainingOnboardingState {
+    data object Loading : BootstrapTrainingOnboardingState
+    data class Ready(val choice: Boolean?) : BootstrapTrainingOnboardingState
+}
+
 @HiltViewModel
 class SplashViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
@@ -26,11 +31,18 @@ class SplashViewModel @Inject constructor(
         MutableStateFlow<TelemetryOnboardingState>(TelemetryOnboardingState.Loading)
     val telemetryOnboardingState: StateFlow<TelemetryOnboardingState> =
         _telemetryOnboardingState.asStateFlow()
+    private val _bootstrapTrainingOnboardingState =
+        MutableStateFlow<BootstrapTrainingOnboardingState>(BootstrapTrainingOnboardingState.Loading)
+    val bootstrapTrainingOnboardingState: StateFlow<BootstrapTrainingOnboardingState> =
+        _bootstrapTrainingOnboardingState.asStateFlow()
 
     init {
         viewModelScope.launch {
             _telemetryOnboardingState.value = TelemetryOnboardingState.Ready(
                 preferencesManager.modelQualityTelemetryOnboardingChoice.first()
+            )
+            _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Ready(
+                preferencesManager.bootstrapTrainingOnboardingChoice.first()
             )
         }
     }
@@ -43,6 +55,19 @@ class SplashViewModel @Inject constructor(
             preferencesManager.setModelQualityTelemetryOnboardingChoice(enabled)
             runCatching { behaviorRuntime.setTelemetryConsent(enabled) }
             _telemetryOnboardingState.value = TelemetryOnboardingState.Ready(enabled)
+        }
+    }
+
+
+    fun chooseBootstrapTraining(enabled: Boolean, includeHistorical: Boolean) {
+        val current = _bootstrapTrainingOnboardingState.value as?
+            BootstrapTrainingOnboardingState.Ready ?: return
+        if (current.choice != null) return
+        _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Loading
+        viewModelScope.launch {
+            preferencesManager.setBootstrapTrainingOnboardingChoice(enabled, includeHistorical)
+            runCatching { behaviorRuntime.setBootstrapTrainingConsent(enabled, includeHistorical) }
+            _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Ready(enabled)
         }
     }
 }

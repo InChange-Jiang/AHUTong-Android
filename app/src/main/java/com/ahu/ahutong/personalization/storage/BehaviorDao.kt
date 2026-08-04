@@ -678,6 +678,133 @@ abstract class BehaviorDao {
         limit: Int
     ): List<PresetShadowEvaluationEntity>
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertBootstrapTrainingConsent(value: BootstrapTrainingConsentEntity)
+
+    @Query("SELECT * FROM bootstrap_training_consent WHERE profileKey = :profileKey")
+    abstract suspend fun bootstrapTrainingConsent(profileKey: String): BootstrapTrainingConsentEntity?
+
+    @Query("SELECT * FROM bootstrap_training_consent WHERE state = 'ACTIVE' ORDER BY createdAtEpochMs")
+    abstract suspend fun activeBootstrapTrainingConsents(): List<BootstrapTrainingConsentEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertBootstrapTrainingExample(value: BootstrapTrainingExampleEntity): Long
+
+    @Query("SELECT * FROM bootstrap_training_example WHERE profileKey = :profileKey AND state = 'PENDING' ORDER BY sequenceNo ASC LIMIT :limit")
+    abstract suspend fun pendingBootstrapTrainingExamples(
+        profileKey: String,
+        limit: Int
+    ): List<BootstrapTrainingExampleEntity>
+
+    @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND state = 'PENDING'")
+    abstract suspend fun pendingBootstrapTrainingExampleCount(profileKey: String): Int
+
+    @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND task = :task AND state = 'PENDING'")
+    abstract suspend fun pendingBootstrapTrainingTaskCount(profileKey: String, task: String): Int
+
+    @Query("DELETE FROM bootstrap_training_example WHERE rowId IN (SELECT rowId FROM bootstrap_training_example WHERE profileKey = :profileKey AND task = :task AND state = 'PENDING' ORDER BY sequenceNo ASC LIMIT :count)")
+    abstract suspend fun evictOldestPendingBootstrapTrainingExamples(
+        profileKey: String,
+        task: String,
+        count: Int
+    ): Int
+
+    @Query("UPDATE bootstrap_training_example SET state = 'BATCHED', batchId = :batchId WHERE rowId IN (:rowIds) AND state = 'PENDING'")
+    abstract suspend fun markBootstrapTrainingExamplesBatched(rowIds: List<Long>, batchId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertBootstrapTrainingBatch(value: BootstrapTrainingBatchEntity)
+
+    @Query("SELECT * FROM bootstrap_training_batch WHERE state IN ('READY', 'RETRY') AND nextAttemptAtEpochMs <= :nowEpochMs ORDER BY createdAtEpochMs ASC LIMIT 1")
+    abstract suspend fun dueBootstrapTrainingBatch(nowEpochMs: Long): BootstrapTrainingBatchEntity?
+
+    @Query("SELECT COUNT(*) FROM bootstrap_training_batch WHERE state IN ('READY', 'RETRY')")
+    abstract suspend fun pendingBootstrapTrainingBatchCount(): Int
+
+    @Query("SELECT * FROM bootstrap_training_batch WHERE batchId = :batchId")
+    abstract suspend fun bootstrapTrainingBatch(batchId: String): BootstrapTrainingBatchEntity?
+
+    @Query("UPDATE bootstrap_training_batch SET state = 'RETRY', attemptCount = attemptCount + 1, nextAttemptAtEpochMs = :nextAttemptAtEpochMs, lastErrorCode = :errorCode WHERE batchId = :batchId AND state IN ('READY', 'RETRY')")
+    abstract suspend fun retryBootstrapTrainingBatch(
+        batchId: String,
+        nextAttemptAtEpochMs: Long,
+        errorCode: String
+    ): Int
+
+    @Query("UPDATE bootstrap_training_batch SET state = 'ACKNOWLEDGED', acknowledgedAtEpochMs = :acknowledgedAtEpochMs, lastErrorCode = NULL WHERE batchId = :batchId AND state IN ('READY', 'RETRY')")
+    abstract suspend fun acknowledgeBootstrapTrainingBatchState(
+        batchId: String,
+        acknowledgedAtEpochMs: Long
+    ): Int
+
+    @Query("DELETE FROM bootstrap_training_example WHERE batchId = :batchId AND state = 'BATCHED'")
+    abstract suspend fun deleteAcknowledgedBootstrapTrainingExamples(batchId: String): Int
+
+    @Query("DELETE FROM bootstrap_training_batch WHERE batchId = :batchId AND state = 'ACKNOWLEDGED'")
+    abstract suspend fun deleteAcknowledgedBootstrapTrainingBatch(batchId: String): Int
+
+    @Transaction
+    open suspend fun acknowledgeBootstrapTrainingBatch(batchId: String, acknowledgedAtEpochMs: Long): Int {
+        val batch = bootstrapTrainingBatch(batchId) ?: return 0
+        if (acknowledgeBootstrapTrainingBatchState(batchId, acknowledgedAtEpochMs) != 1) return 0
+        val deleted = deleteAcknowledgedBootstrapTrainingExamples(batchId)
+        val consent = bootstrapTrainingConsent(batch.profileKey)
+        if (consent != null && consent.consentLifecycleId == batch.consentLifecycleId) {
+            upsertBootstrapTrainingConsent(
+                consent.copy(
+                    contributedExampleCount = consent.contributedExampleCount + deleted,
+                    lastUploadAtEpochMs = acknowledgedAtEpochMs,
+                    updatedAtEpochMs = acknowledgedAtEpochMs
+                )
+            )
+        }
+        deleteAcknowledgedBootstrapTrainingBatch(batchId)
+        return deleted
+    }
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertBootstrapTrainingDeletionTombstone(
+        value: BootstrapTrainingDeletionTombstoneEntity
+    ): Long
+
+    @Query("SELECT * FROM bootstrap_training_deletion_tombstone WHERE state IN ('READY', 'RETRY') AND nextAttemptAtEpochMs <= :nowEpochMs ORDER BY createdAtEpochMs ASC LIMIT 1")
+    abstract suspend fun dueBootstrapTrainingDeletion(nowEpochMs: Long): BootstrapTrainingDeletionTombstoneEntity?
+
+    @Query("SELECT COUNT(*) FROM bootstrap_training_deletion_tombstone WHERE state IN ('READY', 'RETRY')")
+    abstract suspend fun pendingBootstrapTrainingDeletionCount(): Int
+
+    @Query("UPDATE bootstrap_training_batch SET state = 'QUARANTINED', lastErrorCode = :errorCode, nextAttemptAtEpochMs = 9223372036854775807 WHERE batchId = :batchId AND state IN ('READY', 'RETRY')")
+    abstract suspend fun quarantineBootstrapTrainingBatch(batchId: String, errorCode: String): Int
+
+    @Query("UPDATE bootstrap_training_deletion_tombstone SET state = 'RETRY', attemptCount = attemptCount + 1, nextAttemptAtEpochMs = :nextAttemptAtEpochMs, lastErrorCode = :errorCode WHERE deletionId = :deletionId AND state IN ('READY', 'RETRY')")
+    abstract suspend fun retryBootstrapTrainingDeletion(
+        deletionId: String,
+        nextAttemptAtEpochMs: Long,
+        errorCode: String
+    ): Int
+
+    @Query("UPDATE bootstrap_training_deletion_tombstone SET state = 'ACKNOWLEDGED', acknowledgedAtEpochMs = :acknowledgedAtEpochMs, lastErrorCode = NULL WHERE deletionId = :deletionId AND state IN ('READY', 'RETRY')")
+    abstract suspend fun acknowledgeBootstrapTrainingDeletion(
+        deletionId: String,
+        acknowledgedAtEpochMs: Long
+    ): Int
+
+    @Query("DELETE FROM bootstrap_training_consent WHERE profileKey = :profileKey")
+    abstract suspend fun deleteBootstrapTrainingConsent(profileKey: String)
+
+    @Query("DELETE FROM bootstrap_training_example WHERE profileKey = :profileKey")
+    abstract suspend fun deleteBootstrapTrainingExamples(profileKey: String)
+
+    @Query("DELETE FROM bootstrap_training_batch WHERE profileKey = :profileKey")
+    abstract suspend fun deleteBootstrapTrainingBatches(profileKey: String)
+
+    @Transaction
+    open suspend fun deleteBootstrapTrainingProfileState(profileKey: String) {
+        deleteBootstrapTrainingExamples(profileKey)
+        deleteBootstrapTrainingBatches(profileKey)
+        deleteBootstrapTrainingConsent(profileKey)
+    }
+
     @Query("DELETE FROM behavior_event WHERE profileKey = :profileKey") abstract suspend fun deleteEvents(profileKey: String)
     @Query("DELETE FROM pending_prediction WHERE profileKey = :profileKey") abstract suspend fun deletePending(profileKey: String)
     @Query("DELETE FROM product_execution_lease WHERE profileKey = :profileKey") abstract suspend fun deleteLeases(profileKey: String)
@@ -746,6 +873,7 @@ abstract class BehaviorDao {
         deleteTelemetryAggregateWindows(profileKey)
         deleteTelemetryV3AggregateWindows(profileKey)
         deleteTelemetryState(profileKey)
+        deleteBootstrapTrainingProfileState(profileKey)
         @Suppress("UNUSED_VARIABLE") val tombstonesRemainDurable = keepDeletionTombstones
     }
 

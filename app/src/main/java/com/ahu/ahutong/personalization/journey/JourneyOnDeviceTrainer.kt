@@ -1,6 +1,7 @@
 package com.ahu.ahutong.personalization.journey
 
 import com.ahu.ahutong.personalization.inference.AdamWState
+import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
 import com.ahu.ahutong.personalization.inference.TinyMlpBackprop
 import com.ahu.ahutong.personalization.model.ModelTask
 import com.ahu.ahutong.personalization.storage.BehaviorDao
@@ -28,7 +29,8 @@ data class JourneyTrainingSliceResult(
 @Singleton
 class JourneyOnDeviceTrainer @Inject constructor(
     private val dao: BehaviorDao,
-    private val store: JourneyModelStateStore
+    private val store: JourneyModelStateStore,
+    private val bootstrapTrainingDataManager: BootstrapTrainingDataManager? = null
 ) {
     private val dispatcher = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "journey-tiny-trainer").apply { priority = Thread.MIN_PRIORITY }
@@ -38,7 +40,10 @@ class JourneyOnDeviceTrainer @Inject constructor(
 
     suspend fun enqueue(sample: JourneyTrainingSampleEntity) {
         require(sample.labelSource == "ORGANIC_JOURNEY" || sample.labelSource == "INTERVENTION_FREE_TIMEOUT")
-        dao.insertJourneyTrainingSample(sample)
+        val inserted = dao.insertJourneyTrainingSample(sample)
+        if (inserted != -1L) runCatching {
+            bootstrapTrainingDataManager?.captureJourney(sample)
+        }
         pendingProfiles += sample.profileKey
     }
 

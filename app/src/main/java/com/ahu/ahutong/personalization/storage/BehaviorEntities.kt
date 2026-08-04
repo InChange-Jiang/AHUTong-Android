@@ -864,3 +864,106 @@ data class PresetShadowEvaluationEntity(
     val evaluationSource: String,
     val naturalHoldoutEligible: Boolean
 )
+
+@Entity(
+    tableName = "bootstrap_training_consent",
+    indices = [Index(value = ["participantId"], unique = true)]
+)
+data class BootstrapTrainingConsentEntity(
+    @PrimaryKey val profileKey: String,
+    val consentLifecycleId: String,
+    val participantId: String,
+    val secretAlias: String,
+    val encryptedRevocationCapability: String,
+    val consentSchemaVersion: Int,
+    val includeHistorical: Boolean,
+    val historicalBackfillCompleted: Boolean,
+    val nextSequenceNo: Long,
+    val contributedExampleCount: Long,
+    val lastUploadAtEpochMs: Long?,
+    val state: String,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "bootstrap_training_example",
+    indices = [
+        Index(value = ["profileKey", "exampleId"], unique = true),
+        Index(value = ["profileKey", "state", "sequenceNo"]),
+        Index(value = ["profileKey", "task", "occurredEpochDay"]),
+        Index(value = ["batchId"])
+    ]
+)
+data class BootstrapTrainingExampleEntity(
+    @PrimaryKey(autoGenerate = true) val rowId: Long = 0,
+    val exampleId: String,
+    val profileKey: String,
+    val consentLifecycleId: String,
+    val participantId: String,
+    val sequenceNo: Long,
+    val task: String,
+    val completeness: String,
+    val featureSchemaVersion: Int,
+    val outputSchemaVersion: Int,
+    val actionCatalogVersion: Int,
+    val features: ByteArray,
+    val availabilityMask: ByteArray?,
+    val targetLabel: String,
+    val feedbackSource: String,
+    val sampleWeight: Float,
+    val deliveryLane: String?,
+    val domainId: String?,
+    val opportunityGroupId: String?,
+    val candidateOrdinal: Int?,
+    val journeyLengthBucket: Int?,
+    val naturalHoldoutEligible: Boolean,
+    val occurredEpochDay: Long,
+    val historical: Boolean,
+    val state: String,
+    val batchId: String?,
+    val createdAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "bootstrap_training_batch",
+    indices = [
+        Index(value = ["profileKey", "state", "nextAttemptAtEpochMs"]),
+        Index(value = ["participantId", "createdAtEpochMs"])
+    ]
+)
+data class BootstrapTrainingBatchEntity(
+    @PrimaryKey val batchId: String,
+    val profileKey: String,
+    val consentLifecycleId: String,
+    val participantId: String,
+    val protocolVersion: Int,
+    val body: ByteArray,
+    val bodySha256: String,
+    val exampleCount: Int,
+    val containsHistorical: Boolean,
+    val state: String,
+    val attemptCount: Int,
+    val nextAttemptAtEpochMs: Long,
+    val lastErrorCode: String?,
+    val createdAtEpochMs: Long,
+    val acknowledgedAtEpochMs: Long?
+)
+
+@Entity(
+    tableName = "bootstrap_training_deletion_tombstone",
+    indices = [Index(value = ["state", "nextAttemptAtEpochMs"])]
+)
+data class BootstrapTrainingDeletionTombstoneEntity(
+    @PrimaryKey val deletionId: String,
+    val participantId: String,
+    val consentLifecycleId: String,
+    val secretAlias: String,
+    val encryptedRevocationCapability: String,
+    val state: String,
+    val attemptCount: Int,
+    val nextAttemptAtEpochMs: Long,
+    val lastErrorCode: String?,
+    val createdAtEpochMs: Long,
+    val acknowledgedAtEpochMs: Long?
+)

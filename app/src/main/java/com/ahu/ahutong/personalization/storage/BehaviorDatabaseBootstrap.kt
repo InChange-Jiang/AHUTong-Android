@@ -40,7 +40,8 @@ internal object BehaviorDatabaseFactory {
             .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
             .addMigrations(
                 BehaviorDatabaseMigrations.MIGRATION_1_2,
-                BehaviorDatabaseMigrations.MIGRATION_2_3
+                BehaviorDatabaseMigrations.MIGRATION_2_3,
+                BehaviorDatabaseMigrations.MIGRATION_3_4
             )
             .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()

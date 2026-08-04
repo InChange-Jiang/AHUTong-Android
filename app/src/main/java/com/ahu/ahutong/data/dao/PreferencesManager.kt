@@ -31,6 +31,12 @@ object PreferencesKeys {
         booleanPreferencesKey("model_quality_telemetry_onboarding_choice")
     val MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION =
         intPreferencesKey("model_quality_telemetry_consent_schema_version")
+    val BOOTSTRAP_TRAINING_ONBOARDING_CHOICE =
+        booleanPreferencesKey("bootstrap_training_onboarding_choice")
+    val BOOTSTRAP_TRAINING_INCLUDE_HISTORICAL =
+        booleanPreferencesKey("bootstrap_training_include_historical")
+    val BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION =
+        intPreferencesKey("bootstrap_training_consent_schema_version")
     val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
@@ -94,8 +100,30 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
         }
     }
 
+    val bootstrapTrainingOnboardingChoice: Flow<Boolean?> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CHOICE]
+            ?.takeIf {
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION] ==
+                    BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION
+            }
+    }
+
+    val bootstrapTrainingIncludeHistorical: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.BOOTSTRAP_TRAINING_INCLUDE_HISTORICAL] ?: false
+    }
+
+    suspend fun setBootstrapTrainingOnboardingChoice(value: Boolean, includeHistorical: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CHOICE] = value
+            prefs[PreferencesKeys.BOOTSTRAP_TRAINING_INCLUDE_HISTORICAL] = value && includeHistorical
+            prefs[PreferencesKeys.BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION] =
+                BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION
+        }
+    }
+
     companion object {
         const val MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION = 3
+        const val BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION = 1
     }
 
     val behaviorRetentionDays: Flow<Int> = context.dataStore.data.map { prefs ->

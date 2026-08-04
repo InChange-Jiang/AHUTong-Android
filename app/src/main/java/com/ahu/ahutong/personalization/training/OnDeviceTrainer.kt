@@ -2,6 +2,7 @@ package com.ahu.ahutong.personalization.training
 
 import com.ahu.ahutong.personalization.action.ActionFamily
 import com.ahu.ahutong.personalization.action.AppActionCatalog
+import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
 import com.ahu.ahutong.personalization.context.PredictionInput
 import com.ahu.ahutong.personalization.context.V3ToV4FeatureAdapter
 import com.ahu.ahutong.personalization.inference.AdamWState
@@ -29,7 +30,10 @@ data class OrganicTrainingSample(
     val input: PredictionInput,
     val targetOutputId: String,
     val actionFamily: ActionFamily,
-    val labelSource: String
+    val labelSource: String,
+    val availabilityMask: ByteArray? = null,
+    val deliveryLane: String = "ORDINARY_NEXT_ACTION",
+    val naturalHoldoutEligible: Boolean = TrainingFeedbackPolicy.isNatural(labelSource)
 )
 
 data class TrainingSliceResult(
@@ -53,7 +57,8 @@ interface OnDeviceTrainer {
 @Singleton
 class KotlinOnDeviceTrainer @Inject constructor(
     private val dao: BehaviorDao,
-    private val stateStore: ModelStateStore
+    private val stateStore: ModelStateStore,
+    private val bootstrapTrainingDataManager: BootstrapTrainingDataManager? = null
 ) : OnDeviceTrainer {
     private val dispatcher: CoroutineDispatcher = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "tiny-mlp-trainer").apply { priority = Thread.MIN_PRIORITY }
@@ -64,7 +69,7 @@ class KotlinOnDeviceTrainer @Inject constructor(
     override suspend fun enqueue(sample: OrganicTrainingSample) {
         require(TrainingFeedbackPolicy.isTrainable(sample.labelSource))
         val targetIndex = AppActionCatalog.outputIndex.getValue(sample.targetOutputId)
-        dao.insertTrainingSample(
+        val inserted = dao.insertTrainingSample(
             TrainingSampleEntity(
                 sampleId = sample.sampleId,
                 profileKey = sample.input.profileKey,
@@ -82,6 +87,9 @@ class KotlinOnDeviceTrainer @Inject constructor(
                 labelSource = sample.labelSource
             )
         )
+        if (inserted != -1L) runCatching {
+            bootstrapTrainingDataManager?.captureNextAction(sample)
+        }
         if (dao.trainingSampleCount(sample.input.profileKey) > REPLAY_LIMIT) {
             check(dao.evictOneReplaySample(sample.input.profileKey) == 1)
         }

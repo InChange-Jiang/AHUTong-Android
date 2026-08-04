@@ -45,9 +45,13 @@ import javax.inject.Singleton
         TaskModelStateEntity::class,
         TaskTrainingBatchJournalEntity::class,
         PresetTrainingSampleEntity::class,
-        PresetShadowEvaluationEntity::class
+        PresetShadowEvaluationEntity::class,
+        BootstrapTrainingConsentEntity::class,
+        BootstrapTrainingExampleEntity::class,
+        BootstrapTrainingBatchEntity::class,
+        BootstrapTrainingDeletionTombstoneEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class BehaviorDatabase : RoomDatabase() {

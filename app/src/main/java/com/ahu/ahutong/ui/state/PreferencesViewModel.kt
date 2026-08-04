@@ -6,6 +6,7 @@ import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
+import com.ahu.ahutong.personalization.bootstrap.BootstrapContributionStatus
 import com.ahu.ahutong.personalization.semantic.MutationId
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +61,9 @@ class PreferencesViewModel @Inject constructor(
     private val _repositoryAccelerationSource = MutableStateFlow("jsdelivr")
     val repositoryAccelerationSource: StateFlow<String> =
         _repositoryAccelerationSource.asStateFlow()
+
+    val bootstrapContributionStatus: StateFlow<BootstrapContributionStatus> =
+        behaviorRuntime.bootstrapContributionStatus
 
     init {
         viewModelScope.launch { preferencesManager.personalizationEnabled.collect { _personalizationEnabled.value = it } }
@@ -131,6 +135,17 @@ class PreferencesViewModel @Inject constructor(
 
     fun clearPersonalizationLearning() {
         viewModelScope.launch { behaviorRuntime.clearLearningRecord() }
+    }
+
+    fun setBootstrapTrainingContribution(enabled: Boolean, includeHistorical: Boolean = false) {
+        viewModelScope.launch {
+            preferencesManager.setBootstrapTrainingOnboardingChoice(enabled, includeHistorical)
+            behaviorRuntime.setBootstrapTrainingConsent(enabled, includeHistorical)
+        }
+    }
+
+    fun deleteBootstrapTrainingContribution() {
+        setBootstrapTrainingContribution(false, false)
     }
 
     fun setBehaviorRetentionDays(value: Int) {

@@ -22,7 +22,7 @@ class BehaviorDatabaseMigrationTest {
     )
 
     @Test
-    fun migrateOneToThreePreservesOldRowsAndCreatesTargetedAndTelemetryV3Tables() {
+    fun migrateOneToFourPreservesOldRowsAndCreatesTargetedTelemetryAndTrainingTables() {
         helper.createDatabase(TEST_DB, 1).apply {
             execSQL(
                 "INSERT INTO learning_state " +
@@ -38,7 +38,8 @@ class BehaviorDatabaseMigrationTest {
         val database = Room.databaseBuilder(context, BehaviorDatabase::class.java, TEST_DB)
             .addMigrations(
                 BehaviorDatabaseMigrations.MIGRATION_1_2,
-                BehaviorDatabaseMigrations.MIGRATION_2_3
+                BehaviorDatabaseMigrations.MIGRATION_2_3,
+                BehaviorDatabaseMigrations.MIGRATION_3_4
             )
             .build()
         try {
@@ -70,7 +71,7 @@ class BehaviorDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateTwoToThreePreservesExistingLearningState() {
+    fun migrateTwoToFourPreservesExistingLearningState() {
         helper.createDatabase(TEST_DB_V2, 2).apply {
             execSQL(
                 "INSERT INTO learning_state " +
@@ -84,11 +85,14 @@ class BehaviorDatabaseMigrationTest {
 
         val context = ApplicationProvider.getApplicationContext<Context>()
         val database = Room.databaseBuilder(context, BehaviorDatabase::class.java, TEST_DB_V2)
-            .addMigrations(BehaviorDatabaseMigrations.MIGRATION_2_3)
+            .addMigrations(
+                BehaviorDatabaseMigrations.MIGRATION_2_3,
+                BehaviorDatabaseMigrations.MIGRATION_3_4
+            )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(3, sqlite.version)
+            assertEquals(4, sqlite.version)
             sqlite.query(
                 "SELECT statLearningStartedEpochDay, tinyTrainingStartedEpochDay " +
                     "FROM learning_state WHERE profileKey = ?",
@@ -126,7 +130,11 @@ class BehaviorDatabaseMigrationTest {
             "task_training_batch_journal",
             "preset_training_sample",
             "preset_shadow_evaluation",
-            "telemetry_v3_aggregate_window"
+            "telemetry_v3_aggregate_window",
+            "bootstrap_training_consent",
+            "bootstrap_training_example",
+            "bootstrap_training_batch",
+            "bootstrap_training_deletion_tombstone"
         )
     }
 }

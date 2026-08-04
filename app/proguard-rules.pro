@@ -133,6 +133,14 @@
 -keep class com.ahu.ahutong.personalization.telemetry.TelemetryCredentialResponse { *; }
 -keep class com.ahu.ahutong.personalization.telemetry.TelemetryDeletionRequest { *; }
 
+# Bootstrap-training payloads are an immutable Gson/Retrofit wire contract. Preserve both JSON
+# field names and generic list signatures in release builds.
+-keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingExamplePayload { *; }
+-keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingBatchRequest { *; }
+-keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingCredentialRequest { *; }
+-keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingCredentialResponse { *; }
+-keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDeletionRequest { *; }
+
 # Data source interface + implementations (prevent R8 from stripping abstract methods)
 -keep interface com.ahu.ahutong.data.base.BaseDataSource { *; }
 -keep class com.ahu.ahutong.data.crawler.CrawlerDataSource { *; }

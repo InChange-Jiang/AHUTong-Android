@@ -16,6 +16,12 @@ object BehaviorDatabaseMigrations {
         }
     }
 
+    val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            bootstrapTrainingStatements.forEach(db::execSQL)
+        }
+    }
+
     private val statements = listOf(
         """CREATE TABLE IF NOT EXISTS `semantic_event` (`eventId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `sequenceNo` INTEGER NOT NULL, `eventFamily` TEXT NOT NULL, `domainId` TEXT NOT NULL, `semanticId` TEXT NOT NULL, `changeKind` TEXT NOT NULL, `coarseValueBucket` TEXT NOT NULL, `route` TEXT, `affectedCandidateSetVersion` INTEGER NOT NULL, `source` TEXT NOT NULL, `committedAtEpochDay` INTEGER NOT NULL, `occurredAtElapsedMs` INTEGER NOT NULL, `semanticSchemaVersion` INTEGER NOT NULL, `tainted` INTEGER NOT NULL, `mutationBatchId` TEXT NOT NULL, `changeSetId` TEXT NOT NULL, PRIMARY KEY(`eventId`))""",
         "CREATE INDEX IF NOT EXISTS `index_semantic_event_profileKey_sequenceNo` ON `semantic_event` (`profileKey`, `sequenceNo`)",
@@ -86,5 +92,20 @@ object BehaviorDatabaseMigrations {
         """CREATE TABLE IF NOT EXISTS `telemetry_v3_aggregate_window` (`windowId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `telemetryId` TEXT NOT NULL, `modelGenerationId` TEXT NOT NULL, `task` TEXT NOT NULL, `windowStartEpochDay` INTEGER NOT NULL, `windowEndEpochDay` INTEGER NOT NULL, `sampleCount` INTEGER NOT NULL, `naturalHoldoutSampleCount` INTEGER NOT NULL, `aggregateJson` TEXT NOT NULL, `appVersionCode` INTEGER NOT NULL, `featureSchemaVersion` INTEGER NOT NULL, `outputSchemaVersion` INTEGER NOT NULL, `metricSchemaVersion` INTEGER NOT NULL, `state` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`windowId`))""",
         "CREATE INDEX IF NOT EXISTS `index_telemetry_v3_aggregate_window_profileKey_consentLifecycleId_task_state_createdAtEpochMs` ON `telemetry_v3_aggregate_window` (`profileKey`, `consentLifecycleId`, `task`, `state`, `createdAtEpochMs`)",
         "CREATE UNIQUE INDEX IF NOT EXISTS `index_telemetry_v3_aggregate_window_windowId` ON `telemetry_v3_aggregate_window` (`windowId`)"
+    )
+
+    private val bootstrapTrainingStatements = listOf(
+        """CREATE TABLE IF NOT EXISTS `bootstrap_training_consent` (`profileKey` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `participantId` TEXT NOT NULL, `secretAlias` TEXT NOT NULL, `encryptedRevocationCapability` TEXT NOT NULL, `consentSchemaVersion` INTEGER NOT NULL, `includeHistorical` INTEGER NOT NULL, `historicalBackfillCompleted` INTEGER NOT NULL, `nextSequenceNo` INTEGER NOT NULL, `contributedExampleCount` INTEGER NOT NULL, `lastUploadAtEpochMs` INTEGER, `state` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`profileKey`))""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_bootstrap_training_consent_participantId` ON `bootstrap_training_consent` (`participantId`)",
+        """CREATE TABLE IF NOT EXISTS `bootstrap_training_example` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `exampleId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `participantId` TEXT NOT NULL, `sequenceNo` INTEGER NOT NULL, `task` TEXT NOT NULL, `completeness` TEXT NOT NULL, `featureSchemaVersion` INTEGER NOT NULL, `outputSchemaVersion` INTEGER NOT NULL, `actionCatalogVersion` INTEGER NOT NULL, `features` BLOB NOT NULL, `availabilityMask` BLOB, `targetLabel` TEXT NOT NULL, `feedbackSource` TEXT NOT NULL, `sampleWeight` REAL NOT NULL, `deliveryLane` TEXT, `domainId` TEXT, `opportunityGroupId` TEXT, `candidateOrdinal` INTEGER, `journeyLengthBucket` INTEGER, `naturalHoldoutEligible` INTEGER NOT NULL, `occurredEpochDay` INTEGER NOT NULL, `historical` INTEGER NOT NULL, `state` TEXT NOT NULL, `batchId` TEXT, `createdAtEpochMs` INTEGER NOT NULL)""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_bootstrap_training_example_profileKey_exampleId` ON `bootstrap_training_example` (`profileKey`, `exampleId`)",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_example_profileKey_state_sequenceNo` ON `bootstrap_training_example` (`profileKey`, `state`, `sequenceNo`)",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_example_profileKey_task_occurredEpochDay` ON `bootstrap_training_example` (`profileKey`, `task`, `occurredEpochDay`)",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_example_batchId` ON `bootstrap_training_example` (`batchId`)",
+        """CREATE TABLE IF NOT EXISTS `bootstrap_training_batch` (`batchId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `participantId` TEXT NOT NULL, `protocolVersion` INTEGER NOT NULL, `body` BLOB NOT NULL, `bodySha256` TEXT NOT NULL, `exampleCount` INTEGER NOT NULL, `containsHistorical` INTEGER NOT NULL, `state` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `nextAttemptAtEpochMs` INTEGER NOT NULL, `lastErrorCode` TEXT, `createdAtEpochMs` INTEGER NOT NULL, `acknowledgedAtEpochMs` INTEGER, PRIMARY KEY(`batchId`))""",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_batch_profileKey_state_nextAttemptAtEpochMs` ON `bootstrap_training_batch` (`profileKey`, `state`, `nextAttemptAtEpochMs`)",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_batch_participantId_createdAtEpochMs` ON `bootstrap_training_batch` (`participantId`, `createdAtEpochMs`)",
+        """CREATE TABLE IF NOT EXISTS `bootstrap_training_deletion_tombstone` (`deletionId` TEXT NOT NULL, `participantId` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `secretAlias` TEXT NOT NULL, `encryptedRevocationCapability` TEXT NOT NULL, `state` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `nextAttemptAtEpochMs` INTEGER NOT NULL, `lastErrorCode` TEXT, `createdAtEpochMs` INTEGER NOT NULL, `acknowledgedAtEpochMs` INTEGER, PRIMARY KEY(`deletionId`))""",
+        "CREATE INDEX IF NOT EXISTS `index_bootstrap_training_deletion_tombstone_state_nextAttemptAtEpochMs` ON `bootstrap_training_deletion_tombstone` (`state`, `nextAttemptAtEpochMs`)"
     )
 }

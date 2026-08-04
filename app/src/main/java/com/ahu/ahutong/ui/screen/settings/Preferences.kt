@@ -3,6 +3,7 @@ package com.ahu.ahutong.ui.screen.settings
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -66,6 +68,8 @@ fun Preferences(onBack: () -> Unit = {}) {
     var isRequestingPermission by remember { mutableStateOf(false) }
     var showClearLearningConfirm by remember { mutableStateOf(false) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
+    var showEnableTrainingContribution by remember { mutableStateOf(false) }
+    var showDeleteTrainingContribution by remember { mutableStateOf(false) }
     var isToggleHorizontalDragActive by remember { mutableStateOf(false) }
     val pageScrollState = rememberScrollState()
     val onToggleHorizontalDragActiveChange: (Boolean) -> Unit = { active ->
@@ -84,6 +88,7 @@ fun Preferences(onBack: () -> Unit = {}) {
     val courseReminderEnabled by viewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by
         viewModel.courseReminderLiveCountdownEnabled.collectAsState()
+    val bootstrapContributionStatus by viewModel.bootstrapContributionStatus.collectAsState()
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -179,6 +184,36 @@ fun Preferences(onBack: () -> Unit = {}) {
                     ),
                     onSelected = viewModel::setBehaviorRetentionDays
                 )
+                SettingsToggleRow(
+                    title = "贡献通用模型训练数据",
+                    subtitle = if (bootstrapContributionStatus.enabled) {
+                        buildString {
+                            append("已贡献 ${bootstrapContributionStatus.contributedExamples} 条，待上传 ${bootstrapContributionStatus.pendingExamples} 条")
+                            bootstrapContributionStatus.lastUploadAtEpochMs?.let { lastUpload ->
+                                append(" · 上次上传 ")
+                                append(DateUtils.getRelativeTimeSpanString(lastUpload))
+                            }
+                        }
+                    } else {
+                        "独立授权上传去标识化模型就绪样本"
+                    },
+                    selected = bootstrapContributionStatus.enabled,
+                    onSelectedChange = { enabled ->
+                        if (enabled) showEnableTrainingContribution = true
+                        else showDeleteTrainingContribution = true
+                    },
+                    backdrop = backdrop,
+                    onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
+                )
+                if (bootstrapContributionStatus.enabled) {
+                    SettingsActionRow(
+                        title = "删除已上传训练数据",
+                        subtitle = "停止贡献并删除当前随机参与者编号下的数据",
+                        destructive = true,
+                        showChevron = false,
+                        onClick = { showDeleteTrainingContribution = true }
+                    )
+                }
                 SettingsActionRow(
                     title = "清除本地学习记录",
                     subtitle = "删除行为统计、训练样本和本地模型",
@@ -314,6 +349,51 @@ fun Preferences(onBack: () -> Unit = {}) {
                 showClearLearningConfirm = false
             },
             onDismiss = { showClearLearningConfirm = false }
+        )
+    }
+
+    if (showEnableTrainingContribution) {
+        var includeHistorical by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showEnableTrainingContribution = false },
+            title = { Text("贡献通用模型训练数据") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "将上传下一步/多跳预测的数值特征、候选可用性和目标标签，以及参数排序的 16 维候选特征与分级反馈。不会上传账号、设备标识、原始轨迹、完整旅程、设置值、参数内容、presetId 或指纹。随机参与者编号仅用于用户级数据集切分；关闭后会请求删除。"
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = includeHistorical,
+                            onCheckedChange = { includeHistorical = it }
+                        )
+                        Text("同时贡献最近 30 天已有兼容样本（默认关闭）")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.setBootstrapTrainingContribution(true, includeHistorical)
+                    showEnableTrainingContribution = false
+                }) { Text("同意开启") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEnableTrainingContribution = false }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showDeleteTrainingContribution) {
+        SettingsConfirmationDialog(
+            title = "停止并删除训练数据？",
+            message = "应用会立即停止生成上传样本，删除本机待上传批次，并持续重试服务端删除请求，直到当前随机参与者编号下的数据被删除。",
+            confirmLabel = "停止并删除",
+            destructive = true,
+            onConfirm = {
+                viewModel.deleteBootstrapTrainingContribution()
+                showDeleteTrainingContribution = false
+            },
+            onDismiss = { showDeleteTrainingContribution = false }
         )
     }
 

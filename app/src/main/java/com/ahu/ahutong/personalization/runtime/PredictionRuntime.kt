@@ -68,6 +68,8 @@ import com.ahu.ahutong.personalization.training.OrganicTrainingSample
 import com.ahu.ahutong.personalization.training.TrainingFeedbackPolicy
 import com.ahu.ahutong.personalization.training.TrainingSliceResult
 import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
+import com.ahu.ahutong.personalization.bootstrap.BootstrapContributionStatus
+import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
 import com.ahu.ahutong.personalization.telemetry.TelemetryDeliveryEvent
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
@@ -215,6 +217,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val prefetchCoordinator: PrefetchCoordinator,
     private val paymentQrRepository: PaymentQrRepository,
     private val paymentQrCommands: PaymentQrOpenCommandStore,
+    private val bootstrapTrainingDataManager: BootstrapTrainingDataManager,
     private val telemetryManager: ModelQualityTelemetryManager,
     private val telemetryAggregateStore: TelemetryAggregateStore,
     private val semanticEventRecorder: SemanticEventRecorder,
@@ -256,6 +259,8 @@ class BehaviorPredictionRuntime @Inject constructor(
     val diagnostics: StateFlow<RuntimeDiagnosticsState> = _diagnostics.asStateFlow()
     val uiState: StateFlow<PredictionUiState> = _uiState.asStateFlow()
     val telemetryConsentEnabled: StateFlow<Boolean> = _telemetryConsentEnabled.asStateFlow()
+    val bootstrapContributionStatus: StateFlow<BootstrapContributionStatus> =
+        bootstrapTrainingDataManager.status
     val sensitiveUiVisible: StateFlow<Boolean> = _sensitiveUiVisible.asStateFlow()
     val suggestionOverlayBlocked: StateFlow<Boolean> = _suggestionOverlayBlocked.asStateFlow()
 
@@ -354,6 +359,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         }
         telemetryManager.reconcileProfile(nextProfile, promotion.modelGeneration)
         _telemetryConsentEnabled.value = onboardingChoice == true && telemetryManager.isConsentEnabled(nextProfile)
+        val bootstrapChoice = preferencesManager.bootstrapTrainingOnboardingChoice.first()
+        bootstrapTrainingDataManager.reconcileProfile(
+            nextProfile,
+            enabled = bootstrapChoice == true,
+            includeHistorical = preferencesManager.bootstrapTrainingIncludeHistorical.first()
+        )
         val activeProfileGeneration = profileGeneration.incrementAndGet()
         val activeLoginGeneration = loginGeneration.incrementAndGet()
         paymentQrRepository.activateProfile(nextProfile, activeProfileGeneration, activeLoginGeneration)
@@ -1289,6 +1300,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             return
         }
         val account = activeAccountIdentifier
+        bootstrapTrainingDataManager.revoke(activeProfile)
         telemetryManager.revoke(activeProfile, deleteRemote = true)
         stopSession("CLEARED_BY_USER", clearProfile = true)
         databaseCompatibilityStore.clearLegacyLearningDatabase()
@@ -1302,6 +1314,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             databaseCompatibilityStore.clearLegacyLearningDatabase()
             return
         }
+        bootstrapTrainingDataManager.revoke(activeProfile)
         telemetryManager.setConsent(activeProfile, enabled = false)
         _telemetryConsentEnabled.value = false
         stopSession("LOGOUT", clearProfile = true)
@@ -1596,6 +1609,11 @@ class BehaviorPredictionRuntime @Inject constructor(
         return preparing
     }
 
+    suspend fun setBootstrapTrainingConsent(enabled: Boolean, includeHistorical: Boolean = false) {
+        val activeProfile = profileKey ?: return
+        bootstrapTrainingDataManager.setConsent(activeProfile, enabled, includeHistorical)
+    }
+
     private suspend fun preparePrediction(
         preparing: PendingPredictionEntity,
         input: PredictionInput,
@@ -1755,7 +1773,17 @@ class BehaviorPredictionRuntime @Inject constructor(
                 telemetryAggregateStore.contribute(evaluation)
             }
             statPredictor.update(input, targetOutputId)
-            trainer.enqueue(OrganicTrainingSample(input = input, targetOutputId = targetOutputId, actionFamily = family, labelSource = labelSource))
+            trainer.enqueue(
+                OrganicTrainingSample(
+                    input = input,
+                    targetOutputId = targetOutputId,
+                    actionFamily = family,
+                    labelSource = labelSource,
+                    availabilityMask = pending.availabilityMask,
+                    deliveryLane = SuggestionDeliveryLane.ORDINARY_NEXT_ACTION.name,
+                    naturalHoldoutEligible = true
+                )
+            )
             val learning = dao.learningState(pending.profileKey)
             dao.upsertLearningState(
                 LearningStateEntity(
@@ -1998,7 +2026,10 @@ class BehaviorPredictionRuntime @Inject constructor(
                 input = input,
                 targetOutputId = action.stableId,
                 actionFamily = AppActionCatalog.spec(action).family,
-                labelSource = TrainingFeedbackPolicy.SUGGESTION_ACCEPTED
+                labelSource = TrainingFeedbackPolicy.SUGGESTION_ACCEPTED,
+                availabilityMask = pending.availabilityMask,
+                deliveryLane = deliveryLane.name,
+                naturalHoldoutEligible = false
             )
         )
         telemetryAggregateStore.recordDelivery(

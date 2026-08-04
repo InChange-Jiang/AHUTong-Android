@@ -767,7 +767,8 @@ class BehaviorPredictionRuntime @Inject constructor(
                         contextGeneration = opportunityGeneration,
                         lane = SuggestionDeliveryLane.TARGETED,
                         targetActions = targetedActions,
-                        earliestDisplayElapsedMs = nowElapsed + TARGETED_CHANGE_SETTLE_MS,
+                        earliestDisplayElapsedMs =
+                            nowElapsed + SuggestionPolicy.TARGETED_CHANGE_DEBOUNCE_MS,
                         deadlineElapsedMs = pending.labelDeadlineElapsedMs
                     )
                 }
@@ -1866,7 +1867,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             return
         }
         if (!registerPendingOffer(offer)) return
-        scheduleTargetedRetry(offer, offer.earliestDisplayElapsedMs, "TARGETED_SETTLE_OR_INTERVAL")
+        scheduleTargetedRetry(offer, offer.earliestDisplayElapsedMs, "TARGETED_DEBOUNCE")
     }
 
     @Synchronized
@@ -2415,8 +2416,6 @@ class BehaviorPredictionRuntime @Inject constructor(
         const val DEADLINE_RACE_GRACE_MS = 250L
         const val HOLDOUT_PERCENT = 15
         const val CANDIDATE_HOLDOUT_PERCENT = 20
-        const val TARGETED_CHANGE_SETTLE_MS =
-            SEMANTIC_CHANGE_SET_WINDOW_MS + SuggestionPolicy.OCCUPIED_RETRY_DELAY_MS
         const val SUGGESTION_VISIBLE_TTL_MS = 12_000L
         const val TRAINING_IDLE_GRACE_MS = 1_500L
         const val MAX_BEHAVIOR_EVENTS = 20_000

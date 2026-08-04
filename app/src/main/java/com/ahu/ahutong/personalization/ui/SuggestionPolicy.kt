@@ -32,6 +32,7 @@ internal enum class SuggestionDeliveryBlockReason {
     SAFETY_GATE,
     ENTRY_UNAVAILABLE,
     EMPTY_TARGETS,
+    DEBOUNCE,
     INTERVAL,
     OCCUPIED
 }
@@ -43,6 +44,7 @@ internal data class SuggestionDeliveryAssessment(
 )
 
 internal object SuggestionPolicy {
+    const val TARGETED_CHANGE_DEBOUNCE_MS = 250L
     const val TARGETED_MIN_INTERVAL_MS = 10_000L
     const val ORDINARY_MIN_INTERVAL_MS = 30_000L
     const val OCCUPIED_RETRY_DELAY_MS = 250L
@@ -120,15 +122,13 @@ internal object SuggestionPolicy {
             return SuggestionDeliveryAssessment(false, blockReason = SuggestionDeliveryBlockReason.EMPTY_TARGETS)
         }
 
-        val intervalAt = maxOf(
-            offer.earliestDisplayElapsedMs,
-            earliestDisplayElapsedMs(
-                offer.lane,
-                nowElapsedMs,
-                lastTargetedShownElapsedMs,
-                lastOrdinaryShownElapsedMs
-            )
+        val laneIntervalAt = earliestDisplayElapsedMs(
+            offer.lane,
+            nowElapsedMs,
+            lastTargetedShownElapsedMs,
+            lastOrdinaryShownElapsedMs
         )
+        val intervalAt = maxOf(offer.earliestDisplayElapsedMs, laneIntervalAt)
         val occupiedAt = currentLane?.takeIf { it.priority >= offer.lane.priority }
             ?.let { nowElapsedMs + OCCUPIED_RETRY_DELAY_MS }
             ?: nowElapsedMs
@@ -138,10 +138,12 @@ internal object SuggestionPolicy {
                 SuggestionDeliveryAssessment(
                     canDisplay = false,
                     retryAtElapsedMs = retryAt,
-                    blockReason = if (occupiedAt > nowElapsedMs) {
-                        SuggestionDeliveryBlockReason.OCCUPIED
-                    } else {
-                        SuggestionDeliveryBlockReason.INTERVAL
+                    blockReason = when {
+                        occupiedAt >= intervalAt && occupiedAt > nowElapsedMs ->
+                            SuggestionDeliveryBlockReason.OCCUPIED
+                        offer.earliestDisplayElapsedMs > laneIntervalAt ->
+                            SuggestionDeliveryBlockReason.DEBOUNCE
+                        else -> SuggestionDeliveryBlockReason.INTERVAL
                     }
                 )
             } else {

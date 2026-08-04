@@ -87,6 +87,25 @@ class SuggestionDeliveryPolicyTest {
     }
 
     @Test
+    fun firstTargetedSuggestionUsesShortDebounceInsteadOfSemanticMergeWindow() {
+        val committedAtElapsedMs = 10_000L
+        val firstDisplayAt = committedAtElapsedMs + SuggestionPolicy.TARGETED_CHANGE_DEBOUNCE_MS
+        val result = assess(
+            offer = offer(
+                lane = SuggestionDeliveryLane.TARGETED,
+                action = AppActionId.OPEN_CMB_CARD_RECHARGE,
+                earliestDisplayElapsedMs = firstDisplayAt
+            ),
+            nowElapsedMs = committedAtElapsedMs
+        )
+
+        assertEquals(250L, SuggestionPolicy.TARGETED_CHANGE_DEBOUNCE_MS)
+        assertFalse(result.canDisplay)
+        assertEquals(firstDisplayAt, result.retryAtElapsedMs)
+        assertEquals(SuggestionDeliveryBlockReason.DEBOUNCE, result.blockReason)
+    }
+
+    @Test
     fun newerSettingGenerationInvalidatesOlderRetryAndWins() {
         val old = assess(
             offer = offer(SuggestionDeliveryLane.TARGETED, AppActionId.OPEN_HOME, generation = 3L),
@@ -159,7 +178,8 @@ class SuggestionDeliveryPolicyTest {
         assertTrue(runtime.contains("settingSubmissionSequence.incrementAndGet()"))
         assertTrue(runtime.contains("settingSubmissionOrder < latestAppliedSettingSubmission.get()"))
         assertTrue(runtime.contains("cancelSuggestionDeliveryState("))
-        assertTrue(runtime.contains("TARGETED_CHANGE_SETTLE_MS"))
+        assertTrue(runtime.contains("SuggestionPolicy.TARGETED_CHANGE_DEBOUNCE_MS"))
+        assertFalse(runtime.contains("SEMANTIC_CHANGE_SET_WINDOW_MS + SuggestionPolicy.OCCUPIED_RETRY_DELAY_MS"))
         assertTrue(runtime.contains("exposedTargetedChangeSets"))
         assertTrue(runtime.contains("changeSet.changeSetId in exposedTargetedChangeSets"))
         assertTrue(runtime.contains("const val HOLDOUT_PERCENT = 15"))

@@ -3,6 +3,7 @@ package com.ahu.ahutong.personalization
 import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.inference.NextActionProbabilityVector
+import com.ahu.ahutong.personalization.ui.OrdinaryNextActionGateReason
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
 import java.io.File
 import kotlin.test.Test
@@ -66,6 +67,77 @@ class SuggestionPolicyTest {
         )
 
         assertTrue(candidates.isEmpty())
+    }
+
+    @Test
+    fun ordinaryNextActionRejectsConfidenceBelowThirtyPercent() {
+        val assessment = SuggestionPolicy.assessOrdinaryNextAction(
+            vector(
+                AppActionId.VIEW_SCHEDULE to 0.29f,
+                AppActionId.VIEW_GRADES to 0.25f
+            ),
+            setOf(AppActionId.VIEW_SCHEDULE.stableId, AppActionId.VIEW_GRADES.stableId)
+        )
+
+        assertFalse(assessment.accepted)
+        assertEquals(OrdinaryNextActionGateReason.BELOW_CONFIDENCE_THRESHOLD, assessment.rejectionReason)
+    }
+
+    @Test
+    fun ordinaryNextActionRejectsAnAmbiguousTopCandidate() {
+        val assessment = SuggestionPolicy.assessOrdinaryNextAction(
+            vector(
+                AppActionId.VIEW_SCHEDULE to 0.46f,
+                AppActionId.VIEW_GRADES to 0.40f
+            ),
+            setOf(AppActionId.VIEW_SCHEDULE.stableId, AppActionId.VIEW_GRADES.stableId)
+        )
+
+        assertFalse(assessment.accepted)
+        assertEquals(OrdinaryNextActionGateReason.INSUFFICIENT_PROBABILITY_MARGIN, assessment.rejectionReason)
+    }
+
+    @Test
+    fun ordinaryNextActionRejectsFallbackWhenUnsafeOutputDominates() {
+        val assessment = SuggestionPolicy.assessOrdinaryNextAction(
+            vector(
+                AppActionId.SUBMIT_CARD_RECHARGE to 0.45f,
+                AppActionId.VIEW_SCHEDULE to 0.35f
+            ),
+            setOf(AppActionId.SUBMIT_CARD_RECHARGE.stableId, AppActionId.VIEW_SCHEDULE.stableId)
+        )
+
+        assertFalse(assessment.accepted)
+        assertEquals(OrdinaryNextActionGateReason.NON_SUGGESTIBLE_OUTPUT_DOMINATES, assessment.rejectionReason)
+        assertEquals(AppActionId.SUBMIT_CARD_RECHARGE.stableId, assessment.strongestCompetitorId)
+    }
+
+    @Test
+    fun ordinaryNextActionAcceptsConfidentClearlyLeadingCandidate() {
+        val assessment = SuggestionPolicy.assessOrdinaryNextAction(
+            vector(
+                AppActionId.VIEW_SCHEDULE to 0.50f,
+                AppActionId.VIEW_GRADES to 0.40f
+            ),
+            setOf(AppActionId.VIEW_SCHEDULE.stableId, AppActionId.VIEW_GRADES.stableId)
+        )
+
+        assertTrue(assessment.accepted)
+        assertEquals(AppActionId.VIEW_SCHEDULE, assessment.candidate?.action)
+        assertEquals(0.10f, requireNotNull(assessment.probabilityMargin), 0.0001f)
+    }
+
+    @Test
+    fun ordinaryNextActionMarginBoundaryIsInclusive() {
+        val assessment = SuggestionPolicy.assessOrdinaryNextAction(
+            vector(
+                AppActionId.VIEW_SCHEDULE to 0.54f,
+                AppActionId.VIEW_GRADES to 0.46f
+            ),
+            setOf(AppActionId.VIEW_SCHEDULE.stableId, AppActionId.VIEW_GRADES.stableId)
+        )
+
+        assertTrue(assessment.accepted)
     }
 
     @Test
@@ -139,12 +211,19 @@ class SuggestionPolicyTest {
         assertTrue(host.contains("lens(24f.dp.toPx(), 24f.dp.toPx())"))
         assertTrue(host.contains("opacity(lifetimeOpacity.value)"))
         assertTrue(host.contains("val suggestionShape = ContinuousCapsule"))
-        assertTrue(host.contains("Popup("))
-        assertTrue(host.contains("PopupProperties("))
-        assertTrue(host.contains("focusable = false"))
+        assertTrue(host.contains("Dialog("))
+        assertTrue(host.contains("DialogProperties("))
+        assertTrue(host.contains("WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE"))
+        assertTrue(host.contains("WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL"))
+        assertTrue(host.contains("WindowManager.LayoutParams.WRAP_CONTENT"))
+        assertTrue(host.contains("window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)"))
         assertTrue(host.contains("dismissOnClickOutside = false"))
+        assertFalse(host.contains("Popup("))
+        assertFalse(host.contains("PopupProperties("))
         assertTrue(host.contains("onGloballyPositioned"))
         assertTrue(host.contains("withFrameNanos"))
+        assertTrue(host.contains("dialogView.isAttachedToWindow"))
+        assertTrue(host.contains("dialogView.windowVisibility == View.VISIBLE"))
         assertTrue(host.contains("runtime.confirmSuggestionVisible(suggestion.executionId)"))
         assertTrue(host.contains("MaterialTheme.colorScheme.surfaceContainerHigh"))
         assertFalse(host.contains("isSystemInDarkTheme"))

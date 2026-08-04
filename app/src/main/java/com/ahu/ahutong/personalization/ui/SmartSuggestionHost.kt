@@ -1,6 +1,11 @@
 package com.ahu.ahutong.personalization.ui
 
+import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
+import android.view.Gravity
+import android.view.View
+import android.view.Window
+import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -22,7 +27,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,16 +44,17 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceAtMost
 import androidx.compose.ui.util.lerp
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.runtime.PredictionUiState
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
@@ -83,9 +91,133 @@ fun SmartSuggestionHost(
     }
     if (blocked || hiddenForDiagnostics) return
     val suggestion = state as? PredictionUiState.Suggestion ?: return
+    val density = LocalDensity.current
+    val navigationBarInset = WindowInsets.navigationBars.getBottom(density)
+    val horizontalOffsetPx = with(density) { 12.dp.roundToPx() }
+    val verticalOffsetPx = with(density) {
+        bottomSpacing.roundToPx() + navigationBarInset
+    }
+
+    SuggestionApplicationWindow(
+        suggestion = suggestion,
+        runtime = runtime,
+        backdrop = backdrop,
+        horizontalOffsetPx = horizontalOffsetPx,
+        verticalOffsetPx = verticalOffsetPx,
+        onSuggestionClick = onSuggestionClick,
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun SuggestionApplicationWindow(
+    suggestion: PredictionUiState.Suggestion,
+    runtime: BehaviorPredictionRuntime,
+    backdrop: Backdrop,
+    horizontalOffsetPx: Int,
+    verticalOffsetPx: Int,
+    onSuggestionClick: (PredictionUiState.Suggestion) -> Unit,
+    modifier: Modifier
+) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        val dialogView = LocalView.current
+        val dialogWindow = (dialogView.parent as DialogWindowProvider).window
+        var windowAttached by remember(suggestion.executionId) {
+            mutableStateOf(dialogView.isAttachedToWindow)
+        }
+        var bubbleLaidOut by remember(suggestion.executionId) { mutableStateOf(false) }
+
+        SideEffect {
+            configureSuggestionWindow(
+                window = dialogWindow,
+                horizontalOffsetPx = horizontalOffsetPx,
+                verticalOffsetPx = verticalOffsetPx
+            )
+        }
+        DisposableEffect(dialogView) {
+            val listener = object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(view: View) {
+                    windowAttached = true
+                }
+
+                override fun onViewDetachedFromWindow(view: View) {
+                    windowAttached = false
+                }
+            }
+            dialogView.addOnAttachStateChangeListener(listener)
+            windowAttached = dialogView.isAttachedToWindow
+            onDispose { dialogView.removeOnAttachStateChangeListener(listener) }
+        }
+
+        SuggestionBubbleContent(
+            suggestion = suggestion,
+            runtime = runtime,
+            backdrop = backdrop,
+            onSuggestionClick = onSuggestionClick,
+            onLaidOut = { bubbleLaidOut = true },
+            modifier = modifier
+        )
+
+        LaunchedEffect(
+            suggestion.executionId,
+            windowAttached,
+            bubbleLaidOut,
+            suggestion.exposureConfirmed
+        ) {
+            if (windowAttached && bubbleLaidOut && !suggestion.exposureConfirmed) {
+                withFrameNanos { }
+                if (dialogView.isAttachedToWindow && dialogView.isShown &&
+                    dialogView.windowVisibility == View.VISIBLE
+                ) {
+                    runtime.confirmSuggestionVisible(suggestion.executionId)
+                }
+            }
+        }
+    }
+}
+
+private fun configureSuggestionWindow(
+    window: Window,
+    horizontalOffsetPx: Int,
+    verticalOffsetPx: Int
+) {
+    window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
+    window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+    )
+    window.setDimAmount(0f)
+    window.setGravity(Gravity.END or Gravity.BOTTOM)
+    window.attributes = window.attributes.apply {
+        width = WindowManager.LayoutParams.WRAP_CONTENT
+        height = WindowManager.LayoutParams.WRAP_CONTENT
+        gravity = Gravity.END or Gravity.BOTTOM
+        x = horizontalOffsetPx
+        y = verticalOffsetPx
+        dimAmount = 0f
+    }
+}
+
+@Composable
+private fun SuggestionBubbleContent(
+    suggestion: PredictionUiState.Suggestion,
+    runtime: BehaviorPredictionRuntime,
+    backdrop: Backdrop,
+    onSuggestionClick: (PredictionUiState.Suggestion) -> Unit,
+    onLaidOut: () -> Unit,
+    modifier: Modifier
+) {
     val suggestionShape = ContinuousCapsule
     val lifetimeOpacity = remember(suggestion.executionId) { Animatable(1f) }
-    var popupLaidOut by remember(suggestion.executionId) { mutableStateOf(false) }
     val animationScope = rememberCoroutineScope()
     val interactiveHighlight = remember(animationScope, suggestion.executionId) {
         InteractiveHighlight(
@@ -146,39 +278,14 @@ fun SmartSuggestionHost(
         }
     }
 
-    LaunchedEffect(suggestion.executionId, popupLaidOut, suggestion.exposureConfirmed) {
-        if (popupLaidOut && !suggestion.exposureConfirmed) {
-            withFrameNanos { }
-            runtime.confirmSuggestionVisible(suggestion.executionId)
-        }
-    }
-
-    val density = LocalDensity.current
-    val navigationBarInset = WindowInsets.navigationBars.getBottom(density)
-    val popupOffset = with(density) {
-        IntOffset(
-            x = -12.dp.roundToPx(),
-            y = -(bottomSpacing.roundToPx() + navigationBarInset)
-        )
-    }
-    Popup(
-        alignment = Alignment.BottomEnd,
-        offset = popupOffset,
-        properties = PopupProperties(
-            focusable = false,
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false,
-            clippingEnabled = true
-        )
-    ) {
-        Box(
-            modifier = modifier
-                .onGloballyPositioned { coordinates ->
-                    if (coordinates.size.width > 0 && coordinates.size.height > 0) {
-                        popupLaidOut = true
-                    }
+    Box(
+        modifier = modifier
+            .onGloballyPositioned { coordinates ->
+                if (coordinates.size.width > 0 && coordinates.size.height > 0) {
+                    onLaidOut()
                 }
-                .then(
+            }
+            .then(
                 if (isLiquidGlass) {
                     Modifier.drawBackdrop(
                         backdrop = backdrop,
@@ -243,42 +350,41 @@ fun SmartSuggestionHost(
             .clip(suggestionShape)
             .then(interactiveHighlight.modifier)
             .then(interactiveHighlight.gestureModifier)
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                start = 12.dp,
+                top = 8.dp,
+                bottom = 8.dp,
+                end = 4.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                modifier = Modifier.padding(
-                    start = 12.dp,
-                    top = 8.dp,
-                    bottom = 8.dp,
-                    end = 4.dp
-                ),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Icon(
-                    Icons.Rounded.Lightbulb,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                    tint = accentContentColor
+            Icon(
+                Icons.Rounded.Lightbulb,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = accentContentColor
+            )
+            Column {
+                Text(
+                    "猜你想用 · ${suggestion.title}",
+                    color = primaryContentColor,
+                    style = MaterialTheme.typography.titleSmall
                 )
-                Column {
-                    Text(
-                        "猜你想用 · ${suggestion.title}",
-                        color = primaryContentColor,
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        suggestion.reason,
-                        color = secondaryContentColor,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                IconButton(onClick = runtime::dismissSuggestionByUser) {
-                    Icon(
-                        Icons.Rounded.Close,
-                        contentDescription = "关闭建议",
-                        tint = secondaryContentColor
-                    )
-                }
+                Text(
+                    suggestion.reason,
+                    color = secondaryContentColor,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            IconButton(onClick = runtime::dismissSuggestionByUser) {
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭建议",
+                    tint = secondaryContentColor
+                )
             }
         }
     }

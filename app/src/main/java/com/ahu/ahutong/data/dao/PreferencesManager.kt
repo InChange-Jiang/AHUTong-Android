@@ -29,6 +29,8 @@ object PreferencesKeys {
     val MODEL_QUALITY_TELEMETRY_PROFILES = stringSetPreferencesKey("model_quality_telemetry_profiles")
     val MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE =
         booleanPreferencesKey("model_quality_telemetry_onboarding_choice")
+    val MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION =
+        intPreferencesKey("model_quality_telemetry_consent_schema_version")
     val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
@@ -78,12 +80,22 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
 
     val modelQualityTelemetryOnboardingChoice: Flow<Boolean?> = context.dataStore.data.map { prefs ->
         prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE]
+            ?.takeIf {
+                prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION] ==
+                    MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION
+            }
     }
 
     suspend fun setModelQualityTelemetryOnboardingChoice(value: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_ONBOARDING_CHOICE] = value
+            prefs[PreferencesKeys.MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION] =
+                MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION
         }
+    }
+
+    companion object {
+        const val MODEL_QUALITY_TELEMETRY_CONSENT_SCHEMA_VERSION = 3
     }
 
     val behaviorRetentionDays: Flow<Int> = context.dataStore.data.map { prefs ->

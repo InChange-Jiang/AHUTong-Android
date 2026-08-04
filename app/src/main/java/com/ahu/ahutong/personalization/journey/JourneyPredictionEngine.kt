@@ -15,6 +15,7 @@ import com.ahu.ahutong.personalization.storage.JourneyShadowEvaluationEntity
 import com.ahu.ahutong.personalization.storage.JourneyTrainingSampleEntity
 import com.ahu.ahutong.personalization.storage.PendingJourneyEntity
 import com.ahu.ahutong.personalization.storage.transaction
+import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -46,7 +47,8 @@ class JourneyPredictionEngine @Inject constructor(
     private val tinyPredictor: TinyJourneyMlpPredictor,
     private val trainer: JourneyOnDeviceTrainer,
     private val promotionManager: JourneyPromotionManager,
-    private val modelStore: JourneyModelStateStore
+    private val modelStore: JourneyModelStateStore,
+    private val telemetryAggregateStore: TelemetryAggregateStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val locks = ConcurrentHashMap<String, Mutex>()
@@ -232,7 +234,9 @@ class JourneyPredictionEngine @Inject constructor(
         database.transaction {
             check(dao.resolveJourneyCas(pending.journeyId, pending.profileKey, targetActionId, terminalEventId) == 1)
             frequencyPredictor.update(input, targetActionId)
-            dao.insertJourneyEvaluation(evaluation(pending, targetActionId))
+            val shadowEvaluation = evaluation(pending, targetActionId)
+            dao.insertJourneyEvaluation(shadowEvaluation)
+            telemetryAggregateStore.contributeJourney(shadowEvaluation)
             trainer.enqueue(
                 JourneyTrainingSampleEntity(
                     sampleId = UUID.randomUUID().toString(),
@@ -274,6 +278,10 @@ class JourneyPredictionEngine @Inject constructor(
     private suspend fun evaluation(pending: PendingJourneyEntity, targetActionId: String): JourneyShadowEvaluationEntity {
         val stat = BinaryCodec.floats(pending.statProbabilities)
         val tiny = pending.tinyProbabilities?.let(BinaryCodec::floats)
+        val effective = FloatArray(stat.size) { index ->
+            (1f - pending.mixedLambda) * stat[index] +
+                pending.mixedLambda * (tiny?.get(index) ?: stat[index])
+        }
         val target = JourneyGoalCatalog.outputIndex.getValue(targetActionId)
         fun rank(values: FloatArray): Int = values.indices.sortedWith(compareByDescending<Int> { values[it] }.thenBy { it }).indexOf(target) + 1
         fun brier(values: FloatArray): Double = values.indices.sumOf { index ->
@@ -284,6 +292,7 @@ class JourneyPredictionEngine @Inject constructor(
         fun logLoss(values: FloatArray): Double = -ln(values[target].coerceAtLeast(1e-7f).toDouble())
         val statRank = rank(stat)
         val tinyRank = tiny?.let(::rank) ?: Int.MAX_VALUE
+        val effectiveRank = rank(effective)
         return JourneyShadowEvaluationEntity(
             profileKey = pending.profileKey,
             evaluationSeq = dao.maxJourneyEvaluationSeq(pending.profileKey) + 1,
@@ -296,12 +305,21 @@ class JourneyPredictionEngine @Inject constructor(
             statReciprocalRank = 1.0 / statRank,
             statBrier = brier(stat),
             statLogLoss = logLoss(stat),
+            statTop1Confidence = stat.maxOrNull()?.toDouble() ?: 0.0,
             tinyTop1 = if (tinyRank == 1) 1 else 0,
             tinyTop3 = if (tinyRank in 1..3) 1 else 0,
             tinyReciprocalRank = if (tiny == null) 0.0 else 1.0 / tinyRank,
             tinyBrier = tiny?.let(::brier) ?: 1.0,
             tinyLogLoss = tiny?.let(::logLoss) ?: 50.0,
             tinyTop1Confidence = tiny?.maxOrNull()?.toDouble() ?: 0.0,
+            effectiveTop1 = if (effectiveRank == 1) 1 else 0,
+            effectiveTop3 = if (effectiveRank in 1..3) 1 else 0,
+            effectiveReciprocalRank = 1.0 / effectiveRank,
+            effectiveBrier = brier(effective),
+            effectiveLogLoss = logLoss(effective),
+            effectiveTop1Confidence = effective.maxOrNull()?.toDouble() ?: 0.0,
+            tinyAvailable = tiny != null,
+            promotionEligible = pending.isPromotionHoldout && pending.interventionState == "NONE",
             tinyCheckpointId = pending.candidateCheckpointId ?: pending.activeCheckpointId,
             statInferenceNanos = pending.statInferenceNanos,
             tinyInferenceNanos = pending.tinyInferenceNanos ?: 0,

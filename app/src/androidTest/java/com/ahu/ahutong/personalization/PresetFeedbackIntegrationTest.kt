@@ -16,6 +16,8 @@ import com.ahu.ahutong.personalization.preset.PresetSubmission
 import com.ahu.ahutong.personalization.semantic.SemanticDomain
 import com.ahu.ahutong.personalization.storage.BehaviorDatabase
 import com.ahu.ahutong.personalization.storage.LocalParameterPresetEntity
+import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
+import com.ahu.ahutong.personalization.telemetry.TelemetryV3AggregateStore
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.util.UUID
@@ -43,7 +45,12 @@ class PresetFeedbackIntegrationTest {
             .build()
         store = PresetModelStateStore(context)
         store.reset(profile)
-        engine = PresetRankingEngine(database.behaviorDao(), store)
+        val dao = database.behaviorDao()
+        engine = PresetRankingEngine(
+            dao,
+            store,
+            TelemetryAggregateStore(dao, TelemetryV3AggregateStore(dao))
+        )
         database.behaviorDao().upsertLocalPreset(
             LocalParameterPresetEntity(
                 presetId = "natural-preset",

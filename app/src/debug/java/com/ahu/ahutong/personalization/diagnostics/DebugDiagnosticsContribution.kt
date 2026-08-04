@@ -68,6 +68,7 @@ import com.ahu.ahutong.personalization.runtime.SanitizedDiagnosticsSnapshot
 import com.ahu.ahutong.personalization.prefetch.PrefetchCoordinator
 import com.ahu.ahutong.personalization.prefetch.PrefetchDiagnostic
 import com.ahu.ahutong.personalization.prefetch.PrefetchState
+import com.ahu.ahutong.personalization.ui.SuggestionPolicy
 import java.time.LocalDate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -255,6 +256,8 @@ private fun DiagnosticsScreen(
                 } else {
                     EmptyDiagnosticsText("等待第一个有效预测机会")
                 }
+                OrdinaryNextActionGatePanel(state)
+                HorizontalDivider()
                 ProbabilityPanel("实际决策", "策略引擎最终使用的概率", state.effectiveProbabilities)
                 HorizontalDivider()
                 ProbabilityPanel("统计模型", "冷启动与故障兜底", state.statProbabilities)
@@ -299,7 +302,12 @@ private fun DiagnosticsScreen(
             PromotionSection(snapshot.promotionWindows)
         }
         item {
-            PrefetchAndTelemetrySection(prefetch.values.toList(), snapshot.pendingTelemetryReports)
+            PrefetchAndTelemetrySection(
+                prefetch.values.toList(),
+                snapshot.pendingTelemetryReports,
+                snapshot.telemetryProtocolVersion,
+                snapshot.telemetryV3Aggregates
+            )
         }
         item {
             TimelineSection(snapshot.recentTimeline)
@@ -420,6 +428,47 @@ private fun LearningSection(
         LabeledValue("统计模型开始学习", formatEpochDay(snapshot.statLearningStartedDay))
         LabeledValue("Tiny MLP 首次训练", formatEpochDay(snapshot.tinyTrainingStartedDay))
         LabeledValue("模型文件大小", formatBytes(snapshot.modelSizeBytes))
+    }
+}
+
+@Composable
+private fun OrdinaryNextActionGatePanel(state: RuntimeDiagnosticsState) {
+    val candidateProbability = state.ordinaryCandidateProbability
+    val competitorProbability = state.ordinaryCompetitorProbability
+    val margin = state.ordinaryProbabilityMargin
+    val reason = state.candidateRejectionReason
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile(
+                "候选概率",
+                candidateProbability?.let { "${(it * 100).roundToInt()}%" } ?: "--",
+                Modifier.weight(1f)
+            )
+            MetricTile(
+                "领先优势",
+                margin?.let { "${(it * 100).roundToInt()} 个百分点" } ?: "--",
+                Modifier.weight(1f)
+            )
+        }
+        Text(
+            "展示门槛：至少 ${(SuggestionPolicy.ORDINARY_NEXT_ACTION_MIN_CONFIDENCE * 100).roundToInt()}% · " +
+                "领先至少 ${(SuggestionPolicy.ORDINARY_NEXT_ACTION_MIN_MARGIN * 100).roundToInt()} 个百分点",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        state.ordinaryCompetitorAction?.let { competitor ->
+            Text(
+                "最强竞争者：${readableAction(competitor)} " +
+                    (competitorProbability?.let { "${(it * 100).roundToInt()}%" } ?: "--"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (reason != null && reason in ORDINARY_GATE_REASONS) {
+            StatusBadge(readableSuggestionBlockReason(reason), false)
+        } else if (candidateProbability != null) {
+            StatusBadge("普通下一步门禁通过", true)
+        }
     }
 }
 
@@ -667,7 +716,9 @@ private fun PromotionSection(windows: List<String>) {
 @Composable
 private fun PrefetchAndTelemetrySection(
     entries: List<PrefetchDiagnostic>,
-    pendingReports: Int
+    pendingReports: Int,
+    protocolVersion: Int,
+    v3Aggregates: List<String>
 ) {
     DiagnosticsSection(title = "预热与质量报告") {
         if (entries.isEmpty()) {
@@ -695,6 +746,23 @@ private fun PrefetchAndTelemetrySection(
         }
         HorizontalDivider()
         LabeledValue("待上传聚合报告", "$pendingReports 份")
+        LabeledValue("服务端协议", "v$protocolVersion")
+        if (protocolVersion < 3) {
+            Text(
+                "v3 扩展指标仅在本地按任务聚合；服务端启用 v3 前继续上传兼容的 v2 报告。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        HorizontalDivider()
+        Text("v3 本地聚合窗口", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (v3Aggregates.isEmpty()) {
+            EmptyDiagnosticsText("尚未形成 v3 聚合窗口")
+        } else {
+            v3Aggregates.forEach { line ->
+                Text(line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+        }
     }
 }
 
@@ -873,6 +941,10 @@ private fun readableSuggestionBlockReason(value: String): String = when (value) 
     "TARGETED_CONTEXT_HAS_PRIORITY" -> "正在优先处理更明确的设置变化"
     "HIGHER_PRIORITY_OFFER_ACTIVE" -> "已有更高优先级的建议正在处理"
     "WAITING_FOR_MODEL_RANKING" -> "多个合法候选正在等待模型排序"
+    "NO_ORGANICALLY_ELIGIBLE_ACTION" -> "没有具备自然使用历史的安全候选"
+    "BELOW_CONFIDENCE_THRESHOLD" -> "候选概率未达到 30%"
+    "INSUFFICIENT_PROBABILITY_MARGIN" -> "候选领先优势不足 8 个百分点"
+    "NON_SUGGESTIBLE_OUTPUT_DOMINATES" -> "模型更倾向于不展示或不可推荐动作"
     "CENSORED_UNTRACKED_OR_DEBUG_ROUTE" -> "进入调试或未跟踪页面，当前建议已取消"
     else -> value
 }
@@ -884,6 +956,13 @@ private fun isTransientSuggestionBlockReason(value: String): Boolean = value in 
     "OCCUPIED",
     "SURFACE_TEMPORARILY_OCCUPIED",
     "WAITING_FOR_MODEL_RANKING"
+)
+
+private val ORDINARY_GATE_REASONS = setOf(
+    "NO_ORGANICALLY_ELIGIBLE_ACTION",
+    "BELOW_CONFIDENCE_THRESHOLD",
+    "INSUFFICIENT_PROBABILITY_MARGIN",
+    "NON_SUGGESTIBLE_OUTPUT_DOMINATES"
 )
 
 private fun readableSemanticEvent(value: String?): String = when (value) {

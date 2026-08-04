@@ -69,6 +69,7 @@ import com.ahu.ahutong.personalization.training.TrainingFeedbackPolicy
 import com.ahu.ahutong.personalization.training.TrainingSliceResult
 import com.ahu.ahutong.personalization.telemetry.ModelQualityTelemetryManager
 import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
+import com.ahu.ahutong.personalization.telemetry.TelemetryDeliveryEvent
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
 import com.ahu.ahutong.personalization.ui.ActionPredictionProposal
 import com.ahu.ahutong.personalization.ui.ArbitratedPrediction
@@ -159,6 +160,10 @@ data class RuntimeDiagnosticsState(
     val suggestionIntervalRemainingMs: Long = 0L,
     val suggestionRetryAtElapsedMs: Long? = null,
     val candidateRejectionReason: String? = null,
+    val ordinaryCandidateProbability: Float? = null,
+    val ordinaryCompetitorAction: String? = null,
+    val ordinaryCompetitorProbability: Float? = null,
+    val ordinaryProbabilityMargin: Float? = null,
     val lastResolution: String? = null,
     val lastFailure: String? = null,
     val lastTraining: TrainingSliceResult? = null
@@ -178,6 +183,8 @@ data class SanitizedDiagnosticsSnapshot(
     val promotionWindows: List<String> = emptyList(),
     val recentTimeline: List<String> = emptyList(),
     val pendingTelemetryReports: Int = 0,
+    val telemetryProtocolVersion: Int = 2,
+    val telemetryV3Aggregates: List<String> = emptyList(),
     val recentSemanticEvents: List<String> = emptyList(),
     val recentSemanticChangeSets: List<String> = emptyList(),
     val pendingJourney: String? = null,
@@ -1042,6 +1049,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     suspend fun confirmSuggestionVisible(executionId: String): Boolean {
+        val activeProfile = profileKey ?: return false
         val offered = _uiState.value as? PredictionUiState.Suggestion ?: return false
         if (offered.executionId != executionId) return false
         if (offered.exposureConfirmed) return true
@@ -1098,6 +1106,12 @@ class BehaviorPredictionRuntime @Inject constructor(
                 ?.let(exposedTargetedChangeSets::add)
         }
         lastOrdinarySuggestionElapsedMs = shownAtElapsedMs
+        telemetryAggregateStore.recordDelivery(
+            profileKey = activeProfile,
+            lane = current.deliveryLane,
+            event = TelemetryDeliveryEvent.ENTERED_VISIBLE_SURFACE,
+            latencyMs = dao.pending(current.decisionId)?.let { shownAtElapsedMs - it.createdAtElapsedMs }
+        )
         updateDeliveryDiagnostics(
             lane = current.deliveryLane,
             offer = null,
@@ -1181,6 +1195,17 @@ class BehaviorPredictionRuntime @Inject constructor(
     }
 
     fun dismissSuggestionByUser() {
+        val current = _uiState.value as? PredictionUiState.Suggestion
+        val activeProfile = profileKey
+        if (current != null && current.exposureConfirmed && activeProfile != null) {
+            scope.launch {
+                telemetryAggregateStore.recordDelivery(
+                    activeProfile,
+                    current.deliveryLane,
+                    TelemetryDeliveryEvent.DISMISSED
+                )
+            }
+        }
         cancelSuggestionDeliveryState("DISMISSED_BY_USER")
     }
 
@@ -1193,6 +1218,13 @@ class BehaviorPredictionRuntime @Inject constructor(
                 it.resolutionStatus == "INVALIDATED_INTERVENTION_PREPARED" &&
                 it.interventionState == "PREPARED_SUGGESTION"
         }
+        profileKey?.let { activeProfile ->
+            telemetryAggregateStore.recordDelivery(
+                activeProfile,
+                state.deliveryLane,
+                TelemetryDeliveryEvent.CLICKED
+            )
+        }
         hideSuggestion()
         AppActionCatalog.spec(state.action).route?.let(::suppressNextRoute)
         recordActionIntent(
@@ -1202,7 +1234,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             deferNextOpportunity = true
         )
         rewardedPending?.let { pending ->
-            scope.launch { recordAcceptedSuggestionReward(pending, state.action) }
+            scope.launch { recordAcceptedSuggestionReward(pending, state.action, state.deliveryLane) }
         }
         return state.action
     }
@@ -1218,6 +1250,13 @@ class BehaviorPredictionRuntime @Inject constructor(
             ) {
                 _uiState.value = PredictionUiState.Hidden
                 suggestionExpiryJob = null
+                profileKey?.let { activeProfile ->
+                    telemetryAggregateStore.recordDelivery(
+                        activeProfile,
+                        current.deliveryLane,
+                        TelemetryDeliveryEvent.TIMED_OUT
+                    )
+                }
                 updateDeliveryDiagnostics(current.deliveryLane, null, null)
             }
         }
@@ -1386,6 +1425,11 @@ class BehaviorPredictionRuntime @Inject constructor(
                 "#${it.sequenceNo} ${it.eventType} ${it.actionId ?: "--"} ${it.source}"
             },
             pendingTelemetryReports = dao.pendingTelemetryReportCount(activeProfile),
+            telemetryProtocolVersion = com.ahu.ahutong.personalization.telemetry.TELEMETRY_SERVER_SCHEMA_VERSION,
+            telemetryV3Aggregates = dao.recentTelemetryV3AggregateWindows(activeProfile, 10).map {
+                "${it.task} ${it.state} n=${it.sampleCount} holdout=${it.naturalHoldoutSampleCount} " +
+                    "days=${it.windowStartEpochDay}..${it.windowEndEpochDay}"
+            },
             recentSemanticEvents = dao.recentSemanticEvents(activeProfile, 20).map {
                 "#${it.sequenceNo} ${it.eventFamily}/${it.domainId} ${it.semanticId} ${it.changeKind}${if (it.tainted) " TAINTED" else ""}"
             },
@@ -1601,6 +1645,7 @@ class BehaviorPredictionRuntime @Inject constructor(
                     current.candidateCheckpointId == model.candidate?.checkpointId &&
                         current.candidateCheckpointChecksum == model.candidate?.checksum
                 }
+                val effective = composeDecision(stat, tiny, input, preparing.profileKey, promotion)
                 val activated = current.copy(
                     preparationState = "PENDING",
                     statProbabilities = BinaryCodec.floats(stat.probabilities),
@@ -1613,11 +1658,11 @@ class BehaviorPredictionRuntime @Inject constructor(
                     candidateInferenceNanos = boundCandidate?.inferenceNanos,
                     statInferenceNanos = stat.inferenceNanos,
                     tinyInferenceNanos = tiny?.inferenceNanos,
-                    preparationFailure = if (tiny == null) "TINY_FORWARD_FAILED" else null
+                    preparationFailure = if (tiny == null) "TINY_FORWARD_FAILED" else null,
+                    effectiveProbabilities = BinaryCodec.floats(effective.probabilities)
                 )
                 dao.updatePending(activated)
                 registerDeadline(activated)
-                val effective = composeDecision(stat, tiny, input, preparing.profileKey, promotion)
                 val productScope = ProductCandidateResolver.resolve(
                     input.snapshot.semanticContext,
                     input.snapshot.contentContext,
@@ -1805,6 +1850,21 @@ class BehaviorPredictionRuntime @Inject constructor(
         opportunityContextGeneration: Long
     ) {
         if (pending.isPromotionHoldout) {
+            val holdoutLane = activeTargetedContext
+                ?.takeIf { it.decisionId == pending.decisionId }
+                ?.let { SuggestionDeliveryLane.TARGETED }
+                ?: SuggestionDeliveryLane.ORDINARY_NEXT_ACTION
+            telemetryAggregateStore.recordDelivery(
+                pending.profileKey,
+                holdoutLane,
+                TelemetryDeliveryEvent.OPPORTUNITY
+            )
+            telemetryAggregateStore.recordDelivery(
+                pending.profileKey,
+                holdoutLane,
+                TelemetryDeliveryEvent.BLOCKED,
+                SuggestionDeliveryBlockReason.HOLDOUT.name
+            )
             updateDeliveryDiagnostics(
                 lane = activeTargetedContext
                     ?.takeIf { it.decisionId == pending.decisionId }
@@ -1835,11 +1895,43 @@ class BehaviorPredictionRuntime @Inject constructor(
         )
         if (candidateScope == ProductCandidateScope.Suppress) return
         val targetedActions = (candidateScope as? ProductCandidateScope.Targeted)?.actions
-        val candidates = SuggestionPolicy.rankedCandidates(
-            effective,
-            dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet(),
-            requireOrganicHistory = candidateScope == ProductCandidateScope.Ordinary
-        ).filter { targetedActions == null || it.action in targetedActions }
+        val organicActionIds = dao.organicNonNoneTrainingActionIds(pending.profileKey).toSet()
+        val ordinaryAssessment = if (candidateScope == ProductCandidateScope.Ordinary) {
+            SuggestionPolicy.assessOrdinaryNextAction(effective, organicActionIds)
+        } else {
+            null
+        }
+        if (ordinaryAssessment != null) {
+            _diagnostics.value = _diagnostics.value.copy(
+                ordinaryCandidateProbability = ordinaryAssessment.candidateProbability,
+                ordinaryCompetitorAction = ordinaryAssessment.strongestCompetitorId,
+                ordinaryCompetitorProbability = ordinaryAssessment.strongestCompetitorProbability,
+                ordinaryProbabilityMargin = ordinaryAssessment.probabilityMargin,
+                candidateRejectionReason = ordinaryAssessment.rejectionReason?.name
+            )
+            ordinaryAssessment.rejectionReason?.let { reason ->
+                telemetryAggregateStore.recordDelivery(
+                    pending.profileKey,
+                    SuggestionDeliveryLane.ORDINARY_NEXT_ACTION,
+                    TelemetryDeliveryEvent.OPPORTUNITY
+                )
+                telemetryAggregateStore.recordDelivery(
+                    pending.profileKey,
+                    SuggestionDeliveryLane.ORDINARY_NEXT_ACTION,
+                    TelemetryDeliveryEvent.BLOCKED,
+                    reason.name
+                )
+            }
+        }
+        val candidates = if (ordinaryAssessment != null) {
+            listOfNotNull(ordinaryAssessment.candidate)
+        } else {
+            SuggestionPolicy.rankedCandidates(
+                effective,
+                organicActionIds,
+                requireOrganicHistory = false
+            ).filter { targetedActions == null || it.action in targetedActions }
+        }
         val next = candidates.firstOrNull()?.let {
             ActionPredictionProposal(PredictionTask.NEXT_ACTION, it.action, it.probability, pending.decisionId)
         }
@@ -1851,7 +1943,7 @@ class BehaviorPredictionRuntime @Inject constructor(
         val proposal = (PredictionArbiter.choose(0, journey, next) as? ArbitratedPrediction.Action)?.proposal
         if (proposal == null) {
             _diagnostics.value = _diagnostics.value.copy(
-                candidateRejectionReason = if (candidateScope is ProductCandidateScope.Targeted) {
+                candidateRejectionReason = ordinaryAssessment?.rejectionReason?.name ?: if (candidateScope is ProductCandidateScope.Targeted) {
                     "TARGETED_ACTION_UNAVAILABLE_OR_UNSAFE"
                 } else {
                     "NO_ORGANICALLY_ELIGIBLE_ACTION"
@@ -1864,6 +1956,11 @@ class BehaviorPredictionRuntime @Inject constructor(
             PredictionTask.NEXT_ACTION -> SuggestionDeliveryLane.ORDINARY_NEXT_ACTION
             PredictionTask.PRESET_RANKING -> return
         }
+        telemetryAggregateStore.recordDelivery(
+            pending.profileKey,
+            lane,
+            TelemetryDeliveryEvent.MODEL_GATE_PASSED
+        )
         val offer = PendingSuggestionOffer(
             decisionId = proposal.decisionId,
             contextGeneration = opportunityContextGeneration,
@@ -1885,7 +1982,8 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     private suspend fun recordAcceptedSuggestionReward(
         pending: PendingPredictionEntity,
-        action: AppActionId
+        action: AppActionId,
+        deliveryLane: SuggestionDeliveryLane
     ) {
         val targetIndex = AppActionCatalog.outputIndex[action.stableId] ?: return
         if (!BinaryCodec.booleans(pending.availabilityMask).getOrElse(targetIndex) { false }) return
@@ -1903,6 +2001,17 @@ class BehaviorPredictionRuntime @Inject constructor(
                 labelSource = TrainingFeedbackPolicy.SUGGESTION_ACCEPTED
             )
         )
+        telemetryAggregateStore.recordDelivery(
+            pending.profileKey,
+            deliveryLane,
+            TelemetryDeliveryEvent.COMPLETED
+        )
+        telemetryAggregateStore.recordDelivery(
+            pending.profileKey,
+            deliveryLane,
+            TelemetryDeliveryEvent.ASSISTED_REWARD,
+            assistedRewardWeight = weight.toDouble()
+        )
     }
 
     @Synchronized
@@ -1911,12 +2020,36 @@ class BehaviorPredictionRuntime @Inject constructor(
             _suggestionOverlayBlocked.value || externalSuggestionHostBlocked ||
             !isSuggestionSurfaceAllowed(lastRoute)
         ) {
+            profileKey?.let { activeProfile ->
+                scope.launch {
+                    telemetryAggregateStore.recordDelivery(
+                        activeProfile,
+                        SuggestionDeliveryLane.TARGETED,
+                        TelemetryDeliveryEvent.OPPORTUNITY
+                    )
+                    telemetryAggregateStore.recordDelivery(
+                        activeProfile,
+                        SuggestionDeliveryLane.TARGETED,
+                        TelemetryDeliveryEvent.BLOCKED,
+                        SuggestionDeliveryBlockReason.SAFETY_GATE.name
+                    )
+                }
+            }
             updateDeliveryDiagnostics(
                 SuggestionDeliveryLane.TARGETED,
                 null,
                 SuggestionDeliveryBlockReason.SAFETY_GATE.name
             )
             return
+        }
+        profileKey?.let { activeProfile ->
+            scope.launch {
+                telemetryAggregateStore.recordDelivery(
+                    activeProfile,
+                    SuggestionDeliveryLane.TARGETED,
+                    TelemetryDeliveryEvent.MODEL_GATE_PASSED
+                )
+            }
         }
         if (!registerPendingOffer(offer)) return
         scheduleTargetedRetry(offer, offer.earliestDisplayElapsedMs, "TARGETED_DEBOUNCE")
@@ -1931,6 +2064,15 @@ class BehaviorPredictionRuntime @Inject constructor(
             existing.lane.priority > offer.lane.priority
         ) return false
         pendingSuggestionOffer = offer
+        profileKey?.let { activeProfile ->
+            scope.launch {
+                telemetryAggregateStore.recordDelivery(
+                    activeProfile,
+                    offer.lane,
+                    TelemetryDeliveryEvent.OPPORTUNITY
+                )
+            }
+        }
         updateDeliveryDiagnostics(offer.lane, offer, null)
         return true
     }
@@ -1992,6 +2134,16 @@ class BehaviorPredictionRuntime @Inject constructor(
         val now = SystemClock.elapsedRealtime()
         if (retryAtElapsedMs >= offer.deadlineElapsedMs || now >= offer.deadlineElapsedMs) {
             clearPendingOfferIfCurrent(offer)
+            profileKey?.let { activeProfile ->
+                scope.launch {
+                    telemetryAggregateStore.recordDelivery(
+                        activeProfile,
+                        SuggestionDeliveryLane.TARGETED,
+                        TelemetryDeliveryEvent.BLOCKED,
+                        SuggestionDeliveryBlockReason.EXPIRED.name
+                    )
+                }
+            }
             updateDeliveryDiagnostics(
                 SuggestionDeliveryLane.TARGETED,
                 null,
@@ -2031,6 +2183,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         val availableTargets = offer.targetActions.filterTo(linkedSetOf()) { isActionAvailable(it, pending) }
         if (availableTargets.isEmpty()) {
             clearPendingOfferIfCurrent(offer)
+            telemetryAggregateStore.recordDelivery(
+                pending.profileKey,
+                SuggestionDeliveryLane.TARGETED,
+                TelemetryDeliveryEvent.BLOCKED,
+                "TARGETED_ACTION_UNAVAILABLE_OR_UNSAFE"
+            )
             updateDeliveryDiagnostics(
                 SuggestionDeliveryLane.TARGETED,
                 null,
@@ -2097,6 +2255,12 @@ class BehaviorPredictionRuntime @Inject constructor(
                 )
             } else {
                 clearPendingOfferIfCurrent(offer)
+                telemetryAggregateStore.recordDelivery(
+                    pending.profileKey,
+                    offer.lane,
+                    TelemetryDeliveryEvent.BLOCKED,
+                    assessment.blockReason?.name
+                )
                 updateDeliveryDiagnostics(offer.lane, null, assessment.blockReason?.name)
             }
             return
@@ -2114,6 +2278,12 @@ class BehaviorPredictionRuntime @Inject constructor(
             )
         } else {
             clearPendingOfferIfCurrent(offer)
+            telemetryAggregateStore.recordDelivery(
+                pending.profileKey,
+                offer.lane,
+                TelemetryDeliveryEvent.BLOCKED,
+                "SURFACE_OR_SAFETY_GATE_REJECTED"
+            )
             updateDeliveryDiagnostics(offer.lane, null, "SURFACE_OR_SAFETY_GATE_REJECTED")
         }
     }

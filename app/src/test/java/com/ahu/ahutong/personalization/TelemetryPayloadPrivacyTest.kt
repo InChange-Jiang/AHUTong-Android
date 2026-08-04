@@ -10,6 +10,13 @@ import com.ahu.ahutong.personalization.telemetry.ModelQualityBatchRequest
 import com.ahu.ahutong.personalization.telemetry.ModelQualityEvaluationReport
 import com.ahu.ahutong.personalization.telemetry.PairwiseAggregate
 import com.ahu.ahutong.personalization.telemetry.TelemetryPayloadValidator
+import com.ahu.ahutong.personalization.telemetry.DELIVERY_BLOCK_REASONS
+import com.ahu.ahutong.personalization.telemetry.ModelQualityV3BatchRequest
+import com.ahu.ahutong.personalization.telemetry.ModelQualityV3TaskReport
+import com.ahu.ahutong.personalization.telemetry.TelemetryV3PayloadValidator
+import com.ahu.ahutong.personalization.telemetry.V3DeliveryAggregate
+import com.ahu.ahutong.personalization.telemetry.V3DeliveryLaneAggregate
+import com.ahu.ahutong.personalization.telemetry.V3NamedCount
 import com.ahu.ahutong.personalization.telemetry.StoredActionMetric
 import com.ahu.ahutong.personalization.telemetry.sanitizeStoredActionMetrics
 import com.google.gson.Gson
@@ -35,6 +42,36 @@ class TelemetryPayloadPrivacyTest {
     @Test
     fun validAggregatePassesStrictClientValidation() {
         TelemetryPayloadValidator.requireValid(validReport())
+    }
+
+    @Test
+    fun v3ReportContainsOnlyTaskLevelAggregates() {
+        val report = validV3Report()
+        TelemetryV3PayloadValidator.requireValid(report)
+        val json = Gson().toJson(ModelQualityV3BatchRequest(batchId = "random-v3-batch", reports = listOf(report)))
+        listOf(
+            "studentId", "account", "phone", "androidId", "imei", "route", "journeySequence",
+            "semanticId", "settingValue", "candidateId", "fingerprint", "featureVector",
+            "probabilities", "decisionId", "checkpointId"
+        ).forEach { forbidden -> assertFalse(json.contains(forbidden, ignoreCase = true), forbidden) }
+        assertTrue(json.contains("enteredVisibleSurface"))
+        assertTrue(json.contains("naturalHoldoutSampleCount"))
+    }
+
+    @Test
+    fun v3ReportRejectsSparseTaskWindowAndUnknownBlockReason() {
+        assertFailsWith<IllegalArgumentException> {
+            TelemetryV3PayloadValidator.requireValid(validV3Report().copy(sampleCount = 63))
+        }
+        val invalidLane = requireNotNull(validV3Report().delivery).lanes.single().copy(
+            blocked = listOf(V3NamedCount("RAW_ROUTE_NAME", 1))
+        )
+        assertTrue("RAW_ROUTE_NAME" !in DELIVERY_BLOCK_REASONS)
+        assertFailsWith<IllegalArgumentException> {
+            TelemetryV3PayloadValidator.requireValid(
+                validV3Report().copy(delivery = V3DeliveryAggregate(listOf(invalidLane)))
+            )
+        }
     }
 
     @Test
@@ -129,4 +166,38 @@ class TelemetryPayloadPrivacyTest {
             pairwise = PairwiseAggregate(15, 10, 7, 32)
         )
     }
+
+    private fun validV3Report() = ModelQualityV3TaskReport(
+        reportId = "00000000-0000-4000-8000-000000000011",
+        telemetryId = "00000000-0000-4000-8000-000000000012",
+        modelGenerationId = "00000000-0000-4000-8000-000000000013",
+        windowId = "00000000-0000-4000-8000-000000000014",
+        revocationCapabilityHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        task = "DELIVERY",
+        windowStartDay = "2026-08-01",
+        windowEndDay = "2026-08-05",
+        sampleCount = 64,
+        naturalHoldoutSampleCount = 0,
+        appVersionCode = 100,
+        featureSchemaVersion = FeatureExtractor.FEATURE_SCHEMA_VERSION,
+        outputSchemaVersion = AppActionCatalog.OUTPUT_SCHEMA_VERSION,
+        metricSchemaVersion = 2,
+        delivery = V3DeliveryAggregate(
+            lanes = listOf(
+                V3DeliveryLaneAggregate(
+                    lane = "ORDINARY_NEXT_ACTION",
+                    opportunities = 20,
+                    modelGatePassed = 12,
+                    enteredVisibleSurface = 8,
+                    clicked = 4,
+                    completed = 3,
+                    dismissed = 2,
+                    timedOut = 2,
+                    blocked = listOf(V3NamedCount("MODEL_CONFIDENCE", 8)),
+                    assistedRewardCount = 3,
+                    assistedRewardWeightSum = 0.75
+                )
+            )
+        )
+    )
 }

@@ -144,7 +144,7 @@ class SuggestionDeliveryPolicyTest {
     }
 
     @Test
-    fun unmountedPopupCannotConfirmExposure() {
+    fun unattachedSuggestionWindowCannotConfirmExposure() {
         val offer = offer(SuggestionDeliveryLane.TARGETED, AppActionId.OPEN_HOME)
 
         assertFalse(
@@ -165,6 +165,21 @@ class SuggestionDeliveryPolicyTest {
                 enteredVisiblePopup = true
             )
         )
+    }
+
+    @Test
+    fun suggestionWindowIsNonModalAndDoesNotDimBusinessSheets() {
+        val host = File(
+            repositoryRoot(),
+            "app/src/main/java/com/ahu/ahutong/personalization/ui/SmartSuggestionHost.kt"
+        ).readText()
+
+        assertTrue(host.contains("WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE"))
+        assertTrue(host.contains("WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL"))
+        assertTrue(host.contains("window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)"))
+        assertTrue(host.contains("width = WindowManager.LayoutParams.WRAP_CONTENT"))
+        assertTrue(host.contains("height = WindowManager.LayoutParams.WRAP_CONTENT"))
+        assertTrue(host.contains("gravity = Gravity.END or Gravity.BOTTOM"))
     }
 
     @Test

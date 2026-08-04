@@ -53,7 +53,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
         val database = BehaviorDatabaseFactory.open(context)
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(2, sqlite.version)
+            assertEquals(3, sqlite.version)
             sqlite.query(
                 "SELECT COUNT(*) FROM learning_state WHERE profileKey = 'rollback-profile'"
             ).use { cursor ->
@@ -88,7 +88,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
 
         val database = BehaviorDatabaseFactory.open(context)
         try {
-            assertEquals(2, database.openHelper.writableDatabase.version)
+            assertEquals(3, database.openHelper.writableDatabase.version)
         } finally {
             database.close()
         }
@@ -107,7 +107,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
     }
 
     @Test
-    fun futureCurrentVersionFallsBackToFreshVersionTwoStorage() {
+    fun futureCurrentVersionFallsBackToFreshVersionThreeStorage() {
         cleanUp()
         SQLiteDatabase.openOrCreateDatabase(
             context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2),
@@ -120,7 +120,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
         val database = BehaviorDatabaseFactory.open(context)
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(2, sqlite.version)
+            assertEquals(3, sqlite.version)
             sqlite.query(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'behavior_event'"
             ).use { cursor ->

@@ -58,7 +58,11 @@ class ModelQualityTelemetryManager @Inject constructor(
 
     suspend fun onNewEvaluation(profileKey: String) {
         if (!isConsentEnabled(profileKey)) return
-        maybeCreateReport(profileKey)
+        if (TELEMETRY_SERVER_SCHEMA_VERSION >= 3) {
+            maybeCreateV3Report(profileKey)
+        } else {
+            maybeCreateReport(profileKey)
+        }
     }
 
     suspend fun revoke(profileKey: String, deleteRemote: Boolean) {
@@ -67,6 +71,7 @@ class ModelQualityTelemetryManager @Inject constructor(
         if (state == null) {
             dao.deleteTelemetryReports(profileKey)
             dao.deleteTelemetryAggregateWindows(profileKey)
+            dao.deleteTelemetryV3AggregateWindows(profileKey)
             workManager.cancelUniqueWork(WORK_NAME)
             return
         }
@@ -89,6 +94,7 @@ class ModelQualityTelemetryManager @Inject constructor(
         } else {
             dao.deleteTelemetryReports(profileKey)
             dao.deleteTelemetryAggregateWindows(profileKey)
+            dao.deleteTelemetryV3AggregateWindows(profileKey)
             dao.deleteTelemetryState(profileKey)
             secretStore.delete(state.revocationKeyAlias)
         }
@@ -199,6 +205,93 @@ class ModelQualityTelemetryManager @Inject constructor(
         )
         dao.trimTelemetryReports(profileKey, MAX_QUEUED_REPORTS)
         dao.deleteOldTerminalTelemetryAggregateWindows(now - TERMINAL_WINDOW_TTL_MS)
+        dao.deleteOldTerminalTelemetryV3AggregateWindows(now - TERMINAL_WINDOW_TTL_MS)
+        scheduleUpload()
+    }
+
+    private suspend fun maybeCreateV3Report(profileKey: String) {
+        val state = dao.telemetryState(profileKey) ?: return
+        val today = LocalDate.now(ZoneOffset.UTC).toEpochDay()
+        if (state.lastReportCreatedEpochDay == today || state.lifecycleState != "ACTIVE") return
+        var window = dao.nextClosedTelemetryV3AggregateWindow(profileKey, state.consentLifecycleId)
+        while (window != null && (
+                window.telemetryId != state.telemetryId ||
+                    window.modelGenerationId != state.modelGenerationId ||
+                    window.sampleCount < TELEMETRY_V3_MIN_TASK_SAMPLES
+                )
+        ) {
+            dao.transitionTelemetryV3AggregateWindow(
+                window.windowId,
+                expectedState = "CLOSED",
+                state = "SUPPRESSED",
+                updatedAtEpochMs = System.currentTimeMillis()
+            )
+            window = dao.nextClosedTelemetryV3AggregateWindow(profileKey, state.consentLifecycleId)
+        }
+        window ?: return
+        val aggregate = aggregateStore.readV3Aggregate(window.aggregateJson)
+        val capability = secretStore.decrypt(state.revocationKeyAlias, state.encryptedRevocationCapability)
+        val reportId = UUID.randomUUID().toString()
+        val report = ModelQualityV3TaskReport(
+            reportId = reportId,
+            telemetryId = state.telemetryId,
+            modelGenerationId = window.modelGenerationId,
+            windowId = window.windowId,
+            revocationCapabilityHash = sha256(capability),
+            task = window.task,
+            windowStartDay = LocalDate.ofEpochDay(window.windowStartEpochDay).toString(),
+            windowEndDay = LocalDate.ofEpochDay(window.windowEndEpochDay).toString(),
+            sampleCount = window.sampleCount,
+            naturalHoldoutSampleCount = window.naturalHoldoutSampleCount,
+            appVersionCode = window.appVersionCode,
+            featureSchemaVersion = window.featureSchemaVersion,
+            outputSchemaVersion = window.outputSchemaVersion,
+            metricSchemaVersion = window.metricSchemaVersion,
+            classification = aggregate.classification,
+            ranking = aggregate.ranking,
+            candidateShadow = aggregate.candidateShadow,
+            delivery = aggregate.delivery
+        )
+        TelemetryV3PayloadValidator.requireValid(report)
+        val reportJson = gson.toJson(report)
+        val batchId = UUID.randomUUID().toString()
+        val exactBody = gson.toJson(ModelQualityV3BatchRequest(batchId = batchId, reports = listOf(report)))
+        if (exactBody.toByteArray(Charsets.UTF_8).size > MAX_REPORT_BYTES) {
+            dao.transitionTelemetryV3AggregateWindow(
+                window.windowId,
+                expectedState = "CLOSED",
+                state = "SUPPRESSED",
+                updatedAtEpochMs = System.currentTimeMillis()
+            )
+            return
+        }
+        val now = System.currentTimeMillis()
+        dao.queueTelemetryV3Report(
+            TelemetryReportEntity(
+                reportId = reportId,
+                batchId = batchId,
+                profileKey = profileKey,
+                consentLifecycleId = state.consentLifecycleId,
+                telemetryId = state.telemetryId,
+                modelGenerationId = window.modelGenerationId,
+                windowId = window.windowId,
+                payloadJson = reportJson,
+                payloadSha256Hex = sha256(reportJson),
+                exactRequestBodyJson = exactBody,
+                bodySha256Hex = sha256(exactBody),
+                state = "READY",
+                attemptCount = 0,
+                nextAttemptEpochMs = now,
+                lastAttemptEpochDay = null,
+                createdAtEpochMs = now,
+                expiresAtEpochMs = now + REPORT_TTL_MS,
+                schemaVersion = 3
+            ),
+            state.copy(lastReportCreatedEpochDay = today, updatedAtEpochMs = now),
+            aggregateWindowId = window.windowId
+        )
+        dao.trimTelemetryReports(profileKey, MAX_QUEUED_REPORTS)
+        dao.deleteOldTerminalTelemetryV3AggregateWindows(now - TERMINAL_WINDOW_TTL_MS)
         scheduleUpload()
     }
 
@@ -230,6 +323,14 @@ class ModelQualityTelemetryManager @Inject constructor(
         val highWatermark = dao.maxEvaluationSeq(state.profileKey)
         dao.openTelemetryAggregateWindow(state.profileKey, state.consentLifecycleId)?.let { open ->
             dao.transitionTelemetryAggregateWindow(
+                open.windowId,
+                expectedState = "OPEN",
+                state = "SUPPRESSED",
+                updatedAtEpochMs = System.currentTimeMillis()
+            )
+        }
+        dao.openTelemetryV3AggregateWindows(state.profileKey).forEach { open ->
+            dao.transitionTelemetryV3AggregateWindow(
                 open.windowId,
                 expectedState = "OPEN",
                 state = "SUPPRESSED",

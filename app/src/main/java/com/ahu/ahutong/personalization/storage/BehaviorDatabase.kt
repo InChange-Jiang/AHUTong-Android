@@ -30,6 +30,7 @@ import javax.inject.Singleton
         TelemetryReportEntity::class,
         TelemetryStateEntity::class,
         TelemetryAggregateWindowEntity::class,
+        TelemetryV3AggregateWindowEntity::class,
         TelemetryDeletionTombstoneEntity::class,
         SemanticEventEntity::class,
         SemanticChangeSetEntity::class,
@@ -46,7 +47,7 @@ import javax.inject.Singleton
         PresetTrainingSampleEntity::class,
         PresetShadowEvaluationEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class BehaviorDatabase : RoomDatabase() {

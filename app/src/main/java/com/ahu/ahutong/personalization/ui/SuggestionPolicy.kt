@@ -10,6 +10,24 @@ internal data class SuggestionCandidate(
     val probability: Float
 )
 
+internal enum class OrdinaryNextActionGateReason {
+    NO_ORGANICALLY_ELIGIBLE_ACTION,
+    BELOW_CONFIDENCE_THRESHOLD,
+    INSUFFICIENT_PROBABILITY_MARGIN,
+    NON_SUGGESTIBLE_OUTPUT_DOMINATES
+}
+
+internal data class OrdinaryNextActionGateAssessment(
+    val candidate: SuggestionCandidate?,
+    val candidateProbability: Float?,
+    val strongestCompetitorId: String?,
+    val strongestCompetitorProbability: Float?,
+    val probabilityMargin: Float?,
+    val rejectionReason: OrdinaryNextActionGateReason?
+) {
+    val accepted: Boolean get() = candidate != null && rejectionReason == null
+}
+
 enum class SuggestionDeliveryLane(val priority: Int) {
     TARGETED(3),
     ORDINARY_JOURNEY(2),
@@ -47,6 +65,8 @@ internal object SuggestionPolicy {
     const val TARGETED_CHANGE_DEBOUNCE_MS = 250L
     const val TARGETED_MIN_INTERVAL_MS = 10_000L
     const val ORDINARY_MIN_INTERVAL_MS = 30_000L
+    const val ORDINARY_NEXT_ACTION_MIN_CONFIDENCE = 0.30f
+    const val ORDINARY_NEXT_ACTION_MIN_MARGIN = 0.08f
     const val OCCUPIED_RETRY_DELAY_MS = 250L
 
     fun remainingVisibilityFraction(
@@ -178,4 +198,46 @@ internal object SuggestionPolicy {
         if (!spec.suggestible || spec.sideEffect == SideEffect.TRANSACTION) return@mapNotNull null
         SuggestionCandidate(action, probability)
     }
+
+    fun assessOrdinaryNextAction(
+        prediction: NextActionProbabilityVector,
+        organicActionIds: Set<String>
+    ): OrdinaryNextActionGateAssessment {
+        val candidate = rankedCandidates(prediction, organicActionIds).firstOrNull()
+            ?: return OrdinaryNextActionGateAssessment(
+                candidate = null,
+                candidateProbability = null,
+                strongestCompetitorId = null,
+                strongestCompetitorProbability = null,
+                probabilityMargin = null,
+                rejectionReason = OrdinaryNextActionGateReason.NO_ORGANICALLY_ELIGIBLE_ACTION
+            )
+        val candidateId = candidate.action.stableId
+        val competitorIndex = prediction.outputIds.indices
+            .asSequence()
+            .filter { prediction.outputIds[it] != candidateId }
+            .maxByOrNull { prediction.probabilities[it] }
+        val competitorId = competitorIndex?.let(prediction.outputIds::get)
+        val competitorProbability = competitorIndex?.let(prediction.probabilities::get)
+        val margin = competitorProbability?.let { candidate.probability - it } ?: candidate.probability
+        val reason = when {
+            candidate.probability < ORDINARY_NEXT_ACTION_MIN_CONFIDENCE ->
+                OrdinaryNextActionGateReason.BELOW_CONFIDENCE_THRESHOLD
+            margin + GATE_EPSILON < ORDINARY_NEXT_ACTION_MIN_MARGIN && competitorProbability != null && competitorProbability > candidate.probability ->
+                OrdinaryNextActionGateReason.NON_SUGGESTIBLE_OUTPUT_DOMINATES
+            margin + GATE_EPSILON < ORDINARY_NEXT_ACTION_MIN_MARGIN ->
+                OrdinaryNextActionGateReason.INSUFFICIENT_PROBABILITY_MARGIN
+            else -> null
+        }
+        return OrdinaryNextActionGateAssessment(
+            candidate = candidate.takeIf { reason == null },
+            candidateProbability = candidate.probability,
+            strongestCompetitorId = competitorId,
+            strongestCompetitorProbability = competitorProbability,
+            probabilityMargin = margin,
+            rejectionReason = reason
+        )
+    }
+
+    private const val GATE_EPSILON = 1e-6f
 }

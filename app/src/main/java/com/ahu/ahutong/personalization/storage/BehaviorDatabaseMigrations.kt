@@ -10,6 +10,12 @@ object BehaviorDatabaseMigrations {
         }
     }
 
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            telemetryV3Statements.forEach(db::execSQL)
+        }
+    }
+
     private val statements = listOf(
         """CREATE TABLE IF NOT EXISTS `semantic_event` (`eventId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `sequenceNo` INTEGER NOT NULL, `eventFamily` TEXT NOT NULL, `domainId` TEXT NOT NULL, `semanticId` TEXT NOT NULL, `changeKind` TEXT NOT NULL, `coarseValueBucket` TEXT NOT NULL, `route` TEXT, `affectedCandidateSetVersion` INTEGER NOT NULL, `source` TEXT NOT NULL, `committedAtEpochDay` INTEGER NOT NULL, `occurredAtElapsedMs` INTEGER NOT NULL, `semanticSchemaVersion` INTEGER NOT NULL, `tainted` INTEGER NOT NULL, `mutationBatchId` TEXT NOT NULL, `changeSetId` TEXT NOT NULL, PRIMARY KEY(`eventId`))""",
         "CREATE INDEX IF NOT EXISTS `index_semantic_event_profileKey_sequenceNo` ON `semantic_event` (`profileKey`, `sequenceNo`)",
@@ -49,5 +55,36 @@ object BehaviorDatabaseMigrations {
         "CREATE INDEX IF NOT EXISTS `index_preset_training_sample_profileKey_domainId_label` ON `preset_training_sample` (`profileKey`, `domainId`, `label`)",
         """CREATE TABLE IF NOT EXISTS `preset_shadow_evaluation` (`rowId` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `profileKey` TEXT NOT NULL, `domainId` TEXT NOT NULL, `opportunityId` TEXT NOT NULL, `candidateId` TEXT NOT NULL, `label` INTEGER NOT NULL, `statScore` REAL NOT NULL, `tinyScore` REAL NOT NULL, `recentBaselineScore` REAL NOT NULL, `frequencyBaselineScore` REAL NOT NULL, `tinyCheckpointId` TEXT NOT NULL, `occurredEpochDay` INTEGER NOT NULL, `featureSchemaVersion` INTEGER NOT NULL, `evaluationSource` TEXT NOT NULL, `naturalHoldoutEligible` INTEGER NOT NULL)""",
         "CREATE UNIQUE INDEX IF NOT EXISTS `index_preset_shadow_evaluation_profileKey_domainId_opportunityId_candidateId` ON `preset_shadow_evaluation` (`profileKey`, `domainId`, `opportunityId`, `candidateId`)"
+    )
+
+    private val telemetryV3Statements = listOf(
+        "ALTER TABLE `pending_prediction` ADD COLUMN `effectiveProbabilities` BLOB",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveTop1` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveTop3` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveReciprocalRank` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveBrier` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveLogLoss` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `effectiveTop1Confidence` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `recentTop1` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `recentBrier` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `recentLogLoss` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `recentTop1Confidence` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `timeTop1` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `timeBrier` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `timeLogLoss` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `shadow_evaluation` ADD COLUMN `timeTop1Confidence` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveTop1` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `statTop1Confidence` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveTop3` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveReciprocalRank` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveBrier` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveLogLoss` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `effectiveTop1Confidence` REAL NOT NULL DEFAULT 0.0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `tinyAvailable` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `journey_shadow_evaluation` ADD COLUMN `promotionEligible` INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE `telemetry_report` ADD COLUMN `schemaVersion` INTEGER NOT NULL DEFAULT 2",
+        """CREATE TABLE IF NOT EXISTS `telemetry_v3_aggregate_window` (`windowId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `consentLifecycleId` TEXT NOT NULL, `telemetryId` TEXT NOT NULL, `modelGenerationId` TEXT NOT NULL, `task` TEXT NOT NULL, `windowStartEpochDay` INTEGER NOT NULL, `windowEndEpochDay` INTEGER NOT NULL, `sampleCount` INTEGER NOT NULL, `naturalHoldoutSampleCount` INTEGER NOT NULL, `aggregateJson` TEXT NOT NULL, `appVersionCode` INTEGER NOT NULL, `featureSchemaVersion` INTEGER NOT NULL, `outputSchemaVersion` INTEGER NOT NULL, `metricSchemaVersion` INTEGER NOT NULL, `state` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`windowId`))""",
+        "CREATE INDEX IF NOT EXISTS `index_telemetry_v3_aggregate_window_profileKey_consentLifecycleId_task_state_createdAtEpochMs` ON `telemetry_v3_aggregate_window` (`profileKey`, `consentLifecycleId`, `task`, `state`, `createdAtEpochMs`)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS `index_telemetry_v3_aggregate_window_windowId` ON `telemetry_v3_aggregate_window` (`windowId`)"
     )
 }

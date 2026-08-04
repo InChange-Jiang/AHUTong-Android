@@ -335,6 +335,51 @@ abstract class BehaviorDao {
     @Query("DELETE FROM telemetry_aggregate_window WHERE state IN ('CONSUMED', 'SUPPRESSED') AND updatedAtEpochMs < :beforeEpochMs")
     abstract suspend fun deleteOldTerminalTelemetryAggregateWindows(beforeEpochMs: Long)
 
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    abstract suspend fun insertTelemetryV3AggregateWindow(value: TelemetryV3AggregateWindowEntity)
+
+    @Update
+    abstract suspend fun updateTelemetryV3AggregateWindow(value: TelemetryV3AggregateWindowEntity)
+
+    @Query("SELECT * FROM telemetry_v3_aggregate_window WHERE profileKey = :profileKey AND consentLifecycleId = :consentLifecycleId AND task = :task AND state = 'OPEN' ORDER BY createdAtEpochMs DESC LIMIT 1")
+    abstract suspend fun openTelemetryV3AggregateWindow(
+        profileKey: String,
+        consentLifecycleId: String,
+        task: String
+    ): TelemetryV3AggregateWindowEntity?
+
+    @Query("SELECT * FROM telemetry_v3_aggregate_window WHERE profileKey = :profileKey AND state = 'OPEN'")
+    abstract suspend fun openTelemetryV3AggregateWindows(profileKey: String): List<TelemetryV3AggregateWindowEntity>
+
+    @Query("SELECT * FROM telemetry_v3_aggregate_window WHERE profileKey = :profileKey AND consentLifecycleId = :consentLifecycleId AND state = 'CLOSED' ORDER BY createdAtEpochMs LIMIT 1")
+    abstract suspend fun nextClosedTelemetryV3AggregateWindow(
+        profileKey: String,
+        consentLifecycleId: String
+    ): TelemetryV3AggregateWindowEntity?
+
+    @Query("UPDATE telemetry_v3_aggregate_window SET state = :state, updatedAtEpochMs = :updatedAtEpochMs WHERE windowId = :windowId AND state = :expectedState")
+    abstract suspend fun transitionTelemetryV3AggregateWindow(
+        windowId: String,
+        expectedState: String,
+        state: String,
+        updatedAtEpochMs: Long
+    ): Int
+
+    @Query("DELETE FROM telemetry_v3_aggregate_window WHERE profileKey = :profileKey")
+    abstract suspend fun deleteTelemetryV3AggregateWindows(profileKey: String)
+
+    @Query("DELETE FROM telemetry_v3_aggregate_window WHERE consentLifecycleId = :consentLifecycleId")
+    abstract suspend fun deleteTelemetryV3AggregateWindowsForLifecycle(consentLifecycleId: String)
+
+    @Query("DELETE FROM telemetry_v3_aggregate_window WHERE state IN ('CONSUMED', 'SUPPRESSED') AND updatedAtEpochMs < :beforeEpochMs")
+    abstract suspend fun deleteOldTerminalTelemetryV3AggregateWindows(beforeEpochMs: Long)
+
+    @Query("SELECT * FROM telemetry_v3_aggregate_window WHERE profileKey = :profileKey ORDER BY createdAtEpochMs DESC LIMIT :limit")
+    abstract suspend fun recentTelemetryV3AggregateWindows(
+        profileKey: String,
+        limit: Int
+    ): List<TelemetryV3AggregateWindowEntity>
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertTelemetryReport(value: TelemetryReportEntity): Long
 
@@ -353,6 +398,24 @@ abstract class BehaviorDao {
                 updatedAtEpochMs = report.createdAtEpochMs
             ) == 1
         ) { "telemetry aggregate window was not closed" }
+        upsertTelemetryState(updatedState)
+    }
+
+    @Transaction
+    open suspend fun queueTelemetryV3Report(
+        report: TelemetryReportEntity,
+        updatedState: TelemetryStateEntity,
+        aggregateWindowId: String
+    ) {
+        check(insertTelemetryReport(report) != -1L) { "telemetry report identity already exists" }
+        check(
+            transitionTelemetryV3AggregateWindow(
+                aggregateWindowId,
+                expectedState = "CLOSED",
+                state = "CONSUMED",
+                updatedAtEpochMs = report.createdAtEpochMs
+            ) == 1
+        ) { "telemetry v3 aggregate window was not closed" }
         upsertTelemetryState(updatedState)
     }
 
@@ -413,6 +476,7 @@ abstract class BehaviorDao {
         insertDeletionTombstone(tombstone)
         deleteTelemetryReportsForLifecycle(consentLifecycleId)
         deleteTelemetryAggregateWindowsForLifecycle(consentLifecycleId)
+        deleteTelemetryV3AggregateWindowsForLifecycle(consentLifecycleId)
         deleteTelemetryState(profileKey)
     }
 
@@ -680,6 +744,7 @@ abstract class BehaviorDao {
         deleteTargetedFeedback(profileKey)
         deleteTelemetryReports(profileKey)
         deleteTelemetryAggregateWindows(profileKey)
+        deleteTelemetryV3AggregateWindows(profileKey)
         deleteTelemetryState(profileKey)
         @Suppress("UNUSED_VARIABLE") val tombstonesRemainDurable = keepDeletionTombstones
     }

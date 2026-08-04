@@ -54,6 +54,7 @@ class TelemetryUploader @Inject constructor(
             val credentialResponse = runCatching {
                 TelemetryApi.API.credential(
                     TelemetryCredentialRequest(
+                        schemaVersion = report.schemaVersion,
                         batchId = report.batchId,
                         bodySha256Hex = report.bodySha256Hex,
                         appVersionCode = com.ahu.ahutong.BuildConfig.VERSION_CODE

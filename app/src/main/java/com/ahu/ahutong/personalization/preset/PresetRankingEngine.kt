@@ -17,6 +17,8 @@ import com.ahu.ahutong.personalization.storage.PresetUsageStatEntity
 import com.ahu.ahutong.personalization.storage.TargetedPredictionFeedbackEntity
 import com.ahu.ahutong.personalization.storage.TaskModelStateEntity
 import com.ahu.ahutong.personalization.storage.TaskTrainingBatchJournalEntity
+import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
+import com.ahu.ahutong.personalization.telemetry.TelemetryPresetEvent
 import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -122,7 +124,8 @@ internal object PresetReplayPolicy {
 @Singleton
 class PresetRankingEngine @Inject constructor(
     private val dao: BehaviorDao,
-    private val store: PresetModelStateStore
+    private val store: PresetModelStateStore,
+    private val telemetryAggregateStore: TelemetryAggregateStore
 ) {
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val pendingProfiles = ConcurrentHashMap.newKeySet<String>()
@@ -268,8 +271,7 @@ class PresetRankingEngine @Inject constructor(
                     )
                 )
             } else {
-                dao.insertPresetShadowEvaluation(
-                    PresetShadowEvaluationEntity(
+                val shadowEvaluation = PresetShadowEvaluationEntity(
                     profileKey = profileKey,
                     domainId = submission.domain.name,
                     opportunityId = opportunityId,
@@ -285,7 +287,8 @@ class PresetRankingEngine @Inject constructor(
                     evaluationSource = "ORGANIC",
                     naturalHoldoutEligible = true
                     )
-                )
+                dao.insertPresetShadowEvaluation(shadowEvaluation)
+                telemetryAggregateStore.contributePreset(shadowEvaluation)
             }
         }
         if (trainingCandidates.any { !it.promotionHoldout }) pendingProfiles += profileKey
@@ -310,6 +313,7 @@ class PresetRankingEngine @Inject constructor(
             if (!transitioned) return@withLock null
             if (current.state == PresetInteractionState.EXPOSED.name) {
                 insertFeedback(profileKey, candidate.opportunityId, candidate.presetId, "RECOMMENDED_PRESET_APPLIED")
+                telemetryAggregateStore.recordPresetInteraction(profileKey, TelemetryPresetEvent.APPLIED)
             }
             AppliedPreset(candidate.localPayloadJson, token)
         }
@@ -318,7 +322,9 @@ class PresetRankingEngine @Inject constructor(
         locks.getOrPut(profileKey) { Mutex() }.withLock {
             val now = System.currentTimeMillis()
             if (token == null) return@withLock
-            dao.expirePresetInteractionCas(profileKey, token.interactionId, now)
+            if (dao.expirePresetInteractionCas(profileKey, token.interactionId, now) == 1) {
+                telemetryAggregateStore.recordPresetInteraction(profileKey, TelemetryPresetEvent.EXPIRED_WITHOUT_LABEL)
+            }
         }
     }
 
@@ -351,7 +357,9 @@ class PresetRankingEngine @Inject constructor(
         val preset = dao.localPreset(profileKey, candidate.presetId) ?: return null
         val fingerprint = candidate.candidateFingerprint.ifBlank { preset.fingerprint }
         val now = System.currentTimeMillis()
-        dao.expireActivePresetInteractions(profileKey, candidate.domain.name, now)
+        repeat(dao.expireActivePresetInteractions(profileKey, candidate.domain.name, now)) {
+            telemetryAggregateStore.recordPresetInteraction(profileKey, TelemetryPresetEvent.EXPIRED_WITHOUT_LABEL)
+        }
         val interaction = PresetRecommendationInteractionEntity(
             interactionId = UUID.randomUUID().toString(),
             profileKey = profileKey,
@@ -371,6 +379,7 @@ class PresetRankingEngine @Inject constructor(
             return dao.presetInteractionForCandidate(profileKey, candidate.opportunityId, candidate.presetId)?.toToken()
         }
         insertFeedback(profileKey, candidate.opportunityId, candidate.presetId, "RECOMMENDATION_EXPOSED")
+        telemetryAggregateStore.recordPresetInteraction(profileKey, TelemetryPresetEvent.EXPOSED)
         return interaction.toToken()
     }
 
@@ -384,7 +393,9 @@ class PresetRankingEngine @Inject constructor(
         val submittedPresetId = upsertAssistedPreset(profileKey, submission, fingerprint)
         if (interaction.state == PresetInteractionState.EXPOSED.name) {
             // The recommendation was visible but not applied. Visibility alone is not a label.
-            dao.expirePresetInteractionCas(profileKey, interaction.interactionId, System.currentTimeMillis())
+            if (dao.expirePresetInteractionCas(profileKey, interaction.interactionId, System.currentTimeMillis()) == 1) {
+                telemetryAggregateStore.recordPresetInteraction(profileKey, TelemetryPresetEvent.EXPIRED_WITHOUT_LABEL)
+            }
             return submittedPresetId
         }
         if (interaction.state != PresetInteractionState.APPLIED.name) return submittedPresetId
@@ -457,6 +468,16 @@ class PresetRankingEngine @Inject constructor(
             )
         )
         insertFeedback(profileKey, interaction.opportunityId, interaction.candidateId, source.name)
+        telemetryAggregateStore.recordPresetInteraction(
+            profileKey,
+            when (state) {
+                PresetInteractionState.QUERY_CONFIRMED -> TelemetryPresetEvent.QUERY_CONFIRMED
+                PresetInteractionState.REPLACED -> TelemetryPresetEvent.REPLACED
+                PresetInteractionState.REMOVED -> TelemetryPresetEvent.REMOVED
+                else -> TelemetryPresetEvent.EXPIRED_WITHOUT_LABEL
+            },
+            feedbackWeight = weight.toDouble()
+        )
         pendingProfiles += profileKey
     }
 

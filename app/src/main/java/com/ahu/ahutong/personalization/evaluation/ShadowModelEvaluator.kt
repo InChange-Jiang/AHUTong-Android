@@ -9,6 +9,7 @@ import com.ahu.ahutong.personalization.storage.BinaryCodec
 import com.ahu.ahutong.personalization.storage.CandidateShadowEvaluationEntity
 import com.ahu.ahutong.personalization.storage.PendingPredictionEntity
 import com.ahu.ahutong.personalization.storage.ShadowEvaluationEntity
+import com.ahu.ahutong.personalization.telemetry.TelemetryAggregateStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.ln
@@ -28,7 +29,8 @@ interface ShadowModelEvaluator {
 @Singleton
 class PairedShadowModelEvaluator @Inject constructor(
     private val dao: BehaviorDao,
-    private val modelStateStore: ModelStateStore
+    private val modelStateStore: ModelStateStore,
+    private val telemetryAggregateStore: TelemetryAggregateStore
 ) : ShadowModelEvaluator {
 
     override suspend fun resolve(
@@ -44,8 +46,10 @@ class PairedShadowModelEvaluator @Inject constructor(
         val tiny = tinyBytes?.let(BinaryCodec::floats)
         val recent = BinaryCodec.floats(recentBytes)
         val time = BinaryCodec.floats(timeBytes)
+        val effective = pending.effectiveProbabilities?.let(BinaryCodec::floats) ?: stat
         val statMetric = metric(stat, target)
         val tinyMetric = tiny?.let { metric(it, target) }
+        val effectiveMetric = metric(effective, target)
         val recentMetric = metric(recent, target)
         val timeMetric = metric(time, target)
         val paired = tinyMetric != null
@@ -75,10 +79,24 @@ class PairedShadowModelEvaluator @Inject constructor(
             tinyBrier = tinyMetric?.brier ?: 0.0,
             tinyLogLoss = tinyMetric?.logLoss ?: 0.0,
             tinyTop1Confidence = tiny?.maxOrNull()?.toDouble() ?: 0.0,
+            effectiveTop1 = effectiveMetric.top1,
+            effectiveTop3 = effectiveMetric.top3,
+            effectiveReciprocalRank = effectiveMetric.reciprocalRank,
+            effectiveBrier = effectiveMetric.brier,
+            effectiveLogLoss = effectiveMetric.logLoss,
+            effectiveTop1Confidence = effective.maxOrNull()?.toDouble() ?: 0.0,
+            recentTop1 = recentMetric.top1,
             recentReciprocalRank = recentMetric.reciprocalRank,
             recentTop3 = recentMetric.top3,
+            recentBrier = recentMetric.brier,
+            recentLogLoss = recentMetric.logLoss,
+            recentTop1Confidence = recent.maxOrNull()?.toDouble() ?: 0.0,
+            timeTop1 = timeMetric.top1,
             timeReciprocalRank = timeMetric.reciprocalRank,
             timeTop3 = timeMetric.top3,
+            timeBrier = timeMetric.brier,
+            timeLogLoss = timeMetric.logLoss,
+            timeTop1Confidence = time.maxOrNull()?.toDouble() ?: 0.0,
             winner = winner,
             paired = paired,
             tinyPredictionStatus = if (paired) "OK" else "FAILED",
@@ -112,8 +130,7 @@ class PairedShadowModelEvaluator @Inject constructor(
             activeId != null && activeChecksum != null && tinyMetric != null
         ) {
             val candidateMetric = metric(candidate, target)
-            dao.insertCandidateEvaluation(
-                CandidateShadowEvaluationEntity(
+            val candidateEvaluation = CandidateShadowEvaluationEntity(
                     profileKey = pending.profileKey,
                     evaluationSeq = seq,
                     decisionId = pending.decisionId,
@@ -137,7 +154,8 @@ class PairedShadowModelEvaluator @Inject constructor(
                     candidateStatus = "OK",
                     consumed = false
                 )
-            )
+            dao.insertCandidateEvaluation(candidateEvaluation)
+            telemetryAggregateStore.contributeCandidate(candidateEvaluation)
         }
         return value
     }

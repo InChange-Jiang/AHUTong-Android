@@ -3,8 +3,12 @@ package com.ahu.ahutong.personalization.telemetry
 import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.storage.BehaviorDao
 import com.ahu.ahutong.personalization.storage.ShadowEvaluationEntity
+import com.ahu.ahutong.personalization.storage.CandidateShadowEvaluationEntity
+import com.ahu.ahutong.personalization.storage.JourneyShadowEvaluationEntity
+import com.ahu.ahutong.personalization.storage.PresetShadowEvaluationEntity
 import com.ahu.ahutong.personalization.storage.TelemetryAggregateWindowEntity
 import com.ahu.ahutong.personalization.storage.TelemetryStateEntity
+import com.ahu.ahutong.personalization.ui.SuggestionDeliveryLane
 import com.google.gson.Gson
 import java.util.UUID
 import javax.inject.Inject
@@ -57,7 +61,8 @@ private fun StoredActionMetric.isValid(): Boolean =
  */
 @Singleton
 class TelemetryAggregateStore @Inject constructor(
-    private val dao: BehaviorDao
+    private val dao: BehaviorDao,
+    private val v3Store: TelemetryV3AggregateStore
 ) {
     private val gson = Gson()
 
@@ -119,7 +124,39 @@ class TelemetryAggregateStore @Inject constructor(
                 updatedAtEpochMs = now
             )
         )
+        v3Store.contributeNextAction(evaluation)
     }
+
+    suspend fun contributeJourney(evaluation: JourneyShadowEvaluationEntity) =
+        v3Store.contributeJourney(evaluation)
+
+    suspend fun contributePreset(evaluation: PresetShadowEvaluationEntity) =
+        v3Store.contributePreset(evaluation)
+
+    suspend fun contributeCandidate(evaluation: CandidateShadowEvaluationEntity) =
+        v3Store.contributeCandidate(evaluation)
+
+    suspend fun recordPresetInteraction(
+        profileKey: String,
+        event: TelemetryPresetEvent,
+        feedbackWeight: Double? = null
+    ) = v3Store.recordPresetInteraction(profileKey, event, feedbackWeight)
+
+    suspend fun recordDelivery(
+        profileKey: String,
+        lane: SuggestionDeliveryLane,
+        event: TelemetryDeliveryEvent,
+        blockReason: String? = null,
+        assistedRewardWeight: Double? = null,
+        latencyMs: Long? = null
+    ) = v3Store.recordDelivery(
+        profileKey,
+        lane,
+        event,
+        blockReason,
+        assistedRewardWeight,
+        latencyMs
+    )
 
     fun readPerAction(json: String): List<StoredActionMetric> = runCatching {
         val values: List<*> = gson.fromJson(json, StoredPerActionMetrics::class.java)
@@ -127,6 +164,8 @@ class TelemetryAggregateStore @Inject constructor(
             .orEmpty()
         sanitizeStoredActionMetrics(values)
     }.getOrDefault(emptyList())
+
+    fun readV3Aggregate(json: String): StoredTelemetryV3Aggregate = v3Store.decodeAggregate(json)
 
     private fun emptyWindow(
         lifecycle: TelemetryStateEntity,

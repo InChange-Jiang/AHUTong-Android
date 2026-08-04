@@ -85,7 +85,8 @@ data class PendingPredictionEntity(
     val interventionState: String,
     val resolutionStatus: String,
     val finalOrganicTarget: String?,
-    val resolvedByEventId: String?
+    val resolvedByEventId: String?,
+    val effectiveProbabilities: ByteArray? = null
 )
 
 @Entity(
@@ -197,10 +198,24 @@ data class ShadowEvaluationEntity(
     val tinyBrier: Double,
     val tinyLogLoss: Double,
     val tinyTop1Confidence: Double,
+    val effectiveTop1: Int,
+    val effectiveTop3: Int,
+    val effectiveReciprocalRank: Double,
+    val effectiveBrier: Double,
+    val effectiveLogLoss: Double,
+    val effectiveTop1Confidence: Double,
+    val recentTop1: Int,
     val recentReciprocalRank: Double,
     val recentTop3: Int,
+    val recentBrier: Double,
+    val recentLogLoss: Double,
+    val recentTop1Confidence: Double,
+    val timeTop1: Int,
     val timeReciprocalRank: Double,
     val timeTop3: Int,
+    val timeBrier: Double,
+    val timeLogLoss: Double,
+    val timeTop1Confidence: Double,
     val winner: String,
     val paired: Boolean,
     val tinyPredictionStatus: String,
@@ -388,7 +403,8 @@ data class TelemetryReportEntity(
     val nextAttemptEpochMs: Long,
     val lastAttemptEpochDay: Long?,
     val createdAtEpochMs: Long,
-    val expiresAtEpochMs: Long
+    val expiresAtEpochMs: Long,
+    val schemaVersion: Int = 2
 )
 
 @Entity(
@@ -457,6 +473,34 @@ data class TelemetryAggregateWindowEntity(
     val outputSchemaVersion: Int,
     val actionCatalogVersion: Int,
     val trainingConfigVersion: Int,
+    val metricSchemaVersion: Int,
+    val state: String,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long
+)
+
+@Entity(
+    tableName = "telemetry_v3_aggregate_window",
+    indices = [
+        Index(value = ["profileKey", "consentLifecycleId", "task", "state", "createdAtEpochMs"]),
+        Index(value = ["windowId"], unique = true)
+    ]
+)
+data class TelemetryV3AggregateWindowEntity(
+    @PrimaryKey val windowId: String,
+    val profileKey: String,
+    val consentLifecycleId: String,
+    val telemetryId: String,
+    val modelGenerationId: String,
+    val task: String,
+    val windowStartEpochDay: Long,
+    val windowEndEpochDay: Long,
+    val sampleCount: Int,
+    val naturalHoldoutSampleCount: Int,
+    val aggregateJson: String,
+    val appVersionCode: Int,
+    val featureSchemaVersion: Int,
+    val outputSchemaVersion: Int,
     val metricSchemaVersion: Int,
     val state: String,
     val createdAtEpochMs: Long,
@@ -633,12 +677,21 @@ data class JourneyShadowEvaluationEntity(
     val statReciprocalRank: Double,
     val statBrier: Double,
     val statLogLoss: Double,
+    val statTop1Confidence: Double,
     val tinyTop1: Int,
     val tinyTop3: Int,
     val tinyReciprocalRank: Double,
     val tinyBrier: Double,
     val tinyLogLoss: Double,
     val tinyTop1Confidence: Double,
+    val effectiveTop1: Int,
+    val effectiveTop3: Int,
+    val effectiveReciprocalRank: Double,
+    val effectiveBrier: Double,
+    val effectiveLogLoss: Double,
+    val effectiveTop1Confidence: Double,
+    val tinyAvailable: Boolean,
+    val promotionEligible: Boolean,
     val tinyCheckpointId: String?,
     val statInferenceNanos: Long,
     val tinyInferenceNanos: Long,

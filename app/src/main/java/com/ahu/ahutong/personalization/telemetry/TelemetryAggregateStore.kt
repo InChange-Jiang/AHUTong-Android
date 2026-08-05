@@ -167,6 +167,9 @@ class TelemetryAggregateStore @Inject constructor(
 
     fun readV3Aggregate(json: String): StoredTelemetryV3Aggregate = v3Store.decodeAggregate(json)
 
+    fun readV3Aggregate(json: String, task: TelemetryV3Task): StoredTelemetryV3Aggregate? =
+        v3Store.decodeAggregate(json, task)
+
     private fun emptyWindow(
         lifecycle: TelemetryStateEntity,
         evaluation: ShadowEvaluationEntity

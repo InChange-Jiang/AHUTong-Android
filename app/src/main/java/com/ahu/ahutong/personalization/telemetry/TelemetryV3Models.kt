@@ -1,5 +1,7 @@
 package com.ahu.ahutong.personalization.telemetry
 
+import com.google.gson.Gson
+import com.google.gson.JsonParser
 import java.time.LocalDate
 import java.util.UUID
 
@@ -126,11 +128,112 @@ data class V3DeliveryAggregate(
 )
 
 data class StoredTelemetryV3Aggregate(
+    val storageSchemaVersion: Int = TELEMETRY_V3_STORAGE_SCHEMA_VERSION,
     val classification: V3ClassificationAggregate? = null,
     val ranking: V3RankingAggregate? = null,
     val candidateShadow: V3CandidateShadowAggregate? = null,
     val delivery: V3DeliveryAggregate? = null
 )
+
+/**
+ * Stable boundary for V3 aggregate persistence.
+ *
+ * V3 aggregates written by the broken minified 3.2.1 build have obfuscated property names and no
+ * explicit storage marker. Reconstructing them would couple runtime code to one build's R8 mapping,
+ * so callers treat them as invalid and suppress only the affected telemetry window. The learning
+ * database and all natural training samples remain untouched.
+ */
+internal class TelemetryV3AggregateCodec(
+    private val gson: Gson = Gson()
+) {
+    fun encode(value: StoredTelemetryV3Aggregate): String = gson.toJson(value)
+
+    fun decode(json: String, expectedTask: TelemetryV3Task? = null): StoredTelemetryV3Aggregate? =
+        runCatching {
+            val root = JsonParser.parseString(json).asJsonObject
+            require(root.get("storageSchemaVersion")?.asInt == TELEMETRY_V3_STORAGE_SCHEMA_VERSION)
+            gson.fromJson(root, StoredTelemetryV3Aggregate::class.java).also { value ->
+                require(value.storageSchemaVersion == TELEMETRY_V3_STORAGE_SCHEMA_VERSION)
+                require(value.hasTypedPayload(expectedTask))
+            }
+        }.getOrNull()
+
+    private fun StoredTelemetryV3Aggregate.hasTypedPayload(expectedTask: TelemetryV3Task?): Boolean {
+        val populated = listOfNotNull(classification, ranking, candidateShadow, delivery)
+        if (populated.size != 1) return false
+        return runCatching {
+            when (expectedTask) {
+                TelemetryV3Task.NEXT_ACTION, TelemetryV3Task.JOURNEY_GOAL -> classification!!.touchTypedFields()
+                TelemetryV3Task.PRESET_RANKING -> ranking!!.touchTypedFields()
+                TelemetryV3Task.CANDIDATE_SHADOW -> candidateShadow!!.touchTypedFields()
+                TelemetryV3Task.DELIVERY -> delivery!!.touchTypedFields()
+                null -> {
+                    classification?.touchTypedFields()
+                    ranking?.touchTypedFields()
+                    candidateShadow?.touchTypedFields()
+                    delivery?.touchTypedFields()
+                }
+            }
+        }.isSuccess
+    }
+
+    private fun V3ClassificationAggregate.touchTypedFields() {
+        listOf(statistical, tinyMlp, effective, recentBaseline, timeBaseline).forEach { it.touchTypedFields() }
+        promotionHoldout.statistical.touchTypedFields()
+        promotionHoldout.tinyMlp.touchTypedFields()
+        promotionHoldout.effective.touchTypedFields()
+        promotionHoldout.tinyVsStat.touchTypedFields()
+        tinyVsStat.touchTypedFields()
+        journeyLengthBuckets.touchTypedFields()
+        stageCounts.touchTypedFields()
+        tierCounts.touchTypedFields()
+    }
+
+    private fun V3ModelMetricAggregate.touchTypedFields() {
+        calibration.forEach { bin ->
+            require(bin.lowerPermilleInclusive <= bin.upperPermilleExclusive)
+            require(bin.sampleCount >= 0 && bin.correctCount >= 0)
+        }
+    }
+
+    private fun V3RankingAggregate.touchTypedFields() {
+        listOf(statistical, tinyMlp, recentBaseline, frequencyBaseline).forEach { it.touchTypedFields() }
+        tinyVsStat.touchTypedFields()
+        stageCounts.touchTypedFields()
+        healthCounts.touchTypedFields()
+        lambdaBucketCounts.touchTypedFields()
+    }
+
+    private fun V3BinaryScoreAggregate.touchTypedFields() {
+        calibration.forEach { bin ->
+            require(bin.lowerPermilleInclusive <= bin.upperPermilleExclusive)
+            require(bin.sampleCount >= 0 && bin.correctCount >= 0)
+        }
+    }
+
+    private fun V3CandidateShadowAggregate.touchTypedFields() {
+        candidateVsActive.touchTypedFields()
+    }
+
+    private fun V3DeliveryAggregate.touchTypedFields() {
+        lanes.forEach { lane ->
+            require(lane.lane.isNotEmpty())
+            lane.blocked.touchTypedFields()
+            lane.latencyBuckets.touchTypedFields()
+        }
+    }
+
+    private fun V3PairwiseAggregate.touchTypedFields() {
+        require(firstWins >= 0 && secondWins >= 0 && ties >= 0)
+    }
+
+    private fun List<V3NamedCount>.touchTypedFields() {
+        forEach { value ->
+            require(value.name.isNotEmpty())
+            require(value.count >= 0)
+        }
+    }
+}
 
 data class ModelQualityV3TaskReport(
     val reportId: String,
@@ -287,6 +390,7 @@ object TelemetryV3PayloadValidator {
 
 internal const val TELEMETRY_V3_MIN_TASK_SAMPLES = 64
 internal const val TELEMETRY_V3_METRIC_SCHEMA_VERSION = 2
+internal const val TELEMETRY_V3_STORAGE_SCHEMA_VERSION = 1
 // Raise only after the fixed openahu.org endpoint accepts schema v3 credentials and batches.
 internal const val TELEMETRY_SERVER_SCHEMA_VERSION = 2
 internal const val CALIBRATION_BIN_COUNT = 10

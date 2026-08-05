@@ -133,6 +133,25 @@
 -keep class com.ahu.ahutong.personalization.telemetry.TelemetryCredentialResponse { *; }
 -keep class com.ahu.ahutong.personalization.telemetry.TelemetryDeletionRequest { *; }
 
+# V3 telemetry aggregates are persisted as Gson JSON and later uploaded as a generic-list payload.
+# Keep every nested DTO and the task enum so release builds retain stable field names and generic
+# element types. Without this, Gson materializes nested lists as LinkedTreeMap after R8 minification.
+-keep enum com.ahu.ahutong.personalization.telemetry.TelemetryV3Task { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3CalibrationBin { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3ModelMetricAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3PairwiseAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3NamedCount { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3ClassificationAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3PromotionHoldoutAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3BinaryScoreAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3RankingAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3CandidateShadowAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3DeliveryLaneAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.V3DeliveryAggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.StoredTelemetryV3Aggregate { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelQualityV3TaskReport { *; }
+-keep class com.ahu.ahutong.personalization.telemetry.ModelQualityV3BatchRequest { *; }
+
 # Bootstrap-training payloads are an immutable Gson/Retrofit wire contract. Preserve both JSON
 # field names and generic list signatures in release builds.
 -keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingExamplePayload { *; }

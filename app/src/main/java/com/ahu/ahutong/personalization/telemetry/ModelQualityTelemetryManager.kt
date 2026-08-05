@@ -214,12 +214,15 @@ class ModelQualityTelemetryManager @Inject constructor(
         val today = LocalDate.now(ZoneOffset.UTC).toEpochDay()
         if (state.lastReportCreatedEpochDay == today || state.lifecycleState != "ACTIVE") return
         var window = dao.nextClosedTelemetryV3AggregateWindow(profileKey, state.consentLifecycleId)
-        while (window != null && (
-                window.telemetryId != state.telemetryId ||
-                    window.modelGenerationId != state.modelGenerationId ||
-                    window.sampleCount < TELEMETRY_V3_MIN_TASK_SAMPLES
-                )
-        ) {
+        var aggregate: StoredTelemetryV3Aggregate? = null
+        while (window != null) {
+            val task = runCatching { TelemetryV3Task.valueOf(window.task) }.getOrNull()
+            aggregate = task?.let { aggregateStore.readV3Aggregate(window.aggregateJson, it) }
+            val validWindow = window.telemetryId == state.telemetryId &&
+                window.modelGenerationId == state.modelGenerationId &&
+                window.sampleCount >= TELEMETRY_V3_MIN_TASK_SAMPLES &&
+                aggregate != null
+            if (validWindow) break
             dao.transitionTelemetryV3AggregateWindow(
                 window.windowId,
                 expectedState = "CLOSED",
@@ -229,7 +232,7 @@ class ModelQualityTelemetryManager @Inject constructor(
             window = dao.nextClosedTelemetryV3AggregateWindow(profileKey, state.consentLifecycleId)
         }
         window ?: return
-        val aggregate = aggregateStore.readV3Aggregate(window.aggregateJson)
+        val validAggregate = aggregate ?: return
         val capability = secretStore.decrypt(state.revocationKeyAlias, state.encryptedRevocationCapability)
         val reportId = UUID.randomUUID().toString()
         val report = ModelQualityV3TaskReport(
@@ -247,10 +250,10 @@ class ModelQualityTelemetryManager @Inject constructor(
             featureSchemaVersion = window.featureSchemaVersion,
             outputSchemaVersion = window.outputSchemaVersion,
             metricSchemaVersion = window.metricSchemaVersion,
-            classification = aggregate.classification,
-            ranking = aggregate.ranking,
-            candidateShadow = aggregate.candidateShadow,
-            delivery = aggregate.delivery
+            classification = validAggregate.classification,
+            ranking = validAggregate.ranking,
+            candidateShadow = validAggregate.candidateShadow,
+            delivery = validAggregate.delivery
         )
         TelemetryV3PayloadValidator.requireValid(report)
         val reportJson = gson.toJson(report)

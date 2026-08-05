@@ -52,6 +52,7 @@ class TelemetryV3AggregateStore @Inject constructor(
     private val dao: BehaviorDao
 ) {
     private val gson = Gson()
+    private val aggregateCodec = TelemetryV3AggregateCodec(gson)
     private val taskLocks = ConcurrentHashMap<String, Mutex>()
 
     suspend fun contributeNextAction(value: ShadowEvaluationEntity) {
@@ -326,9 +327,13 @@ class TelemetryV3AggregateStore @Inject constructor(
         }
     }
 
-    fun decodeAggregate(json: String): StoredTelemetryV3Aggregate = runCatching {
-        gson.fromJson(json, StoredTelemetryV3Aggregate::class.java)
-    }.getOrNull() ?: StoredTelemetryV3Aggregate()
+    fun decodeAggregate(json: String): StoredTelemetryV3Aggregate =
+        aggregateCodec.decode(json) ?: StoredTelemetryV3Aggregate()
+
+    internal fun decodeAggregate(
+        json: String,
+        expectedTask: TelemetryV3Task
+    ): StoredTelemetryV3Aggregate? = aggregateCodec.decode(json, expectedTask)
 
     private suspend fun mutate(
         profileKey: String,
@@ -344,9 +349,14 @@ class TelemetryV3AggregateStore @Inject constructor(
             ?: return
         val now = System.currentTimeMillis()
         var open = dao.openTelemetryV3AggregateWindow(profileKey, lifecycle.consentLifecycleId, task.name)
-        if (open != null && !sameBinding(open, lifecycle, featureSchemaVersion, outputSchemaVersion)) {
+        var decoded = open?.let { aggregateCodec.decode(it.aggregateJson, task) }
+        if (open != null && (
+                !sameBinding(open, lifecycle, featureSchemaVersion, outputSchemaVersion) || decoded == null
+            )
+        ) {
             dao.transitionTelemetryV3AggregateWindow(open.windowId, "OPEN", "SUPPRESSED", now)
             open = null
+            decoded = null
         }
         val current = open ?: TelemetryV3AggregateWindowEntity(
             windowId = UUID.randomUUID().toString(),
@@ -359,7 +369,7 @@ class TelemetryV3AggregateStore @Inject constructor(
             windowEndEpochDay = occurredEpochDay,
             sampleCount = 0,
             naturalHoldoutSampleCount = 0,
-            aggregateJson = gson.toJson(emptyAggregate(task)),
+            aggregateJson = aggregateCodec.encode(emptyAggregate(task)),
             appVersionCode = BuildConfig.VERSION_CODE,
             featureSchemaVersion = featureSchemaVersion,
             outputSchemaVersion = outputSchemaVersion,
@@ -374,7 +384,7 @@ class TelemetryV3AggregateStore @Inject constructor(
                 windowEndEpochDay = maxOf(current.windowEndEpochDay, occurredEpochDay),
                 sampleCount = count,
                 naturalHoldoutSampleCount = current.naturalHoldoutSampleCount + if (naturalHoldout) 1 else 0,
-                aggregateJson = gson.toJson(transform(decodeAggregate(current.aggregateJson))),
+                aggregateJson = aggregateCodec.encode(transform(decoded ?: emptyAggregate(task))),
                 state = if (count >= TELEMETRY_V3_MIN_TASK_SAMPLES) "CLOSED" else "OPEN",
                 updatedAtEpochMs = now
             )

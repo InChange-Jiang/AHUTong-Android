@@ -11,6 +11,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
+const val BEHAVIOR_DATABASE_VERSION = 5
+
 @Database(
     entities = [
         BehaviorEventEntity::class,
@@ -51,7 +53,7 @@ import javax.inject.Singleton
         BootstrapTrainingBatchEntity::class,
         BootstrapTrainingDeletionTombstoneEntity::class
     ],
-    version = 4,
+    version = BEHAVIOR_DATABASE_VERSION,
     exportSchema = true
 )
 abstract class BehaviorDatabase : RoomDatabase() {

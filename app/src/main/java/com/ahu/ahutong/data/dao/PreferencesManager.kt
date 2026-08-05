@@ -37,6 +37,10 @@ object PreferencesKeys {
         booleanPreferencesKey("bootstrap_training_include_historical")
     val BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION =
         intPreferencesKey("bootstrap_training_consent_schema_version")
+    val BOOTSTRAP_TRAINING_ENABLED_PROFILES =
+        stringSetPreferencesKey("bootstrap_training_enabled_profiles")
+    val BOOTSTRAP_TRAINING_ONBOARDING_CLAIMED =
+        booleanPreferencesKey("bootstrap_training_onboarding_claimed")
     val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
@@ -112,8 +116,50 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
         prefs[PreferencesKeys.BOOTSTRAP_TRAINING_INCLUDE_HISTORICAL] ?: false
     }
 
+    fun bootstrapTrainingEnabled(profileKey: String): Flow<Boolean> = context.dataStore.data.map { prefs ->
+        profileKey in prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES].orEmpty()
+    }
+
+    suspend fun setBootstrapTrainingEnabled(profileKey: String, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            val profiles = prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES]
+                .orEmpty()
+                .toMutableSet()
+            if (enabled) profiles += profileKey else profiles -= profileKey
+            prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES] = profiles
+        }
+    }
+
+    suspend fun claimBootstrapTrainingOnboardingForProfile(profileKey: String): Boolean {
+        var claimed = false
+        context.dataStore.edit { prefs ->
+            if (
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CHOICE] == true &&
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION] ==
+                    BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION &&
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CLAIMED] != true
+            ) {
+                val profiles = prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES]
+                    .orEmpty()
+                    .toMutableSet()
+                profiles += profileKey
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES] = profiles
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CLAIMED] = true
+                claimed = true
+            }
+        }
+        return claimed
+    }
+
     suspend fun setBootstrapTrainingOnboardingChoice(value: Boolean, includeHistorical: Boolean) {
         context.dataStore.edit { prefs ->
+            if (
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION] !=
+                BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION
+            ) {
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CLAIMED] = false
+                prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ENABLED_PROFILES] = emptySet()
+            }
             prefs[PreferencesKeys.BOOTSTRAP_TRAINING_ONBOARDING_CHOICE] = value
             prefs[PreferencesKeys.BOOTSTRAP_TRAINING_INCLUDE_HISTORICAL] = value && includeHistorical
             prefs[PreferencesKeys.BOOTSTRAP_TRAINING_CONSENT_SCHEMA_VERSION] =

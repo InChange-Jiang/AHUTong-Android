@@ -360,9 +360,12 @@ class BehaviorPredictionRuntime @Inject constructor(
         telemetryManager.reconcileProfile(nextProfile, promotion.modelGeneration)
         _telemetryConsentEnabled.value = onboardingChoice == true && telemetryManager.isConsentEnabled(nextProfile)
         val bootstrapChoice = preferencesManager.bootstrapTrainingOnboardingChoice.first()
+        if (bootstrapChoice == true) {
+            preferencesManager.claimBootstrapTrainingOnboardingForProfile(nextProfile)
+        }
         bootstrapTrainingDataManager.reconcileProfile(
             nextProfile,
-            enabled = bootstrapChoice == true,
+            enabled = preferencesManager.bootstrapTrainingEnabled(nextProfile).first(),
             includeHistorical = preferencesManager.bootstrapTrainingIncludeHistorical.first()
         )
         val activeProfileGeneration = profileGeneration.incrementAndGet()
@@ -1315,6 +1318,7 @@ class BehaviorPredictionRuntime @Inject constructor(
             return
         }
         bootstrapTrainingDataManager.revoke(activeProfile)
+        preferencesManager.setBootstrapTrainingEnabled(activeProfile, false)
         telemetryManager.setConsent(activeProfile, enabled = false)
         _telemetryConsentEnabled.value = false
         stopSession("LOGOUT", clearProfile = true)
@@ -1611,6 +1615,7 @@ class BehaviorPredictionRuntime @Inject constructor(
 
     suspend fun setBootstrapTrainingConsent(enabled: Boolean, includeHistorical: Boolean = false) {
         val activeProfile = profileKey ?: return
+        preferencesManager.setBootstrapTrainingEnabled(activeProfile, enabled)
         bootstrapTrainingDataManager.setConsent(activeProfile, enabled, includeHistorical)
     }
 

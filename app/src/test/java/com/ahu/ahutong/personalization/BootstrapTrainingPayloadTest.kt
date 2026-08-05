@@ -73,6 +73,43 @@ class BootstrapTrainingPayloadTest {
         }
     }
 
+    @Test
+    fun unavailableTargetIsRejectedBeforeItCanEnterTheDurableQueue() {
+        val outputIndex = AppActionCatalog.outputIndex.getValue("OPEN_HOME")
+        val invalidMask = BooleanArray(AppActionCatalog.outputIds.size) { true }.also { it[outputIndex] = false }
+        val example = nextAction(1, "OPEN_HOME", 1f).copy(
+            availabilityMaskBase64 = Base64.getEncoder().encodeToString(BinaryCodec.booleans(invalidMask))
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            BootstrapTrainingPayloadValidator.requireValid(batch(listOf(example)))
+        }
+    }
+
+    @Test
+    fun outOfSchemaFeatureIsRejectedBeforeItCanEnterTheDurableQueue() {
+        val features = FloatArray(FeatureExtractor.INPUT_DIMENSION).also { it[40] = 10f }
+        val example = nextAction(1, "OPEN_HOME", 1f).copy(
+            featuresBase64 = Base64.getEncoder().encodeToString(BinaryCodec.floats(features))
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            BootstrapTrainingPayloadValidator.requireValid(batch(listOf(example)))
+        }
+    }
+
+    @Test
+    fun naturalPresetGroupAllowsNoMatchButRejectsMultipleMatches() {
+        val noMatch = batch(listOf(preset(1, "0", 0), preset(2, "0", 1)))
+        BootstrapTrainingPayloadValidator.requireValid(noMatch)
+
+        assertFailsWith<IllegalArgumentException> {
+            BootstrapTrainingPayloadValidator.requireValid(
+                batch(listOf(preset(1, "1", 0), preset(2, "1", 1)))
+            )
+        }
+    }
+
     private fun batch(examples: List<BootstrapTrainingExamplePayload>) = BootstrapTrainingBatchRequest(
         batchId = UUID.randomUUID().toString(),
         participantId = UUID.randomUUID().toString(),
@@ -111,6 +148,29 @@ class BootstrapTrainingPayloadTest {
         candidateOrdinal = null,
         journeyLengthBucket = null,
         naturalHoldoutEligible = source == "ORGANIC_ACTION",
+        occurredEpochDay = 20_000,
+        historical = false
+    )
+
+    private fun preset(sequence: Long, label: String, ordinal: Int) = BootstrapTrainingExamplePayload(
+        exampleId = UUID.randomUUID().toString(),
+        sequenceNo = sequence,
+        task = BootstrapTrainingTask.PRESET_RANKING.name,
+        completeness = BootstrapExampleCompleteness.COMPLETE.name,
+        featureSchemaVersion = 1,
+        outputSchemaVersion = 1,
+        actionCatalogVersion = AppActionCatalog.ACTION_CATALOG_VERSION,
+        featuresBase64 = Base64.getEncoder().encodeToString(BinaryCodec.floats(FloatArray(16))),
+        availabilityMaskBase64 = null,
+        targetLabel = label,
+        feedbackSource = "NATURAL_COMMIT",
+        sampleWeight = 1f,
+        deliveryLane = null,
+        domainId = "GRADE",
+        opportunityGroupId = "a".repeat(64),
+        candidateOrdinal = ordinal,
+        journeyLengthBucket = null,
+        naturalHoldoutEligible = true,
         occurredEpochDay = 20_000,
         historical = false
     )

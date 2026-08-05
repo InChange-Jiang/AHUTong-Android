@@ -19,9 +19,10 @@ object BehaviorDatabaseFiles {
 internal object BehaviorDatabaseFactory {
     fun open(context: Context): BehaviorDatabase {
         BehaviorDatabaseBootstrap.prepare(context)
+        preserveFutureDatabase(context)
         val database = runCatching { buildAndOpen(context) }
             .getOrElse { firstFailure ->
-                context.deleteDatabase(BehaviorDatabaseFiles.CURRENT_V2)
+                preserveDatabase(context, "recovery")
                 runCatching { buildAndOpen(context) }
                     .getOrElse { retryFailure ->
                         retryFailure.addSuppressed(firstFailure)
@@ -29,6 +30,38 @@ internal object BehaviorDatabaseFactory {
                     }
             }
         return database
+    }
+
+    private fun preserveFutureDatabase(context: Context) {
+        val database = context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2)
+        if (!database.exists()) return
+        val version = runCatching { readVersion(database.absolutePath) }.getOrNull() ?: return
+        if (version > BEHAVIOR_DATABASE_VERSION) preserveDatabase(context, "downgrade-v$version")
+    }
+
+    private fun preserveDatabase(context: Context, reason: String) {
+        val database = context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2)
+        if (!database.exists()) return
+        val suffix = ".$reason-${System.currentTimeMillis()}"
+        listOf("", "-wal", "-shm", "-journal").forEach { extension ->
+            val source = database.resolveSibling(database.name + extension)
+            if (source.exists()) {
+                val target = database.resolveSibling(database.name + suffix + extension)
+                Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+    }
+
+    private fun readVersion(path: String): Int {
+        val database = SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READWRITE)
+        return try {
+            database.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use { cursor ->
+                while (cursor.moveToNext()) Unit
+            }
+            database.version
+        } finally {
+            database.close()
+        }
     }
 
     private fun buildAndOpen(context: Context): BehaviorDatabase {
@@ -41,9 +74,9 @@ internal object BehaviorDatabaseFactory {
             .addMigrations(
                 BehaviorDatabaseMigrations.MIGRATION_1_2,
                 BehaviorDatabaseMigrations.MIGRATION_2_3,
-                BehaviorDatabaseMigrations.MIGRATION_3_4
+                BehaviorDatabaseMigrations.MIGRATION_3_4,
+                BehaviorDatabaseMigrations.MIGRATION_4_5
             )
-            .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
             .build()
         return try {
             database.openHelper.writableDatabase

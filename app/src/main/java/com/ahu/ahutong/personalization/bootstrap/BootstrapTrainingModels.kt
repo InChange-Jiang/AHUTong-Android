@@ -118,20 +118,11 @@ object BootstrapTrainingPayloadValidator {
         if (task == BootstrapTrainingTask.NEXT_ACTION || task == BootstrapTrainingTask.JOURNEY_GOAL) {
             require(request.examples.count { it.targetLabel == "NONE" } <= request.examples.size / 2)
         }
-        if (task == BootstrapTrainingTask.NEXT_ACTION) {
-            val naturalNonNone = natural.filter { it.targetLabel != "NONE" }
-            if (naturalNonNone.isNotEmpty()) {
-                require(
-                    naturalNonNone.groupingBy { it.targetLabel }.eachCount().values.max() <=
-                        naturalNonNone.size * 0.4f
-                )
-            }
-        }
         if (task == BootstrapTrainingTask.PRESET_RANKING) {
             request.examples.groupBy { it.opportunityGroupId }.values.forEach { group ->
                 require(group.map { it.candidateOrdinal }.distinct().size == group.size)
                 if (group.all { it.sampleWeight == 1f }) {
-                    require(group.count { it.targetLabel == "1" } == 1)
+                    require(group.count { it.targetLabel == "1" } <= 1)
                 }
             }
         }
@@ -158,10 +149,14 @@ object BootstrapTrainingPayloadValidator {
                         Triple(FeatureExtractor.FEATURE_SCHEMA_VERSION, AppActionCatalog.OUTPUT_SCHEMA_VERSION, AppActionCatalog.ACTION_CATALOG_VERSION)
                 )
                 require(features.size == FeatureExtractor.INPUT_DIMENSION)
+                requireValidFeatureRanges(features, value.task)
                 require(value.targetLabel in AppActionCatalog.outputIndex)
                 if (value.completeness == BootstrapExampleCompleteness.COMPLETE.name) {
-                    val mask = requireNotNull(value.availabilityMaskBase64)
-                    require(Base64.getDecoder().decode(mask).size == AppActionCatalog.outputIds.size)
+                    val mask = Base64.getDecoder().decode(requireNotNull(value.availabilityMaskBase64))
+                    require(mask.size == AppActionCatalog.outputIds.size)
+                    require(mask.all { it == 0.toByte() || it == 1.toByte() })
+                    require(mask.any { it == 1.toByte() })
+                    require(mask.getOrNull(AppActionCatalog.outputIndex.getValue(value.targetLabel)) == 1.toByte())
                 } else {
                     require(value.availabilityMaskBase64 == null)
                 }
@@ -178,6 +173,7 @@ object BootstrapTrainingPayloadValidator {
                         Triple(FeatureExtractor.FEATURE_SCHEMA_VERSION, JourneyGoalCatalog.OUTPUT_SCHEMA_VERSION, AppActionCatalog.ACTION_CATALOG_VERSION)
                 )
                 require(features.size == FeatureExtractor.INPUT_DIMENSION)
+                requireValidFeatureRanges(features, value.task)
                 require(value.targetLabel in JourneyGoalCatalog.outputIndex)
                 require(value.feedbackSource in JOURNEY_FEEDBACK && value.sampleWeight == 1f)
                 require(requireNotNull(value.journeyLengthBucket) in 0..4)
@@ -192,6 +188,7 @@ object BootstrapTrainingPayloadValidator {
                         Triple(1, 1, AppActionCatalog.ACTION_CATALOG_VERSION)
                 )
                 require(features.size == PresetModelStateStore.INPUT_SIZE)
+                requireValidFeatureRanges(features, value.task)
                 require(value.targetLabel == "0" || value.targetLabel == "1")
                 require(value.feedbackSource in PRESET_FEEDBACK)
                 require(value.domainId in PRESET_DOMAINS)
@@ -207,6 +204,21 @@ object BootstrapTrainingPayloadValidator {
 
     private fun requireUuid(value: String) {
         require(runCatching { UUID.fromString(value) }.isSuccess)
+    }
+
+    private fun requireValidFeatureRanges(features: FloatArray, task: String) {
+        if (task == BootstrapTrainingTask.PRESET_RANKING.name) {
+            require(features.all { it in -0.000_001f..1.000_001f })
+            return
+        }
+        features.forEachIndexed { index, feature ->
+            val valid = when (index) {
+                in 0..3 -> feature in -1.000_001f..1.000_001f
+                in 18..31 -> feature in -0.000_001f..3.000_001f
+                else -> feature in -0.000_001f..1.000_001f
+            }
+            require(valid) { "feature $index is outside its schema range" }
+        }
     }
 }
 

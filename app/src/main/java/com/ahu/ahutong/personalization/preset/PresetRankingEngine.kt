@@ -2,6 +2,7 @@ package com.ahu.ahutong.personalization.preset
 
 import com.ahu.ahutong.personalization.context.ContextSnapshot
 import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
+import com.ahu.ahutong.personalization.bootstrap.BootstrapPresetCapture
 import com.ahu.ahutong.personalization.inference.AdamWState
 import com.ahu.ahutong.personalization.inference.TinyMlpBackprop
 import com.ahu.ahutong.personalization.inference.TinyMlpMath
@@ -48,7 +49,9 @@ data class PresetCandidate(
     val featureVector: FloatArray = FloatArray(0),
     val recentBaselineScore: Float = 0f,
     val frequencyBaselineScore: Float = 0f,
-    val promotionHoldout: Boolean = false
+    val promotionHoldout: Boolean = false,
+    val candidateOrdinal: Int = 0,
+    val occurredEpochDay: Long? = null
 )
 
 data class PresetSubmission(
@@ -186,7 +189,9 @@ class PresetRankingEngine @Inject constructor(
                     stats,
                     contexts.copy(time = contexts.global, business = contexts.global)
                 ),
-                promotionHoldout = holdout
+                promotionHoldout = holdout,
+                candidateOrdinal = index,
+                occurredEpochDay = snapshot.epochDay
             )
         }.sortedByDescending(PresetCandidate::effectiveScore).let { ranked ->
             lastRankings[profileKey to domain] = ranked
@@ -246,10 +251,13 @@ class PresetRankingEngine @Inject constructor(
         val stats = dao.presetUsageStats(profileKey, submission.domain.name)
         val model = store.state(profileKey)
         val checkpoint = model.candidate ?: model.active
-        trainingCandidates.forEachIndexed { index, candidate ->
-            val preset = currentPresets.firstOrNull { it.presetId == candidate.presetId } ?: dao.localPreset(profileKey, candidate.presetId) ?: return@forEachIndexed
+        val bootstrapCaptures = mutableListOf<BootstrapPresetCapture>()
+        trainingCandidates.forEach { candidate ->
+            val preset = currentPresets.firstOrNull { it.presetId == candidate.presetId }
+                ?: dao.localPreset(profileKey, candidate.presetId)
+                ?: return@forEach
             val features = candidate.featureVector.takeIf { it.size == PresetModelStateStore.INPUT_SIZE }
-                ?: candidateFeatures(index, preset, stats, contexts, snapshot)
+                ?: candidateFeatures(candidate.candidateOrdinal, preset, stats, contexts, snapshot)
             val label = candidate.presetId == presetId
             val statScore = candidate.statScore
             val tinyScore = candidate.tinyScore
@@ -268,24 +276,25 @@ class PresetRankingEngine @Inject constructor(
                     feedbackSource = PresetFeedbackSource.NATURAL_COMMIT.name,
                     weightConfigVersion = WEIGHT_CONFIG_VERSION,
                     naturalHoldoutEligible = true,
-                    interactionId = null
+                    interactionId = null,
+                    candidateOrdinal = candidate.candidateOrdinal
                 )
                 if (dao.insertPresetTrainingSample(trainingSample) != -1L) {
-                    runCatching { bootstrapTrainingDataManager?.capturePreset(trainingSample, index) }
+                    bootstrapCaptures += trainingSample.toBootstrapCapture(candidate.candidateOrdinal)
                 }
             } else {
-                runCatching {
-                    bootstrapTrainingDataManager?.capturePresetOpportunity(
+                bootstrapCaptures += BootstrapPresetCapture(
                         profileKey = profileKey,
                         domainId = submission.domain.name,
                         rawOpportunityId = opportunityId,
-                        candidateOrdinal = index,
+                        candidateOrdinal = candidate.candidateOrdinal,
                         features = BinaryCodec.floats(features),
                         label = label,
                         occurredEpochDay = snapshot.epochDay,
+                        feedbackSource = PresetFeedbackSource.NATURAL_COMMIT.name,
+                        sampleWeight = NATURAL_WEIGHT,
                         naturalHoldoutEligible = true
                     )
-                }
                 val shadowEvaluation = PresetShadowEvaluationEntity(
                     profileKey = profileKey,
                     domainId = submission.domain.name,
@@ -306,6 +315,7 @@ class PresetRankingEngine @Inject constructor(
                 telemetryAggregateStore.contributePreset(shadowEvaluation)
             }
         }
+        runCatching { bootstrapTrainingDataManager?.capturePresetGroup(bootstrapCaptures) }
         if (trainingCandidates.any { !it.promotionHoldout }) pendingProfiles += profileKey
         presetId
     }
@@ -388,7 +398,12 @@ class PresetRankingEngine @Inject constructor(
             resolvedAtEpochMs = null,
             resolutionFingerprint = null,
             feedbackWeight = null,
-            checkpointId = candidate.checkpointId
+            checkpointId = candidate.checkpointId,
+            exposureFeatures = candidate.featureVector
+                .takeIf { it.size == PresetModelStateStore.INPUT_SIZE }
+                ?.let(BinaryCodec::floats),
+            candidateOrdinal = candidate.candidateOrdinal,
+            occurredEpochDay = candidate.occurredEpochDay
         )
         if (dao.insertPresetInteraction(interaction) == -1L) {
             return dao.presetInteractionForCandidate(profileKey, candidate.opportunityId, candidate.presetId)?.toToken()
@@ -441,11 +456,15 @@ class PresetRankingEngine @Inject constructor(
         val preset = dao.localPreset(profileKey, interaction.candidateId) ?: return
         val contexts = contextKeys(snapshot)
         val statsBefore = dao.presetUsageStats(profileKey, interaction.domainId)
-        val index = lastRankings[profileKey to SemanticDomain.valueOf(interaction.domainId)]
-            ?.indexOfFirst { it.presetId == interaction.candidateId }
-            ?.takeIf { it >= 0 }
+        val index = interaction.candidateOrdinal
+            ?: lastRankings[profileKey to SemanticDomain.valueOf(interaction.domainId)]
+                ?.firstOrNull { it.presetId == interaction.candidateId }
+                ?.candidateOrdinal
             ?: 0
-        val features = candidateFeatures(index, preset, statsBefore, contexts, snapshot)
+        val features = interaction.exposureFeatures
+            ?.let(BinaryCodec::floats)
+            ?.takeIf { it.size == PresetModelStateStore.INPUT_SIZE }
+            ?: candidateFeatures(index, preset, statsBefore, contexts, snapshot)
         val transitioned = dao.resolvePresetInteractionCas(
             profileKey = profileKey,
             interactionId = interaction.interactionId,
@@ -471,14 +490,15 @@ class PresetRankingEngine @Inject constructor(
                 candidateId = interaction.candidateId,
                 features = BinaryCodec.floats(features),
                 label = label,
-                occurredEpochDay = snapshot.epochDay,
+                occurredEpochDay = interaction.occurredEpochDay ?: snapshot.epochDay,
                 trainingCount = 0,
                 labelSource = source.name,
                 sampleWeight = weight,
                 feedbackSource = source.name,
                 weightConfigVersion = WEIGHT_CONFIG_VERSION,
                 naturalHoldoutEligible = false,
-                interactionId = interaction.interactionId
+                interactionId = interaction.interactionId,
+                candidateOrdinal = index
         )
         if (dao.insertPresetTrainingSample(trainingSample) != -1L) {
             runCatching { bootstrapTrainingDataManager?.capturePreset(trainingSample, index) }
@@ -541,6 +561,20 @@ class PresetRankingEngine @Inject constructor(
         candidateId = candidateId,
         candidateFingerprint = candidateFingerprint
     )
+
+    private fun PresetTrainingSampleEntity.toBootstrapCapture(candidateOrdinal: Int) =
+        BootstrapPresetCapture(
+            profileKey = profileKey,
+            domainId = domainId,
+            rawOpportunityId = opportunityId,
+            candidateOrdinal = candidateOrdinal,
+            features = features,
+            label = label,
+            occurredEpochDay = occurredEpochDay,
+            feedbackSource = feedbackSource,
+            sampleWeight = sampleWeight,
+            naturalHoldoutEligible = naturalHoldoutEligible
+        )
 
     suspend fun runIdleTrainingSlice(budgetMillis: Long): Boolean = withContext(trainerDispatcher) {
         val profileKey = pendingProfiles.firstOrNull() ?: return@withContext false

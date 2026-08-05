@@ -22,7 +22,7 @@ class BehaviorDatabaseMigrationTest {
     )
 
     @Test
-    fun migrateOneToFourPreservesOldRowsAndCreatesTargetedTelemetryAndTrainingTables() {
+    fun migrateOneToFivePreservesOldRowsAndCreatesTargetedTelemetryAndTrainingTables() {
         helper.createDatabase(TEST_DB, 1).apply {
             execSQL(
                 "INSERT INTO learning_state " +
@@ -39,7 +39,8 @@ class BehaviorDatabaseMigrationTest {
             .addMigrations(
                 BehaviorDatabaseMigrations.MIGRATION_1_2,
                 BehaviorDatabaseMigrations.MIGRATION_2_3,
-                BehaviorDatabaseMigrations.MIGRATION_3_4
+                BehaviorDatabaseMigrations.MIGRATION_3_4,
+                BehaviorDatabaseMigrations.MIGRATION_4_5
             )
             .build()
         try {
@@ -71,7 +72,7 @@ class BehaviorDatabaseMigrationTest {
     }
 
     @Test
-    fun migrateTwoToFourPreservesExistingLearningState() {
+    fun migrateTwoToFivePreservesExistingLearningState() {
         helper.createDatabase(TEST_DB_V2, 2).apply {
             execSQL(
                 "INSERT INTO learning_state " +
@@ -87,12 +88,13 @@ class BehaviorDatabaseMigrationTest {
         val database = Room.databaseBuilder(context, BehaviorDatabase::class.java, TEST_DB_V2)
             .addMigrations(
                 BehaviorDatabaseMigrations.MIGRATION_2_3,
-                BehaviorDatabaseMigrations.MIGRATION_3_4
+                BehaviorDatabaseMigrations.MIGRATION_3_4,
+                BehaviorDatabaseMigrations.MIGRATION_4_5
             )
             .build()
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(4, sqlite.version)
+            assertEquals(5, sqlite.version)
             sqlite.query(
                 "SELECT statLearningStartedEpochDay, tinyTrainingStartedEpochDay " +
                     "FROM learning_state WHERE profileKey = ?",
@@ -111,9 +113,73 @@ class BehaviorDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrateFourToFiveRepairsDuplicateParticipantSequenceAndAdvancesCounter() {
+        helper.createDatabase(TEST_DB_V4, 4).apply {
+            execSQL(
+                "INSERT INTO bootstrap_training_consent " +
+                    "(profileKey, consentLifecycleId, participantId, secretAlias, encryptedRevocationCapability, " +
+                    "consentSchemaVersion, includeHistorical, historicalBackfillCompleted, nextSequenceNo, " +
+                    "contributedExampleCount, lastUploadAtEpochMs, state, createdAtEpochMs, updatedAtEpochMs) " +
+                    "VALUES (?, 'lifecycle', 'participant', 'alias', 'ciphertext', 1, 1, 0, 1, 0, NULL, 'ACTIVE', 1, 1)",
+                arrayOf(PROFILE)
+            )
+            repeat(2) { index ->
+                execSQL(
+                    "INSERT INTO bootstrap_training_example " +
+                        "(exampleId, profileKey, consentLifecycleId, participantId, sequenceNo, task, completeness, " +
+                        "featureSchemaVersion, outputSchemaVersion, actionCatalogVersion, features, availabilityMask, " +
+                        "targetLabel, feedbackSource, sampleWeight, deliveryLane, domainId, opportunityGroupId, " +
+                        "candidateOrdinal, journeyLengthBucket, naturalHoldoutEligible, occurredEpochDay, historical, " +
+                        "state, batchId, createdAtEpochMs) " +
+                        "VALUES (?, ?, 'lifecycle', 'participant', 7, 'NEXT_ACTION', 'LEGACY_PARTIAL', " +
+                        "4, 1, 1, X'00000000', NULL, 'OPEN_HOME', 'ORGANIC_ACTION', 1.0, " +
+                        "'ORDINARY_NEXT_ACTION', NULL, NULL, NULL, NULL, 0, 20000, 1, 'PENDING', NULL, ?)",
+                    arrayOf<Any>("example-$index", PROFILE, (index + 1).toLong())
+                )
+            }
+            close()
+        }
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val database = Room.databaseBuilder(context, BehaviorDatabase::class.java, TEST_DB_V4)
+            .addMigrations(BehaviorDatabaseMigrations.MIGRATION_4_5)
+            .build()
+        try {
+            val sqlite = database.openHelper.writableDatabase
+            sqlite.query(
+                "SELECT COUNT(*), MIN(createdAtEpochMs) FROM bootstrap_training_example " +
+                    "WHERE participantId = 'participant' AND sequenceNo = 7"
+            ).use { cursor ->
+                assertEquals(true, cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+                assertEquals(1, cursor.getInt(1))
+            }
+            sqlite.query("SELECT nextSequenceNo FROM bootstrap_training_consent WHERE profileKey = ?", arrayOf(PROFILE))
+                .use { cursor ->
+                    assertEquals(true, cursor.moveToFirst())
+                    assertEquals(8, cursor.getInt(0))
+                }
+            sqlite.query("PRAGMA index_list(`bootstrap_training_example`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndexOrThrow("name")
+                val uniqueIndex = cursor.getColumnIndexOrThrow("unique")
+                var found = false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == "index_bootstrap_training_example_participantId_sequenceNo") {
+                        found = cursor.getInt(uniqueIndex) == 1
+                    }
+                }
+                assertEquals(true, found)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
     private companion object {
         const val TEST_DB = "behavior-migration-test"
         const val TEST_DB_V2 = "behavior-migration-v2-test"
+        const val TEST_DB_V4 = "behavior-migration-v4-test"
         const val PROFILE = "0123456789abcdef0123456789abcdef"
         val TARGETED_TABLES = listOf(
             "semantic_event",

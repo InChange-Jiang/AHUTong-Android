@@ -22,6 +22,34 @@ object BehaviorDatabaseMigrations {
         }
     }
 
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `training_sample` ADD COLUMN `deliveryLane` TEXT NOT NULL DEFAULT 'UNKNOWN'")
+            db.execSQL("ALTER TABLE `training_sample` ADD COLUMN `naturalHoldoutEligible` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL(
+                "UPDATE `training_sample` SET `deliveryLane` = 'ORDINARY_NEXT_ACTION', `naturalHoldoutEligible` = 1 " +
+                    "WHERE `labelSource` IN ('ORGANIC_ACTION', 'INTERVENTION_FREE_TIMEOUT')"
+            )
+            db.execSQL("ALTER TABLE `preset_recommendation_interaction` ADD COLUMN `exposureFeatures` BLOB")
+            db.execSQL("ALTER TABLE `preset_recommendation_interaction` ADD COLUMN `candidateOrdinal` INTEGER")
+            db.execSQL("ALTER TABLE `preset_recommendation_interaction` ADD COLUMN `occurredEpochDay` INTEGER")
+            db.execSQL("ALTER TABLE `preset_training_sample` ADD COLUMN `candidateOrdinal` INTEGER")
+            db.execSQL(
+                "DELETE FROM `bootstrap_training_example` WHERE `rowId` NOT IN (" +
+                    "SELECT MIN(`rowId`) FROM `bootstrap_training_example` GROUP BY `participantId`, `sequenceNo`)"
+            )
+            db.execSQL(
+                "UPDATE `bootstrap_training_consent` SET `nextSequenceNo` = MAX(`nextSequenceNo`, " +
+                    "COALESCE((SELECT MAX(e.`sequenceNo`) + 1 FROM `bootstrap_training_example` e " +
+                    "WHERE e.`participantId` = `bootstrap_training_consent`.`participantId`), 1))"
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS `index_bootstrap_training_example_participantId_sequenceNo` " +
+                    "ON `bootstrap_training_example` (`participantId`, `sequenceNo`)"
+            )
+        }
+    }
+
     private val statements = listOf(
         """CREATE TABLE IF NOT EXISTS `semantic_event` (`eventId` TEXT NOT NULL, `profileKey` TEXT NOT NULL, `sessionId` TEXT NOT NULL, `sequenceNo` INTEGER NOT NULL, `eventFamily` TEXT NOT NULL, `domainId` TEXT NOT NULL, `semanticId` TEXT NOT NULL, `changeKind` TEXT NOT NULL, `coarseValueBucket` TEXT NOT NULL, `route` TEXT, `affectedCandidateSetVersion` INTEGER NOT NULL, `source` TEXT NOT NULL, `committedAtEpochDay` INTEGER NOT NULL, `occurredAtElapsedMs` INTEGER NOT NULL, `semanticSchemaVersion` INTEGER NOT NULL, `tainted` INTEGER NOT NULL, `mutationBatchId` TEXT NOT NULL, `changeSetId` TEXT NOT NULL, PRIMARY KEY(`eventId`))""",
         "CREATE INDEX IF NOT EXISTS `index_semantic_event_profileKey_sequenceNo` ON `semantic_event` (`profileKey`, `sequenceNo`)",

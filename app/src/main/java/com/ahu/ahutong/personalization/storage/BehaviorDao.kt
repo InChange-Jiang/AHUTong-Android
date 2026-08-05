@@ -690,13 +690,16 @@ abstract class BehaviorDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertBootstrapTrainingExample(value: BootstrapTrainingExampleEntity): Long
 
+    @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND exampleId IN (:exampleIds)")
+    abstract suspend fun bootstrapTrainingExampleCountByIds(profileKey: String, exampleIds: List<String>): Int
+
     @Query("SELECT * FROM bootstrap_training_example WHERE profileKey = :profileKey AND state = 'PENDING' ORDER BY sequenceNo ASC LIMIT :limit")
     abstract suspend fun pendingBootstrapTrainingExamples(
         profileKey: String,
         limit: Int
     ): List<BootstrapTrainingExampleEntity>
 
-    @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND state = 'PENDING'")
+    @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND state IN ('PENDING', 'BATCHED')")
     abstract suspend fun pendingBootstrapTrainingExampleCount(profileKey: String): Int
 
     @Query("SELECT COUNT(*) FROM bootstrap_training_example WHERE profileKey = :profileKey AND task = :task AND state = 'PENDING'")
@@ -709,8 +712,17 @@ abstract class BehaviorDao {
         count: Int
     ): Int
 
+    @Query("DELETE FROM bootstrap_training_example WHERE rowId IN (:rowIds) AND state = 'PENDING'")
+    abstract suspend fun deletePendingBootstrapTrainingExamples(rowIds: List<Long>): Int
+
     @Query("UPDATE bootstrap_training_example SET state = 'BATCHED', batchId = :batchId WHERE rowId IN (:rowIds) AND state = 'PENDING'")
     abstract suspend fun markBootstrapTrainingExamplesBatched(rowIds: List<Long>, batchId: String): Int
+
+    @Query("UPDATE bootstrap_training_example SET state = 'QUARANTINED', batchId = NULL WHERE rowId IN (:rowIds) AND state = 'PENDING'")
+    abstract suspend fun quarantineBootstrapTrainingExamples(rowIds: List<Long>): Int
+
+    @Query("DELETE FROM bootstrap_training_example WHERE state = 'QUARANTINED' AND createdAtEpochMs < :cutoffEpochMs")
+    abstract suspend fun deleteExpiredQuarantinedBootstrapTrainingExamples(cutoffEpochMs: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     abstract suspend fun insertBootstrapTrainingBatch(value: BootstrapTrainingBatchEntity)
@@ -721,8 +733,26 @@ abstract class BehaviorDao {
     @Query("SELECT COUNT(*) FROM bootstrap_training_batch WHERE state IN ('READY', 'RETRY')")
     abstract suspend fun pendingBootstrapTrainingBatchCount(): Int
 
+    @Query("SELECT COUNT(*) FROM bootstrap_training_batch WHERE profileKey = :profileKey AND state IN ('READY', 'RETRY')")
+    abstract suspend fun activeBootstrapTrainingBatchCount(profileKey: String): Int
+
+    @Query("SELECT COALESCE(SUM(LENGTH(body)), 0) FROM bootstrap_training_batch WHERE profileKey = :profileKey AND state IN ('READY', 'RETRY')")
+    abstract suspend fun activeBootstrapTrainingBatchBytes(profileKey: String): Long
+
+    @Query("SELECT MIN(nextAttemptAtEpochMs) FROM bootstrap_training_batch WHERE state IN ('READY', 'RETRY')")
+    abstract suspend fun nextBootstrapTrainingBatchAttemptAtEpochMs(): Long?
+
     @Query("SELECT * FROM bootstrap_training_batch WHERE batchId = :batchId")
     abstract suspend fun bootstrapTrainingBatch(batchId: String): BootstrapTrainingBatchEntity?
+
+    @Query("SELECT batchId FROM bootstrap_training_batch WHERE state = 'QUARANTINED' OR createdAtEpochMs < :cutoffEpochMs")
+    abstract suspend fun staleBootstrapTrainingBatchIds(cutoffEpochMs: Long): List<String>
+
+    @Query("DELETE FROM bootstrap_training_example WHERE batchId IN (:batchIds)")
+    abstract suspend fun deleteBootstrapTrainingExamplesForBatches(batchIds: List<String>): Int
+
+    @Query("DELETE FROM bootstrap_training_batch WHERE batchId IN (:batchIds)")
+    abstract suspend fun deleteBootstrapTrainingBatches(batchIds: List<String>): Int
 
     @Query("UPDATE bootstrap_training_batch SET state = 'RETRY', attemptCount = attemptCount + 1, nextAttemptAtEpochMs = :nextAttemptAtEpochMs, lastErrorCode = :errorCode WHERE batchId = :batchId AND state IN ('READY', 'RETRY')")
     abstract suspend fun retryBootstrapTrainingBatch(
@@ -766,6 +796,12 @@ abstract class BehaviorDao {
     abstract suspend fun insertBootstrapTrainingDeletionTombstone(
         value: BootstrapTrainingDeletionTombstoneEntity
     ): Long
+
+    @Query("SELECT * FROM bootstrap_training_deletion_tombstone WHERE state IN ('READY', 'RETRY') ORDER BY createdAtEpochMs")
+    abstract suspend fun bootstrapTrainingDeletionTombstones(): List<BootstrapTrainingDeletionTombstoneEntity>
+
+    @Query("DELETE FROM bootstrap_training_deletion_tombstone WHERE deletionId = :deletionId")
+    abstract suspend fun deleteBootstrapTrainingDeletionTombstone(deletionId: String): Int
 
     @Query("SELECT * FROM bootstrap_training_deletion_tombstone WHERE state IN ('READY', 'RETRY') AND nextAttemptAtEpochMs <= :nowEpochMs ORDER BY createdAtEpochMs ASC LIMIT 1")
     abstract suspend fun dueBootstrapTrainingDeletion(nowEpochMs: Long): BootstrapTrainingDeletionTombstoneEntity?

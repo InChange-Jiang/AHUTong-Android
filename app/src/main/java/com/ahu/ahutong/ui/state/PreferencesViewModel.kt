@@ -139,7 +139,6 @@ class PreferencesViewModel @Inject constructor(
 
     fun setBootstrapTrainingContribution(enabled: Boolean, includeHistorical: Boolean = false) {
         viewModelScope.launch {
-            preferencesManager.setBootstrapTrainingOnboardingChoice(enabled, includeHistorical)
             behaviorRuntime.setBootstrapTrainingConsent(enabled, includeHistorical)
         }
     }

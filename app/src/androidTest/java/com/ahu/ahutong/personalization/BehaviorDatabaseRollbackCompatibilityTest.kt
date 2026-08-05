@@ -35,6 +35,9 @@ class BehaviorDatabaseRollbackCompatibilityTest {
     fun cleanUp() {
         context.deleteDatabase(BehaviorDatabaseFiles.LEGACY_V1)
         context.deleteDatabase(BehaviorDatabaseFiles.CURRENT_V2)
+        context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2).parentFile
+            ?.listFiles { file -> file.name.startsWith(BehaviorDatabaseFiles.CURRENT_V2 + ".") }
+            ?.forEach { it.delete() }
     }
 
     @Test
@@ -53,7 +56,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
         val database = BehaviorDatabaseFactory.open(context)
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(4, sqlite.version)
+            assertEquals(5, sqlite.version)
             sqlite.query(
                 "SELECT COUNT(*) FROM learning_state WHERE profileKey = 'rollback-profile'"
             ).use { cursor ->
@@ -88,7 +91,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
 
         val database = BehaviorDatabaseFactory.open(context)
         try {
-            assertEquals(4, database.openHelper.writableDatabase.version)
+            assertEquals(5, database.openHelper.writableDatabase.version)
         } finally {
             database.close()
         }
@@ -107,7 +110,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
     }
 
     @Test
-    fun futureCurrentVersionFallsBackToFreshVersionFourStorage() {
+    fun futureCurrentVersionIsPreservedBeforeFreshVersionFiveStorageIsCreated() {
         cleanUp()
         SQLiteDatabase.openOrCreateDatabase(
             context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2),
@@ -120,7 +123,7 @@ class BehaviorDatabaseRollbackCompatibilityTest {
         val database = BehaviorDatabaseFactory.open(context)
         try {
             val sqlite = database.openHelper.writableDatabase
-            assertEquals(4, sqlite.version)
+            assertEquals(5, sqlite.version)
             sqlite.query(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'behavior_event'"
             ).use { cursor ->
@@ -129,6 +132,21 @@ class BehaviorDatabaseRollbackCompatibilityTest {
             }
         } finally {
             database.close()
+        }
+        val preserved = context.getDatabasePath(BehaviorDatabaseFiles.CURRENT_V2).parentFile
+            ?.listFiles { file ->
+                file.name.matches(
+                    Regex(Regex.escape(BehaviorDatabaseFiles.CURRENT_V2) + "\\.downgrade-v99-\\d+")
+                )
+            }
+            .orEmpty()
+        assertEquals(1, preserved.size)
+        SQLiteDatabase.openDatabase(preserved.single().absolutePath, null, SQLiteDatabase.OPEN_READONLY).use {
+            assertEquals(99, it.version)
+            it.rawQuery("SELECT COUNT(*) FROM future_only", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
         }
     }
 

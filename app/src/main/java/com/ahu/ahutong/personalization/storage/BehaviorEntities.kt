@@ -153,7 +153,9 @@ data class TrainingSampleEntity(
     val occurredEpochDay: Long,
     val replayPriority: Float,
     val trainingCount: Int,
-    val labelSource: String
+    val labelSource: String,
+    val deliveryLane: String = "UNKNOWN",
+    val naturalHoldoutEligible: Boolean = false
 )
 
 @Entity(
@@ -772,7 +774,10 @@ data class PresetRecommendationInteractionEntity(
     val resolvedAtEpochMs: Long?,
     val resolutionFingerprint: String?,
     val feedbackWeight: Float?,
-    val checkpointId: String?
+    val checkpointId: String?,
+    val exposureFeatures: ByteArray? = null,
+    val candidateOrdinal: Int? = null,
+    val occurredEpochDay: Long? = null
 )
 
 @Entity(
@@ -840,7 +845,8 @@ data class PresetTrainingSampleEntity(
     val feedbackSource: String,
     val weightConfigVersion: Int,
     val naturalHoldoutEligible: Boolean,
-    val interactionId: String?
+    val interactionId: String?,
+    val candidateOrdinal: Int? = null
 )
 
 @Entity(
@@ -890,6 +896,7 @@ data class BootstrapTrainingConsentEntity(
     tableName = "bootstrap_training_example",
     indices = [
         Index(value = ["profileKey", "exampleId"], unique = true),
+        Index(value = ["participantId", "sequenceNo"], unique = true),
         Index(value = ["profileKey", "state", "sequenceNo"]),
         Index(value = ["profileKey", "task", "occurredEpochDay"]),
         Index(value = ["batchId"])

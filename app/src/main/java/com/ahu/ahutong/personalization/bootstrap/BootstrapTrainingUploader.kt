@@ -1,7 +1,7 @@
 package com.ahu.ahutong.personalization.bootstrap
 
 import com.ahu.ahutong.personalization.storage.BehaviorDao
-import com.google.gson.Gson
+import com.google.gson.JsonParser
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.inject.Inject
@@ -13,20 +13,26 @@ import okhttp3.RequestBody.Companion.toRequestBody
 class BootstrapTrainingUploader @Inject constructor(
     private val dao: BehaviorDao,
     private val manager: BootstrapTrainingDataManager,
-    private val secretStore: BootstrapTrainingSecretStore
+    private val secretStore: BootstrapTrainingSecretStore,
+    private val lifecycleStore: BootstrapTrainingLifecycleStore
 ) {
     private val random = SecureRandom()
-    private val gson = Gson()
 
     /** Returns true while durable upload or deletion work remains. */
     suspend fun uploadDue(): Boolean {
+        manager.migrateLegacyDeletionTombstones()
+        manager.reconcileLifecycleOutbox()
         uploadDeletions()
         repeat(MAX_BATCH_ROUNDS_PER_RUN) {
             manager.prepareDueBatches()
             uploadBatches()
         }
-        return dao.pendingBootstrapTrainingBatchCount() > 0 ||
-            dao.pendingBootstrapTrainingDeletionCount() > 0
+        listOfNotNull(
+            dao.nextBootstrapTrainingBatchAttemptAtEpochMs(),
+            lifecycleStore.nextDeletionAttemptAtEpochMs()
+        ).minOrNull()?.let(manager::scheduleRetryAt)
+        val now = System.currentTimeMillis()
+        return dao.dueBootstrapTrainingBatch(now) != null || lifecycleStore.dueDeletion(now) != null
     }
 
     private suspend fun uploadBatches() {
@@ -46,28 +52,39 @@ class BootstrapTrainingUploader @Inject constructor(
                 return@repeat
             }
             val immutableRequest = runCatching {
-                gson.fromJson(batch.body.toString(Charsets.UTF_8), BootstrapTrainingBatchRequest::class.java)
-                    .also(BootstrapTrainingPayloadValidator::requireValid)
-                    .also {
-                        require(
-                            it.batchId == batch.batchId &&
-                                it.participantId == batch.participantId &&
-                                it.consentLifecycleId == batch.consentLifecycleId
-                        )
-                    }
+                JsonParser.parseString(batch.body.toString(Charsets.UTF_8)).asJsonObject.let { json ->
+                    val envelope = ImmutableBatchEnvelope(
+                        schemaVersion = json.get("schemaVersion").asInt,
+                        batchId = json.get("batchId").asString,
+                        participantId = json.get("participantId").asString,
+                        consentLifecycleId = json.get("consentLifecycleId").asString,
+                        appVersionCode = json.get("appVersionCode").asInt
+                    )
+                    require(
+                        envelope.schemaVersion == batch.protocolVersion &&
+                            envelope.batchId == batch.batchId &&
+                            envelope.participantId == batch.participantId &&
+                            envelope.consentLifecycleId == batch.consentLifecycleId &&
+                            envelope.appVersionCode > 0
+                    )
+                    envelope
+                }
             }.getOrElse {
                 dao.quarantineBootstrapTrainingBatch(batch.batchId, "IMMUTABLE_BODY_INVALID")
                 return@repeat
             }
             val attempts = batch.attemptCount + 1
+            val nextAttemptAt = now + backoffMillis(attempts)
             dao.retryBootstrapTrainingBatch(
                 batch.batchId,
-                now + backoffMillis(attempts),
+                nextAttemptAt,
                 "NETWORK_PENDING"
             )
+            manager.scheduleRetryAt(nextAttemptAt)
             val credentialResponse = runCatching {
                 BootstrapTrainingApi.API.credential(
                     BootstrapTrainingCredentialRequest(
+                        schemaVersion = immutableRequest.schemaVersion,
                         batchId = batch.batchId,
                         bodySha256Hex = batch.bodySha256,
                         appVersionCode = immutableRequest.appVersionCode
@@ -108,20 +125,22 @@ class BootstrapTrainingUploader @Inject constructor(
     private suspend fun uploadDeletions() {
         repeat(MAX_ITEMS_PER_RUN) {
             val now = System.currentTimeMillis()
-            val tombstone = dao.dueBootstrapTrainingDeletion(now) ?: return
+            val tombstone = lifecycleStore.dueDeletion(now) ?: return
             val attempts = tombstone.attemptCount + 1
-            dao.retryBootstrapTrainingDeletion(
-                tombstone.deletionId,
-                now + backoffMillis(attempts),
+            val nextAttemptAt = now + backoffMillis(attempts)
+            lifecycleStore.retryDeletion(
+                tombstone.participantId,
+                nextAttemptAt,
                 "NETWORK_PENDING"
             )
+            manager.scheduleRetryAt(nextAttemptAt)
             val capability = runCatching {
                 secretStore.decrypt(tombstone.secretAlias, tombstone.encryptedRevocationCapability)
             }.getOrNull() ?: return@repeat
             val response = runCatching {
                 BootstrapTrainingApi.API.delete(
                     BootstrapTrainingDeletionRequest(
-                        deletionId = tombstone.deletionId,
+                        deletionId = requireNotNull(tombstone.deletionId),
                         participantId = tombstone.participantId,
                         consentLifecycleId = tombstone.consentLifecycleId,
                         revocationCapability = capability
@@ -131,7 +150,7 @@ class BootstrapTrainingUploader @Inject constructor(
             response?.body()?.close()
             response?.errorBody()?.close()
             if (response?.isSuccessful == true) {
-                dao.acknowledgeBootstrapTrainingDeletion(tombstone.deletionId, System.currentTimeMillis())
+                lifecycleStore.acknowledgeDeletion(tombstone.participantId)
                 secretStore.delete(tombstone.secretAlias)
             }
         }
@@ -145,6 +164,14 @@ class BootstrapTrainingUploader @Inject constructor(
     private fun sha256(value: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(value)
         .joinToString("") { "%02x".format(it) }
+
+    private data class ImmutableBatchEnvelope(
+        val schemaVersion: Int,
+        val batchId: String,
+        val participantId: String,
+        val consentLifecycleId: String,
+        val appVersionCode: Int
+    )
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()

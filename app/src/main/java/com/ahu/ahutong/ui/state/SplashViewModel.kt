@@ -70,4 +70,25 @@ class SplashViewModel @Inject constructor(
             _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Ready(enabled)
         }
     }
+
+    fun acceptUnifiedPrivacyPolicy() {
+        _telemetryOnboardingState.value = TelemetryOnboardingState.Loading
+        _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Loading
+        viewModelScope.launch {
+            preferencesManager.setModelQualityTelemetryOnboardingChoice(true)
+            preferencesManager.setBootstrapTrainingOnboardingChoice(
+                value = true,
+                includeHistorical = true
+            )
+            runCatching { behaviorRuntime.setTelemetryConsent(true) }
+            runCatching {
+                behaviorRuntime.setBootstrapTrainingConsent(
+                    enabled = true,
+                    includeHistorical = true
+                )
+            }
+            _telemetryOnboardingState.value = TelemetryOnboardingState.Ready(true)
+            _bootstrapTrainingOnboardingState.value = BootstrapTrainingOnboardingState.Ready(true)
+        }
+    }
 }

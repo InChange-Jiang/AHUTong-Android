@@ -84,7 +84,9 @@ class KotlinOnDeviceTrainer @Inject constructor(
                 occurredEpochDay = sample.input.snapshot.epochDay,
                 replayPriority = replayPriority(sample.input.decisionId, sample.targetOutputId),
                 trainingCount = 0,
-                labelSource = sample.labelSource
+                labelSource = sample.labelSource,
+                deliveryLane = sample.deliveryLane,
+                naturalHoldoutEligible = sample.naturalHoldoutEligible
             )
         )
         if (inserted != -1L) runCatching {

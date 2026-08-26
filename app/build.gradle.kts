@@ -11,6 +11,15 @@ android {
     namespace = "com.ahu.ahutong"
     compileSdk = 36
 
+    signingConfigs {
+        create("debugKey") {
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
@@ -45,8 +54,9 @@ android {
 
     buildTypes {
         release {
-            isShrinkResources = true  // 移除无用的resource文件
-            isMinifyEnabled = true //是否对代码进行混淆，true表示混淆
+            isShrinkResources = true
+            isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("debugKey")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

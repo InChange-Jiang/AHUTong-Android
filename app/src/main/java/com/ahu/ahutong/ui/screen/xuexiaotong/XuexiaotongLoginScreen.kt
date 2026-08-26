@@ -79,9 +79,14 @@ fun XuexiaotongLoginScreen(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "记得交作业哦~",
+                text = "使用学习通账号密码登录",
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = "登陆凭证仅用于登录学习通，不会上传到任何第三方",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
             Spacer(modifier = Modifier.height(32.dp))
 

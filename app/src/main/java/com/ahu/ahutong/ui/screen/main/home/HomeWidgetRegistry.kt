@@ -91,6 +91,13 @@ object HomeWidgetRegistry {
             route = "repository",
             iconId = R.drawable.ic_repository,
             tint = Color(0xFF8D6E63)
+        ),
+        HomeWidgetSpec(
+            id = "xuexiaotong",
+            title = "学习通日历",
+            route = "xuexiaotong",
+            iconId = R.drawable.ic_xuexiaotong,
+            tint = Color(0xFF7C4DFF)
         )
     )
 

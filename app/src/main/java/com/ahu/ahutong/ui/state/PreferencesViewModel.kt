@@ -2,7 +2,6 @@ package com.ahu.ahutong.ui.state
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
@@ -36,14 +35,15 @@ class PreferencesViewModel @Inject constructor(
     private val _showQRCode = MutableStateFlow(false)
     val showQRCode: StateFlow<Boolean> = _showQRCode.asStateFlow()
 
-    private val _useCmbCardRecharge = MutableStateFlow(AHUCache.isCmbCardRechargePreferred())
-    val useCmbCardRecharge: StateFlow<Boolean> = _useCmbCardRecharge.asStateFlow()
-
     private val _isShowAllCourse = MutableStateFlow(false)
     val isShowAllCourse: StateFlow<Boolean> = _isShowAllCourse.asStateFlow()
 
     private val _useLiquidGlass = MutableStateFlow(true)
     val useLiquidGlass: StateFlow<Boolean> = _useLiquidGlass.asStateFlow()
+
+    private val _useBuiltInSecurePasswordKeyboard = MutableStateFlow(true)
+    val useBuiltInSecurePasswordKeyboard: StateFlow<Boolean> =
+        _useBuiltInSecurePasswordKeyboard.asStateFlow()
 
     private val _themeColor = MutableStateFlow<String?>(null)
     val themeColor: StateFlow<String?> = _themeColor.asStateFlow()
@@ -89,6 +89,11 @@ class PreferencesViewModel @Inject constructor(
         viewModelScope.launch {
             preferencesManager.useLiquidGlass.collect {
                 _useLiquidGlass.value = it
+            }
+        }
+        viewModelScope.launch {
+            preferencesManager.useBuiltInSecurePasswordKeyboard.collect {
+                _useBuiltInSecurePasswordKeyboard.value = it
             }
         }
         viewModelScope.launch {
@@ -183,24 +188,9 @@ class PreferencesViewModel @Inject constructor(
         }
     }
 
-    fun setUseCmbCardRecharge(value: Boolean) {
+    fun setUseBuiltInSecurePasswordKeyboard(value: Boolean) {
         viewModelScope.launch {
-            val oldValue = AHUCache.isCmbCardRechargePreferred()
-            if (oldValue == value) {
-                _useCmbCardRecharge.value = oldValue
-                return@launch
-            }
-            AHUCache.setCmbCardRechargePreferred(value)
-            val committedValue = AHUCache.isCmbCardRechargePreferred()
-            _useCmbCardRecharge.value = committedValue
-            if (committedValue == value) {
-                behaviorRuntime.recordCommittedMutation(
-                    MutationId.CMB_RECHARGE_PREFERENCE_CHANGED,
-                    oldValue,
-                    committedValue,
-                    coarseValueBucket = if (committedValue) "ENABLED" else "DISABLED"
-                )
-            }
+            preferencesManager.setUseBuiltInSecurePasswordKeyboard(value)
         }
     }
 

@@ -232,12 +232,7 @@ private fun CardView(
 //                        Toast.makeText(context, "请安装支付宝", Toast.LENGTH_SHORT).show()
 //                    }
 
-                            val route = if (AHUCache.isCmbCardRechargePreferred()) {
-                                "cmb_card_recharge"
-                            } else {
-                                "card_balance_deposit"
-                            }
-                            navController.navigate(route)
+                            navController.navigate("card_balance_deposit")
                         }
                     } else {
                         Modifier

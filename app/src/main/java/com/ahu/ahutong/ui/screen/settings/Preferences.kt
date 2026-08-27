@@ -53,8 +53,8 @@ import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.ui.components.SettingsActionRow
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsChoice
-import com.ahu.ahutong.ui.components.SettingsDialogSelectRow
 import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
+import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.components.SettingsPageHeader
 import com.ahu.ahutong.ui.components.SettingsSection
 import com.ahu.ahutong.ui.components.SettingsToggleRow
@@ -78,12 +78,13 @@ fun Preferences(onBack: () -> Unit = {}) {
 
     val appThemeMode by viewModel.appThemeMode.collectAsState()
     val showQRCode by viewModel.showQRCode.collectAsState()
-    val useCmbCardRecharge by viewModel.useCmbCardRecharge.collectAsState()
     val personalizationEnabled by viewModel.personalizationEnabled.collectAsState()
     val predictivePrefetchEnabled by viewModel.predictivePrefetchEnabled.collectAsState()
     val wifiOnlyPrefetch by viewModel.wifiOnlyPrefetch.collectAsState()
     val behaviorRetentionDays by viewModel.behaviorRetentionDays.collectAsState()
     val useLiquidGlass by viewModel.useLiquidGlass.collectAsState()
+    val useBuiltInSecurePasswordKeyboard by
+        viewModel.useBuiltInSecurePasswordKeyboard.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
     val courseReminderEnabled by viewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by
@@ -173,9 +174,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                         onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
                     )
                 }
-                SettingsDialogSelectRow(
+                SettingsSelectRow(
                     title = "本地记录保留期",
-                    dialogTitle = "选择本地记录保留期",
                     selected = behaviorRetentionDays,
                     choices = listOf(
                         SettingsChoice(7, "7 天"),
@@ -237,10 +237,10 @@ fun Preferences(onBack: () -> Unit = {}) {
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
             SettingsToggleRow(
-                title = "总是使用招商银行充值",
-                subtitle = "校园卡充值将直接进入招商银行页面",
-                selected = useCmbCardRecharge,
-                onSelectedChange = viewModel::setUseCmbCardRecharge,
+                title = "使用内置安全密码键盘",
+                subtitle = "关闭后使用系统密码键盘",
+                selected = useBuiltInSecurePasswordKeyboard,
+                onSelectedChange = viewModel::setUseBuiltInSecurePasswordKeyboard,
                 backdrop = backdrop,
                 showDivider = false,
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
@@ -310,9 +310,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                 modifier = Modifier.padding(horizontal = 16.dp),
                 backdrop = backdrop
             ) {
-                SettingsDialogSelectRow(
+                SettingsSelectRow(
                     title = "深色模式",
-                    dialogTitle = "选择深色模式",
                     selected = appThemeMode,
                     choices = listOf(
                         SettingsChoice(AppThemeMode.FOLLOW_SYSTEM, "跟随系统"),

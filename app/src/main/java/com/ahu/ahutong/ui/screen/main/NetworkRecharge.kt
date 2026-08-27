@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.data.crawler.PayState
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
 import com.ahu.ahutong.ui.state.NetworkRechargePageState
 import com.ahu.ahutong.ui.state.NetworkRechargeUiData
 import com.ahu.ahutong.ui.state.NetworkRechargeViewModel
@@ -88,7 +89,7 @@ fun NetworkRecharge(
     LaunchedEffect(payState) {
         when (payState) {
             is PayState.Succeeded, is PayState.Failed -> {
-                delay(1200)
+                delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
                 viewModel.resetPayState()
             }
 
@@ -172,72 +173,35 @@ fun NetworkRecharge(
     }
 
     if (showDialog) {
-        AlertDialog(
-            containerColor = 100.n1 withNight 20.n1,
-            titleContentColor = 10.n1 withNight 90.n1,
-            textContentColor = 10.n1 withNight 90.n1,
-            onDismissRequest = { showDialog = false },
-            title = { Text("请输入校园卡密码") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { input ->
-                            if (input.length <= 6 && input.all { it.isDigit() }) {
-                                password = input
-                                passwordError = null
-                            }
-                        },
-                        label = { Text("密码 (6位数字)", color = 40.n1 withNight 60.n1) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        isError = passwordError != null,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = 10.n1 withNight 90.n1,
-                            unfocusedTextColor = 10.n1 withNight 90.n1,
-                            focusedBorderColor = 20.n1 withNight 80.n1
-                        )
-                    )
-                    passwordError?.let {
-                        Text(
-                            text = it,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+        SecurePaymentPasswordDialog(
+            password = password,
+            onPasswordChange = {
+                password = it
+                passwordError = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (password.length == 6) {
-                            showDialog = false
-                            behaviorReporter.organic(AppActionId.SUBMIT_NETWORK_RECHARGE)
-                            viewModel.pay(amount, password)
-                            password = ""
-                            passwordError = null
-                        } else {
-                            passwordError = "密码必须是6位数字"
-                        }
-                    }
-                ) {
-                    Text("确认", color = 10.n1 withNight 90.n1)
-                }
+            title = "请输入校园卡密码",
+            errorMessage = passwordError,
+            onDismissRequest = {
+                showDialog = false
+                password = ""
+                passwordError = null
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showDialog = false
-                        password = ""
-                        passwordError = null
-                    }
-                ) {
-                    Text("取消", color = 10.n1 withNight 90.n1)
+            onConfirm = { confirmedPassword ->
+                if (confirmedPassword.length == 6) {
+                    showDialog = false
+                    behaviorReporter.organic(AppActionId.SUBMIT_NETWORK_RECHARGE)
+                    viewModel.pay(amount, confirmedPassword)
+                    password = ""
+                    passwordError = null
+                } else {
+                    passwordError = "密码必须是6位数字"
                 }
             }
         )
     }
 }
+
+private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L
 
 @Composable
 private fun LoadingCard() {

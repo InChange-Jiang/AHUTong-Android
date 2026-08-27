@@ -17,6 +17,8 @@ object PreferencesKeys {
     val SHOW_QR_CODE = booleanPreferencesKey("show_qr_code")
     val IS_SHOW_ALL_COURSE = booleanPreferencesKey("is_show_all_course")
     val USE_LIQUID_GLASS = booleanPreferencesKey("use_liquid_glass")
+    val USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD =
+        booleanPreferencesKey("use_built_in_secure_password_keyboard")
     val COURSE_REMINDER_ENABLED = booleanPreferencesKey("course_reminder_enabled")
     val COURSE_REMINDER_LIVE_COUNTDOWN_ENABLED =
         booleanPreferencesKey("course_reminder_live_countdown_enabled")
@@ -245,6 +247,16 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
     suspend fun setUseLiquidGlass(value: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[PreferencesKeys.USE_LIQUID_GLASS] = value
+        }
+    }
+
+    val useBuiltInSecurePasswordKeyboard: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD] ?: true
+    }
+
+    suspend fun setUseBuiltInSecurePasswordKeyboard(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD] = value
         }
     }
 

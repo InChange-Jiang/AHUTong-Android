@@ -210,7 +210,7 @@ object AppActionCatalog {
         AppActionId.CONFIRM_BATHROOM_PAYMENT to setOf("bathroom_deposit"),
         AppActionId.CONFIRM_ELECTRICITY_PAYMENT to setOf("electricity_pay"),
         AppActionId.SUBMIT_CARD_RECHARGE to setOf("card_balance_deposit"),
-        AppActionId.SUBMIT_CMB_CARD_RECHARGE to setOf("cmb_card_recharge"),
+        AppActionId.SUBMIT_CMB_CARD_RECHARGE to setOf("card_balance_deposit", "cmb_card_recharge"),
         AppActionId.SUBMIT_NETWORK_RECHARGE to setOf("network_recharge"),
         AppActionId.EDIT_HOME to setOf("home"),
         AppActionId.MANUAL_REFRESH_SCHEDULE to setOf("schedule"),

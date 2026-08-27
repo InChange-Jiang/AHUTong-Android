@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
@@ -16,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.colorResource
 import androidx.core.view.WindowCompat
@@ -36,6 +39,7 @@ fun AHUTheme(content: @Composable () -> Unit) {
     val themeMode by preferencesViewModel.appThemeMode.collectAsState()
     val useLiquidGlass by preferencesViewModel.useLiquidGlass.collectAsState()
     val isDarkTheme = themeMode.resolve(isSystemInDarkTheme())
+    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val themeConfiguration = remember(configuration, isDarkTheme) {
         Configuration(configuration).apply {
@@ -77,7 +81,59 @@ fun AHUTheme(content: @Composable () -> Unit) {
         LocalConfiguration provides themeConfiguration,
         LocalTonalPalettes provides tonalPalettes
     ) {
-        MaterialTheme(colorScheme = dynamicColorScheme(isLight = !isDarkTheme)) {
+        val colorScheme = if (
+            customKeyColor == null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        ) {
+            if (isDarkTheme) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
+        } else {
+            val generated = dynamicColorScheme(isLight = !isDarkTheme)
+            if (isDarkTheme) {
+                generated.copy(
+                    background = 6.n1,
+                    onBackground = 90.n1,
+                    surface = 6.n1,
+                    onSurface = 90.n1,
+                    surfaceVariant = 30.n1,
+                    onSurfaceVariant = 80.n1,
+                    inverseSurface = 90.n1,
+                    inverseOnSurface = 20.n1,
+                    outline = 60.n1,
+                    outlineVariant = 30.n1,
+                    surfaceBright = 24.n1,
+                    surfaceDim = 6.n1,
+                    surfaceContainerLowest = 4.n1,
+                    surfaceContainerLow = 10.n1,
+                    surfaceContainer = 12.n1,
+                    surfaceContainerHigh = 17.n1,
+                    surfaceContainerHighest = 22.n1
+                )
+            } else {
+                generated.copy(
+                    background = 98.n1,
+                    onBackground = 10.n1,
+                    surface = 98.n1,
+                    onSurface = 10.n1,
+                    surfaceVariant = 90.n1,
+                    onSurfaceVariant = 30.n1,
+                    inverseSurface = 20.n1,
+                    inverseOnSurface = 95.n1,
+                    outline = 50.n1,
+                    outlineVariant = 80.n1,
+                    surfaceBright = 98.n1,
+                    surfaceDim = 87.n1,
+                    surfaceContainerLowest = 100.n1,
+                    surfaceContainerLow = 96.n1,
+                    surfaceContainer = 94.n1,
+                    surfaceContainerHigh = 92.n1,
+                    surfaceContainerHighest = 90.n1
+                )
+            }
+        }
+        MaterialTheme(colorScheme = colorScheme) {
             CompositionLocalProvider(
                 LocalContentColor provides if (isDarkTheme) 100.n1 else 0.n1,
                 LocalIsLiquidGlassEnabled provides useLiquidGlass,

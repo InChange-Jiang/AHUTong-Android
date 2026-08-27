@@ -75,6 +75,7 @@ import com.ahu.ahutong.data.crawler.PayState
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.BathroomDepositViewModel
+import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -94,7 +95,7 @@ fun BathroomDeposit(
     LaunchedEffect(payState.value) {
         when (payState.value) {
             is PayState.Succeeded, is PayState.Failed -> {
-                delay(1000)
+                delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
                 viewmodel.resetPaymentState()
             }
 
@@ -471,72 +472,37 @@ fun BathroomDeposit(
 
 
             if (showDialog) {
-                AlertDialog(
-                    containerColor = 100.n1 withNight 20.n1,
-                    titleContentColor = 10.n1 withNight 90.n1,
-                    textContentColor = 10.n1 withNight 90.n1,
-                    onDismissRequest = { showDialog = false },
-                    title = { Text("请输入校园卡密码") },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { input ->
-                                    if (input.length <= 6 && input.all { it.isDigit() }) {
-                                        password = input
-                                        errorMsg = null
-                                    }
-                                },
-                                label = { Text("密码 (6位数字)", color = 40.n1 withNight 60.n1) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                visualTransformation = PasswordVisualTransformation(),
-                                isError = errorMsg != null,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = 10.n1 withNight 90.n1,
-                                    unfocusedTextColor = 10.n1 withNight 90.n1,
-                                    focusedBorderColor = 20.n1 withNight 80.n1
-                                )
-                            )
-                            if (errorMsg != null) {
-                                Text(
-                                    text = errorMsg!!,
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
+                SecurePaymentPasswordDialog(
+                    password = password,
+                    onPasswordChange = {
+                        password = it
+                        errorMsg = null
                     },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            if (password.length == 6) {
-                                showDialog = false
-                                behaviorReporter.organic(AppActionId.CONFIRM_BATHROOM_PAYMENT)
-                                viewmodel.pay(
-                                    bathroom = bathroom,
-                                    amount = amount,
-                                    password = password
-                                )
-                            } else {
-                                errorMsg = "密码必须是6位数字"
-                            }
-                        }) {
-                            Text("确认", color = 10.n1 withNight 90.n1)
-                        }
+                    title = "请输入校园卡密码",
+                    errorMessage = errorMsg,
+                    onDismissRequest = {
+                        showDialog = false
+                        password = ""
+                        errorMsg = null
                     },
-                    dismissButton = {
-                        TextButton(onClick = {
+                    onConfirm = { confirmedPassword ->
+                        if (confirmedPassword.length == 6) {
                             showDialog = false
-                            password = ""
-                            errorMsg = null
-                        }) {
-                            Text("取消", color = 10.n1 withNight 90.n1)
+                            behaviorReporter.organic(AppActionId.CONFIRM_BATHROOM_PAYMENT)
+                            viewmodel.pay(
+                                bathroom = bathroom,
+                                amount = amount,
+                                password = confirmedPassword
+                            )
+                        } else {
+                            errorMsg = "密码必须是6位数字"
                         }
                     }
                 )
-
-
             }
         }
     }
 }
+
+private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L
 

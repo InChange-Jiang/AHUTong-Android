@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -517,73 +518,80 @@ fun <T> SettingsSelectRow(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = choices.firstOrNull { it.value == selected }?.label.orEmpty()
+    val menuMinWidth = LocalConfiguration.current.screenWidthDp.dp * 0.5f
     Column(modifier = modifier.fillMaxWidth()) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
-            modifier = Modifier.fillMaxWidth()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 68.dp)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor(
+            SettingsRowText(
+                title = title,
+                subtitle = subtitle,
+                modifier = Modifier.weight(1f)
+            )
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = !expanded }
+            ) {
+                Row(
+                    modifier = Modifier.menuAnchor(
                         type = ExposedDropdownMenuAnchorType.PrimaryNotEditable,
                         enabled = true
+                    ),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = selectedLabel,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge
                     )
-                    .heightIn(min = 68.dp)
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                SettingsRowText(
-                    title = title,
-                    subtitle = subtitle,
-                    modifier = Modifier.weight(1f)
-                )
-                Text(
-                    text = selectedLabel,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-            }
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                choices.forEach { choice ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = choice.label,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        },
-                        leadingIcon = {
-                            RadioButton(
-                                selected = choice.value == selected,
-                                onClick = null,
-                                colors = RadioButtonDefaults.colors(
-                                    selectedColor = MaterialTheme.colorScheme.primary
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                }
+                ExposedDropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    modifier = Modifier.widthIn(min = menuMinWidth),
+                    matchAnchorWidth = false,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    tonalElevation = 0.dp
+                ) {
+                    choices.forEach { choice ->
+                        val isSelected = choice.value == selected
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    text = choice.label,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyLarge
                                 )
-                            )
-                        },
-                        trailingIcon = {
-                            if (choice.value == selected) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                            },
+                            trailingIcon = {
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            modifier = Modifier.background(
+                                if (isSelected) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                                } else {
+                                    Color.Transparent
+                                }
+                            ),
+                            onClick = {
+                                onSelected(choice.value)
+                                expanded = false
                             }
-                        },
-                        onClick = {
-                            onSelected(choice.value)
-                            expanded = false
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

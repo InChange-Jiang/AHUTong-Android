@@ -43,7 +43,6 @@ import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
 import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
-import com.ahu.ahutong.ui.screen.main.CmbCardRecharge
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
 import com.ahu.ahutong.ui.screen.main.Evaluation
 import com.ahu.ahutong.ui.screen.main.Exam
@@ -312,18 +311,7 @@ fun Main(
             }
 
             animatedComposable("cmb_card_recharge") {
-                CmbCardRecharge(
-                    onExit = { navController.popBackStack() },
-                    onRechargeSuccessExit = {
-                        val returnedHome = navController.popBackStack("home", inclusive = false)
-                        if (!returnedHome) {
-                            navController.navigate("home") {
-                                popUpTo("cmb_card_recharge") { inclusive = true }
-                                launchSingleTop = true
-                            }
-                        }
-                    }
-                )
+                CardBalanceDeposit(navController = navController)
             }
 
             animatedComposable("network_recharge") {

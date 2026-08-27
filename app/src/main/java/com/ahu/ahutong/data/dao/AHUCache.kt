@@ -7,6 +7,7 @@ import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundTypeItem
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.model.ElectricityChargeInfo
 import com.ahu.ahutong.data.model.ElectricityDepositHistoryItem
+import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.data.model.EvalPreset
 import com.ahu.ahutong.data.model.Exam
 import com.ahu.ahutong.data.model.GpaRankInfo
@@ -543,18 +544,47 @@ object AHUCache {
         kv.putBoolean("businessAccepted",true)
     }
 
-    fun isCmbCardRechargePreferred(): Boolean {
-        userGetString("cmb_card_recharge_preferred")?.toBooleanStrictOrNull()?.let { return it }
-        val value = kv.getBoolean("cmb_card_recharge_preferred", false)
-        if (kv.containsKey("cmb_card_recharge_preferred")) {
-            userPutString("cmb_card_recharge_preferred", value.toString())
+    fun getCardRechargeBank(): CardRechargeBank? {
+        CardRechargeBank.fromStorage(userGetString("card_recharge_bank"))?.let { return it }
+        CardRechargeBank.fromStorage(kv.decodeString("card_recharge_bank"))?.let { bank ->
+            userPutString("card_recharge_bank", bank.storageValue)
+            return bank
         }
-        return value
+
+        val legacyValue = userGetString("cmb_card_recharge_preferred")
+            ?.toBooleanStrictOrNull()
+            ?: if (kv.containsKey("cmb_card_recharge_preferred")) {
+                kv.getBoolean("cmb_card_recharge_preferred", false)
+            } else {
+                null
+            }
+        return legacyValue?.let { preferred ->
+            val bank = if (preferred) {
+                CardRechargeBank.CHINA_MERCHANTS_BANK
+            } else {
+                CardRechargeBank.AGRICULTURAL_BANK
+            }
+            setCardRechargeBank(bank)
+            bank
+        }
     }
 
+    fun setCardRechargeBank(bank: CardRechargeBank) {
+        userPutString("card_recharge_bank", bank.storageValue)
+        kv.putString("card_recharge_bank", bank.storageValue)
+    }
+
+    fun isCmbCardRechargePreferred(): Boolean =
+        getCardRechargeBank() == CardRechargeBank.CHINA_MERCHANTS_BANK
+
     fun setCmbCardRechargePreferred(preferred: Boolean) {
-        userPutString("cmb_card_recharge_preferred", preferred.toString())
-        kv.putBoolean("cmb_card_recharge_preferred", preferred)
+        setCardRechargeBank(
+            if (preferred) {
+                CardRechargeBank.CHINA_MERCHANTS_BANK
+            } else {
+                CardRechargeBank.AGRICULTURAL_BANK
+            }
+        )
     }
 
     /**

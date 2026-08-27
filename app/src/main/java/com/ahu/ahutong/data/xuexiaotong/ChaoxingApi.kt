@@ -68,16 +68,16 @@ class ChaoxingApi(private val context: Context) {
                 throw IOException(msg)
             }
             val jumpUrl = data.optString("url", "")
-            try { if (jumpUrl.isNotEmpty()) get(jumpUrl) } catch (e: Exception) { }
+            try { if (jumpUrl.isNotEmpty()) getText(jumpUrl) } catch (e: Exception) { }
             val domains = listOf(
-                "https://mooc2-ans.chaoxing.com/visit/interaction",
-                "https://mooc1.chaoxing.com/visit/interaction",
-                "https://mobilelearn.chaoxing.com/page/active/stuActiveList?courseid=1&clazzid=1&cpi=1&ut=s&t=${System.currentTimeMillis()}&stuenc=1&fid=1",
-                "https://i.mooc.chaoxing.com/space/index",
-                "https://passport2-api.chaoxing.com/",
-                "https://stat2-ans.chaoxing.com/"
-            )
-            for (d in domains) { try { get(d) } catch (e: Exception) { } }
+     "https://mooc2-ans.chaoxing.com/visit/interaction",
+     "https://mooc1.chaoxing.com/visit/interaction",
+     "https://mobilelearn.chaoxing.com/page/active/stuActiveList?courseid=1&clazzid=1&cpi=1&ut=s&t=${System.currentTimeMillis()}&stuenc=1&fid=1",
+     "https://i.mooc.chaoxing.com/space/index",
+     "https://passport2-api.chaoxing.com/",
+     "https://stat2-ans.chaoxing.com/"
+    )
+    for (d in domains) { try { getText(d) } catch (e: Exception) { } }
 
             val cookie = cookieJar.cookieString()
             Store.saveCookie(cookie)
@@ -375,13 +375,14 @@ class ChaoxingApi(private val context: Context) {
     suspend fun syncAllWorks(listener: ProgressListener? = null): List<Work> =
         withContext(Dispatchers.IO) {
             listener?.onProgress(0, 0, "正在获取课程列表...")
-            var courses = Store.getCourses()
-            if (courses.isEmpty()) courses = fetchCourses()
+            // 每次同步都刷新课程列表，新加入的课程无需退出登录即可看到
+            var courses = try { fetchCourses() } catch (e: Exception) { Store.getCourses() }
             if (courses.isEmpty()) throw IOException("课程列表获取为空，请稍后重试")
 
             val existing = Store.getWorks()
-            val existingMap = existing.filter { it.workId.isNotEmpty() && it.endTs != null }
-                .associateBy { it.workId }
+            val existingByCourse = existing.groupBy { it.courseId }.mapValues { (_, v) ->
+                v.associateBy { it.workId }
+            }
 
             val allWorks = mutableListOf<Work>()
             var done = 0
@@ -396,22 +397,30 @@ class ChaoxingApi(private val context: Context) {
                     delay(600)
 
                     for (work in works) {
-                        val prev = existingMap[work.workId]
-                        var startTs: Long? = prev?.startTs
-                        var endTs: Long? = prev?.endTs
+                        var startTs: Long? = null
+                        var endTs: Long? = null
 
-                        if (prev == null) {
-                            try {
-                                val dl = fetchWorkDeadline(work)
-                                if (dl != null) { startTs = dl.first; endTs = dl.second }
-                                delay(800)
-                            } catch (e: Exception) { }
+                        // 每次同步都重新抓取截止时间，确保延期后的时间更新
+                        try {
+                            val dl = fetchWorkDeadline(work)
+                            if (dl != null) { startTs = dl.first; endTs = dl.second }
+                            delay(800)
+                        } catch (e: Exception) {
+                            // 抓取失败时使用旧数据
+                            val prev = existingByCourse[course.courseId]?.get(work.workId)
+                            startTs = prev?.startTs
+                            endTs = prev?.endTs
                         }
 
+                        val prev = existingByCourse[course.courseId]?.get(work.workId)
                         allWorks.add(work.copy(startTs = startTs, endTs = endTs,
                             rawStart = prev?.rawStart ?: "", rawEnd = prev?.rawEnd ?: ""))
                     }
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    // 单门课程失败时保留旧数据，避免该课程作业从日历消失
+                    val oldCourseWorks = existingByCourse[course.courseId]?.values ?: emptyList()
+                    allWorks.addAll(oldCourseWorks)
+                }
                 done++
                 listener?.onProgress(done, total, "已完成 $done/$total 门课程")
             }
@@ -429,10 +438,11 @@ class ChaoxingApi(private val context: Context) {
     suspend fun syncCourseProgress(listener: ProgressListener? = null): List<CourseProgress> =
         withContext(Dispatchers.IO) {
             listener?.onProgress(0, 0, "正在获取课程进度...")
-            var courses = Store.getCourses()
-            if (courses.isEmpty()) courses = fetchCourses()
+            // 每次同步都刷新课程列表
+            var courses = try { fetchCourses() } catch (e: Exception) { Store.getCourses() }
             if (courses.isEmpty()) throw IOException("课程列表获取为空，请稍后重试")
 
+            val existingProgress = Store.getCourseProgress().associateBy { it.courseId }
             val result = mutableListOf<CourseProgress>()
             var done = 0
             val total = courses.size
@@ -453,7 +463,11 @@ class ChaoxingApi(private val context: Context) {
                             course.name, finish, jobcount, percent, System.currentTimeMillis()))
                     }
                     delay(800)
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    // 单门课程失败时保留旧数据
+                    val old = existingProgress[course.courseId]
+                    if (old != null) result.add(old)
+                }
                 done++
                 listener?.onProgress(done, total, "已完成 $done/$total 门课程")
             }

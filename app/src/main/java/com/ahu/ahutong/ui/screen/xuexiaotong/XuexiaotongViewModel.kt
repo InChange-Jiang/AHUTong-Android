@@ -107,6 +107,7 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
     }
 
     fun logout() {
+        ReminderScheduler.cancelAll(appContext)
         api.clearSession()
         Store.clearLoginData()
         Store.clearCredential()
@@ -181,9 +182,12 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
     }
 
     fun saveCustomEvents(list: List<CustomEvent>) {
+        // 先取消旧列表的所有提醒（cancelAll 从 Store 读取，必须在保存新列表之前）
+        ReminderScheduler.cancelAll(appContext)
+        Store.saveRemindedMap(emptyMap())
         Store.saveCustomEvents(list)
         _customEvents.value = list
-        ReminderScheduler.rescheduleAll(appContext)
+        ReminderScheduler.scheduleAll(appContext)
     }
 
     fun addCustomEvent(ev: CustomEvent) {

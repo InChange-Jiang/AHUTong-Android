@@ -159,5 +159,8 @@ object Store {
         remove("cx_works")
         remove("cx_last_sync")
         remove("cx_reminded")
+        remove("cx_course_progress")
+        remove("cx_cred_phone")
+        remove("cx_cred_pwd")
     }
 }

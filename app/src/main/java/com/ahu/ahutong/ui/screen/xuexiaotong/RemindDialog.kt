@@ -1,9 +1,13 @@
 package com.ahu.ahutong.ui.screen.xuexiaotong
 
+import android.Manifest
 import android.app.AlarmManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import com.ahu.ahutong.data.xuexiaotong.RemindSetting
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.monet.n1
@@ -45,17 +50,39 @@ import com.kyant.monet.withNight
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RemindDialog(
-    setting: RemindSetting,
-    onSave: (RemindSetting) -> Unit,
-    onDismiss: () -> Unit,
-    onTest: () -> Unit
+ setting: RemindSetting,
+ onSave: (RemindSetting) -> Unit,
+ onDismiss: () -> Unit,
+ onTest: () -> Unit
 ) {
-    var enabled by remember { mutableStateOf(setting.enabled) }
-    var lead by remember { mutableIntStateOf(setting.leadMinutes) }
-    var onlyTodo by remember { mutableStateOf(setting.onlyTodo) }
+ var enabled by remember { mutableStateOf(setting.enabled) }
+ var lead by remember { mutableIntStateOf(setting.leadMinutes) }
+ var onlyTodo by remember { mutableStateOf(setting.onlyTodo) }
 
-    val leadOptions = listOf(0 to "截止时", 60 to "提前1小时", 360 to "提前6小时", 720 to "提前12小时", 1440 to "提前1天")
-    val context = LocalContext.current
+ val leadOptions = listOf(0 to "截止时", 60 to "提前1小时", 360 to "提前6小时", 720 to "提前12小时", 1440 to "提前1天")
+ val context = LocalContext.current
+
+ val permissionLauncher = rememberLauncherForActivityResult(
+  ActivityResultContracts.RequestPermission()
+ ) { granted ->
+  if (granted) {
+   onSave(RemindSetting(enabled, lead, onlyTodo))
+   onDismiss()
+  }
+ }
+
+ fun doSave() {
+  if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+   if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+    != PackageManager.PERMISSION_GRANTED
+   ) {
+    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    return
+   }
+  }
+  onSave(RemindSetting(enabled, lead, onlyTodo))
+  onDismiss()
+ }
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -228,10 +255,7 @@ fun RemindDialog(
                         .height(40.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                        .clickable {
-                            onSave(RemindSetting(enabled, lead, onlyTodo))
-                            onDismiss()
-                        },
+                        .clickable { doSave() },
                     contentAlignment = Alignment.Center
                 ) {
                     Text(

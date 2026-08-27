@@ -17,7 +17,7 @@ class PersistentCookieJar(private val context: Context) : CookieJar {
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         val list = cache.getOrPut(url.host) { mutableListOf() }
         cookies.forEach { c ->
-            list.removeAll { it.name == c.name }
+            list.removeAll { it.name == c.name && it.domain == c.domain && it.path == c.path }
             list.add(c)
         }
         persist()
@@ -25,13 +25,13 @@ class PersistentCookieJar(private val context: Context) : CookieJar {
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val now = System.currentTimeMillis()
-        val map = linkedMapOf<String, Cookie>()
+        val result = mutableListOf<Cookie>()
         cache.forEach { (_, list) ->
-            list.filter { it.expiresAt > now }.forEach { c ->
-                map[c.name] = c
+            list.filter { it.expiresAt > now && it.matches(url) }.forEach { c ->
+                result.add(c)
             }
         }
-        return map.values.toList()
+        return result
     }
 
     fun cookieString(): String {

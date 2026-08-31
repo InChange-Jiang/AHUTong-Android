@@ -4,6 +4,10 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.ahu.ahutong.notification.model.CourseReminderPayload
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class CourseReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -13,32 +17,41 @@ class CourseReminderReceiver : BroadcastReceiver() {
         }
 
         val payload = CourseReminderPayload.fromIntent(intent) ?: return
-        when (intent.action) {
-            ACTION_REMIND -> {
-                val liveUpdateShown = CourseReminderNotifier.showReminder(context, payload)
-                if (liveUpdateShown) {
-                    CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
-                }
-                CourseReminderScheduler.reschedule(context)
-            }
+        val pendingResult = goAsync()
+        receiverScope.launch {
+            try {
+                when (intent.action) {
+                    ACTION_REMIND -> {
+                        val liveUpdateShown = CourseReminderNotifier.showReminder(context, payload)
+                        if (liveUpdateShown) {
+                            CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
+                        }
+                        CourseReminderScheduler.reschedule(context).join()
+                    }
 
-            ACTION_UPDATE_LIVE_COUNTDOWN -> {
-                if (!CourseReminderCapability.shouldTryLiveCountdown(context, payload)) {
-                    CourseReminderNotifier.cancelActiveReminder(context)
-                    return
-                }
+                    ACTION_UPDATE_LIVE_COUNTDOWN -> {
+                        if (!CourseReminderCapability.shouldTryLiveCountdown(context, payload)) {
+                            CourseReminderNotifier.cancelActiveReminder(context)
+                            return@launch
+                        }
 
-                val liveUpdateShown = CourseLiveUpdateHelper.showLiveUpdate(context, payload)
-                if (liveUpdateShown) {
-                    CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
-                } else {
-                    CourseReminderNotifier.cancelActiveReminder(context)
+                        val liveUpdateShown = CourseLiveUpdateHelper.showLiveUpdate(context, payload)
+                        if (liveUpdateShown) {
+                            CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
+                        } else {
+                            CourseReminderNotifier.cancelActiveReminder(context)
+                        }
+                    }
                 }
+            } finally {
+                pendingResult.finish()
             }
         }
     }
 
     companion object {
+        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
         const val ACTION_REMIND = "com.ahu.ahutong.notification.ACTION_REMIND_COURSE"
         const val ACTION_UPDATE_LIVE_COUNTDOWN =
             "com.ahu.ahutong.notification.ACTION_UPDATE_LIVE_COUNTDOWN"

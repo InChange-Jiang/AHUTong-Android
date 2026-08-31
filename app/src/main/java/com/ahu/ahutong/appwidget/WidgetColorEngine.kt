@@ -51,7 +51,7 @@ inline val Number.n2: Color
 object MonetEngine {
 
     var palettes: TonalPalettes =
-        Color(android.R.color.holo_blue_bright).toTonalPalettes()
+        Color(0xFF00DDFF).toTonalPalettes()
 
 }
 

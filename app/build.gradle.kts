@@ -16,17 +16,9 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            excludes += "**/libahutong_rs.so"
-        }
-    }
-
     lint {
-        //即使报错也不会停止打包
-        abortOnError = false
-        //打包release版本的时候是否进行检测
-        checkReleaseBuilds = false
+        abortOnError = true
+        checkReleaseBuilds = true
     }
     //关闭PNG合法性检查
     // aaptOptions.useNewCruncher = false
@@ -136,6 +128,7 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.material3)
+    implementation(libs.miuix.android)
     implementation(libs.androidx.runtime.livedata)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

@@ -2,6 +2,7 @@ package com.ahu.ahutong.ui.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -31,14 +32,21 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
+import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.utils.DampedDragAnimation
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
@@ -54,6 +62,7 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
+import top.yukonga.miuix.kmp.basic.Switch as MiuixSwitch
 
 @Composable
 fun LiquidToggle(
@@ -63,10 +72,22 @@ fun LiquidToggle(
     modifier: Modifier = Modifier,
     userInputEnabled: Boolean = true,
     toggleOnTap: Boolean = true,
+    contentDescription: String? = null,
     onHorizontalDragActiveChange: (Boolean) -> Unit = {}
 ) {
-    val isLiquid = LocalIsLiquidGlassEnabled.current
-    if (!isLiquid) {
+    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
+        MiuixSwitch(
+            checked = selected(),
+            onCheckedChange = onSelect.takeIf { userInputEnabled && toggleOnTap },
+            modifier = modifier
+                .heightIn(min = 48.dp)
+                .then(if (toggleOnTap) Modifier else Modifier.clearAndSetSemantics {}),
+            enabled = userInputEnabled
+        )
+        return
+    }
+    val tokens = LocalLiquidGlassTokens.current
+    if (!tokens.quality.supportsBlur) {
         val colorScheme = MaterialTheme.colorScheme
         val switchColor = SwitchDefaults.colors(
             checkedThumbColor = colorScheme.onPrimary,
@@ -82,16 +103,24 @@ fun LiquidToggle(
         Switch(
             checked = selected(),
             onCheckedChange = onSelect.takeIf { userInputEnabled && toggleOnTap },
-            modifier = modifier.height(28f.dp),
+            modifier = modifier
+                .heightIn(min = 48.dp)
+                .then(
+                    when {
+                        !toggleOnTap -> Modifier.clearAndSetSemantics {}
+                        contentDescription != null -> Modifier.semantics {
+                            this.contentDescription = contentDescription
+                        }
+                        else -> Modifier
+                    }
+                ),
             colors = switchColor
         )
         return
     }
 
     val isLightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    val accentColor =
-        if (isLightTheme) Color(0xFF34C759)
-        else Color(0xFF30D158)
+    val accentColor = MaterialTheme.colorScheme.primary
     val trackColor =
         if (isLightTheme) Color(0xFF787878).copy(0.2f)
         else Color(0xFF787880).copy(0.36f)
@@ -197,9 +226,32 @@ fun LiquidToggle(
     }
 
     val trackBackdrop = rememberLayerBackdrop()
+    val accessibilityModifier = if (toggleOnTap) {
+        Modifier.semantics {
+            role = Role.Switch
+            toggleableState = if (currentSelected.value()) {
+                ToggleableState.On
+            } else {
+                ToggleableState.Off
+            }
+            contentDescription?.let { this.contentDescription = it }
+            if (userInputEnabled) {
+                onClick {
+                    currentOnSelect.value(!currentSelected.value())
+                    true
+                }
+            } else {
+                disabled()
+            }
+        }
+    } else {
+        Modifier.clearAndSetSemantics {}
+    }
 
     Box(
-        modifier,
+        modifier
+            .heightIn(min = 48.dp)
+            .then(accessibilityModifier),
         contentAlignment = Alignment.CenterStart
     ) {
         Box(
@@ -224,11 +276,9 @@ fun LiquidToggle(
                 }
                 .then(
                     if (userInputEnabled) {
-                        Modifier
-                            .semantics { role = Role.Switch }
-                            .then(dampedDragAnimation.modifier)
+                        Modifier.then(dampedDragAnimation.modifier)
                     } else {
-                        Modifier.clearAndSetSemantics { }
+                        Modifier
                     }
                 )
                 .drawBackdrop(
@@ -246,12 +296,15 @@ fun LiquidToggle(
                     shape = { ContinuousCapsule },
                     effects = {
                         val progress = dampedDragAnimation.pressProgress
-                        blur(8f.dp.toPx() * (1f - progress))
-                        lens(
-                            5f.dp.toPx() * progress,
-                            10f.dp.toPx() * progress,
-                            chromaticAberration = true
-                        )
+                        if (tokens.quality.supportsBlur) {
+                            blur(tokens.control.blurRadius.toPx() * (1f - progress))
+                        }
+                        if (tokens.quality.supportsRefraction && progress > 0f) {
+                            lens(
+                                tokens.control.refractionHeight.toPx() * progress,
+                                tokens.control.refractionAmount.toPx() * progress
+                            )
+                        }
                     },
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress

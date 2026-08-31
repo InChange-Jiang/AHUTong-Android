@@ -1,5 +1,6 @@
 package com.ahu.ahutong.data.crawler.api.ycard
 
+import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
@@ -8,6 +9,8 @@ import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Call
 import retrofit2.Response
@@ -34,7 +37,7 @@ interface YcardApi {
     suspend fun loadCardRecharge(
         @Query("scene") scene: String = "cardRecharge",
         @Query("synAccessSource") synAccessSource: String = "h5",
-    ): CardInfo
+    ): Response<CardInfo>
 
     @GET("/charge/feeitem/toAppitem")
     suspend fun enterFeeItem(
@@ -93,10 +96,15 @@ interface YcardApi {
 
     companion object {
 
-        private val BASE_URL = "https://ycard.ahu.edu.cn/"
+        internal const val BASE_URL = "https://ycard.ahu.edu.cn/"
+        internal const val LOGIN_TARGET_URL = "https://ycard.ahu.edu.cn/plat/?name=loginTransit"
 
 
         private val loggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Synjones-Auth")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
             level = HttpLoggingInterceptor.Level.HEADERS
         }
 
@@ -126,7 +134,23 @@ interface YcardApi {
             .followRedirects(true)
             .followSslRedirects(true)
             .addInterceptor(interceptor = authInterceptor)
-            .addInterceptor(loggingInterceptor)
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .apply {
+                if (BuildConfig.DEBUG) addInterceptor(loggingInterceptor)
+            }
+            .build()
+
+        /**
+         * The SSO bootstrap must stop as soon as CAS emits a service ticket. Following that
+         * redirect all the way into loginTransit can cycle back through neusoftCas before the
+         * caller has extracted the one-shot ticket.
+         */
+        internal val loginRedirectClient = OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -137,6 +161,31 @@ interface YcardApi {
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build().create(YcardApi::class.java)
+
+        /**
+         * Runs an authenticated campus-card request and retries once when its token has
+         * expired. Keeping the refresh at the suspending call site avoids blocking OkHttp's
+         * interceptor threads and coalesces concurrent refreshes in [TokenManager].
+         */
+        suspend fun <T> authorizedCall(
+            request: suspend YcardApi.() -> Response<T>
+        ): Response<T> {
+            val attemptedToken = TokenManager.awaitToken()
+            if (attemptedToken.isNullOrBlank()) {
+                return Response.error(
+                    401,
+                    "校园卡登录凭证不可用".toResponseBody("text/plain".toMediaType())
+                )
+            }
+            val firstResponse = API.request()
+            if (firstResponse.code() != 401) return firstResponse
+
+            firstResponse.errorBody()?.close()
+            if (TokenManager.refreshAfterUnauthorized(attemptedToken).isNullOrBlank()) {
+                return firstResponse
+            }
+            return API.request()
+        }
 
     }
 }

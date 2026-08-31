@@ -18,10 +18,18 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 object CourseReminderScheduler {
+    private val schedulerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val rescheduleMutex = Mutex()
     internal const val CHANNEL_ID = "course_reminder_v2"
 
     private const val CHANNEL_NAME = "课前提醒"
@@ -51,7 +59,13 @@ object CourseReminderScheduler {
         manager.createNotificationChannel(channel)
     }
 
-    fun reschedule(context: Context) {
+    fun reschedule(context: Context): Job = schedulerScope.launch {
+        rescheduleMutex.withLock {
+            rescheduleNow(context.applicationContext)
+        }
+    }
+
+    private suspend fun rescheduleNow(context: Context) {
         cancelScheduledReminder(context)
         if (!isReminderEnabled(context)) return
 
@@ -71,11 +85,10 @@ object CourseReminderScheduler {
 
     fun scheduleDebugReminder(context: Context, delayMinutes: Int) {
         createNotificationChannel(context)
-        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 10_000L
-        val triggerDelaySeconds = delayMinutes * 10
+        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 60_000L
         val payload = CourseReminderPayload(
             courseName = "课前提醒测试",
-            location = "预计 $triggerDelaySeconds 秒后触发",
+            location = "预计 $delayMinutes 分钟后触发",
             timeText = "调试通知",
             notificationId = DEBUG_REQUEST_CODE_BASE + delayMinutes,
             allowLiveCountdown = false
@@ -94,7 +107,7 @@ object CourseReminderScheduler {
 
     fun scheduleDebugLiveUpdateReminder(context: Context, delayMinutes: Int) {
         createNotificationChannel(context)
-        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 10_000L
+        val triggerAtMillis = System.currentTimeMillis() + delayMinutes * 60_000L
         val payload = CourseReminderPayload(
             courseName = "课前岛卡测试",
             location = "调试入口",
@@ -180,11 +193,8 @@ object CourseReminderScheduler {
         }
     }
 
-    private fun isReminderEnabled(context: Context): Boolean {
-        return runBlocking {
-            PreferencesManager(context).courseReminderEnabled.first()
-        }
-    }
+    private suspend fun isReminderEnabled(context: Context): Boolean =
+        PreferencesManager(context).courseReminderEnabled.first()
 
     private fun buildPendingIntent(
         context: Context,

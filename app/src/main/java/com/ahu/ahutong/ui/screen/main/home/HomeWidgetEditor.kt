@@ -73,7 +73,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.navigation.NavHostController
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -306,16 +308,20 @@ private fun TextHomeWidgetCard(
     interactionModifier: Modifier = Modifier
 ) {
     val shape = SmoothRoundedCornerShape(24.dp)
+    val surfaceModifier = if (isHighlighted) {
+        Modifier
+            .clip(shape)
+            .background(90.a1 withNight 35.a1)
+    } else {
+        Modifier.appLiquidGlassSurface(
+            shape = shape,
+            fallbackColor = 100.n1 withNight 20.n1
+        )
+    }
     Box(
         modifier = modifier
             .editModeMotion(isEditing)
-            .clip(shape)
-            .background(
-                when {
-                    isHighlighted -> 90.a1 withNight 35.a1
-                    else -> 100.n1 withNight 20.n1
-                }
-            )
+            .then(surfaceModifier)
             .then(interactionModifier)
             .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center
@@ -383,6 +389,7 @@ fun HomeWidgetLibrarySheet(
         LaunchedEffect(availableWidgets) {
             itemBounds.keys.retainAll(availableWidgets.map { it.id }.toSet())
         }
+        val sheetShape = SmoothRoundedCornerShape(32.dp)
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -428,8 +435,11 @@ fun HomeWidgetLibrarySheet(
                         }
                     }
                 }
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(100.n1 withNight 18.n1)
+                .appLiquidGlassSurface(
+                    shape = sheetShape,
+                    fallbackColor = 100.n1 withNight 18.n1,
+                    level = LiquidGlassSurfaceLevel.Floating
+                )
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

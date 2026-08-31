@@ -51,16 +51,29 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.Tel
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.AppSearchHeader
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppLazyPageLayout
+import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppSelectField
+import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppCard
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.TelDirectoryViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
+import top.yukonga.miuix.kmp.icon.icons.useful.Search
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PhoneBook() {
+fun PhoneBook(onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     var dialData by rememberSaveable { mutableStateOf<Tel?>(null) }
     var selectedCategory by rememberSaveable { mutableStateOf("师生综合服务大厅") }
@@ -86,145 +99,78 @@ fun PhoneBook() {
         }
     }
 
-    Column(
+    AppLazyPageLayout(
+        title = stringResource(id = R.string.phone_book),
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp,
+        actions = {
+            AppHeaderIconButton(
+                imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                miuixImageVector = if (isSearchActive) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
+                contentDescription = if (isSearchActive) "关闭搜索" else "搜索",
+                onClick = {
+                    isSearchActive = !isSearchActive
+                    if (!isSearchActive) searchQuery = ""
+                }
+            )
+        }
     ) {
         if (isSearchActive) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp, 24.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    isSearchActive = false
-                    searchQuery = ""
-                }) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Back"
-                    )
-                }
-                TextField(
+            item(key = "search") {
+                AppSearchField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
                     modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 8.dp),
-                    placeholder = { Text("搜索电话或部门") },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = 0.n1 withNight 100.n1,
-                        unfocusedTextColor = 0.n1 withNight 100.n1,
-                        cursorColor = 90.a1 withNight 90.a1,
-                    ),
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear"
-                                )
-                            }
-                        }
-                    } else null
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    placeholder = "搜索电话或部门"
                 )
             }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp, 32.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(id = R.string.phone_book),
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Row {
-                    IconButton(onClick = { isSearchActive = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null
-                        )
-                    }
+            if (searchResults.isEmpty() && searchQuery.isNotEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        text = "未找到相关结果",
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            }
-        }
-
-        if (isSearchActive) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                if (searchResults.isEmpty() && searchQuery.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = "未找到相关结果",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                } else {
-                    items(searchResults) { tel ->
-                        TelItem(
-                            tel = tel,
-                            onItemClick = {
-                                if (it.tel != null && it.tel2 != null && it.tel != it.tel2) {
-                                    dialData = it
-                                } else {
-                                    context.startActivity(
-                                        Intent(
-                                            Intent.ACTION_DIAL,
-                                            Uri.parse("tel:0551-${it.tel ?: it.tel2}")
-                                        )
-                                    )
-                                }
-                            }
-                        )
-                    }
+            } else items(
+                items = searchResults,
+                key = { tel -> "${tel.name}-${tel.tel}-${tel.tel2}" }
+            ) { tel ->
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    TelItem(tel = tel, onItemClick = { selected ->
+                        openTelOrChooseCampus(context, selected) { dialData = selected }
+                    })
                 }
             }
         } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                Categories(
-                    selectedCategory = selectedCategory,
-                    onCategorySelected = { selectedCategory = it }
+            item(key = "category") {
+                AppSelectField(
+                    label = "部门分类",
+                    selected = selectedCategory,
+                    options = TelDirectoryViewModel.TelBook.keys.map { category ->
+                        AppSelectOption(category, category)
+                    },
+                    onSelected = { selectedCategory = it },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    miuixStandalone = true
                 )
-                Telephones(
-                    selectedCategory = selectedCategory,
-                    onItemClick = {
-                        if (it.tel != null && it.tel2 != null && it.tel != it.tel2) {
-                            dialData = it
-                        } else {
-                            context.startActivity(
-                                Intent(
-                                    Intent.ACTION_DIAL,
-                                    Uri.parse("tel:0551-${it.tel ?: it.tel2}")
-                                )
-                            )
-                        }
-                    }
-                )
+            }
+            items(
+                items = TelDirectoryViewModel.TelBook.getValue(selectedCategory),
+                key = { tel -> "${selectedCategory}-${tel.name}-${tel.tel}-${tel.tel2}" }
+            ) { tel ->
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    TelItem(tel = tel, onItemClick = { selected ->
+                        openTelOrChooseCampus(context, selected) { dialData = selected }
+                    })
+                }
             }
         }
     }
@@ -234,20 +180,30 @@ fun PhoneBook() {
     )
 }
 
+private fun openTelOrChooseCampus(
+    context: android.content.Context,
+    tel: Tel,
+    onChooseCampus: () -> Unit
+) {
+    if (tel.tel != null && tel.tel2 != null && tel.tel != tel.tel2) {
+        onChooseCampus()
+    } else {
+        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:0551-${tel.tel ?: tel.tel2}")))
+    }
+}
+
 @Composable
 private fun TelItem(
     tel: Tel,
     onItemClick: (Tel) -> Unit
 ) {
-    Column(
+    AppCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(4.dp))
-            .background(100.n1 withNight 20.n1)
-            .clickable { onItemClick(tel) }
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .fillMaxWidth(),
+        shape = SmoothRoundedCornerShape(20.dp),
+        onClick = { onItemClick(tel) }
     ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = tel.name,
             style = MaterialTheme.typography.titleMedium
@@ -275,6 +231,7 @@ private fun TelItem(
                 }
             }
         }
+        }
     }
 }
 
@@ -286,8 +243,11 @@ private fun Categories(
     LazyRow(
         modifier = Modifier
             .padding(horizontal = 16.dp)
-            .clip(ContinuousCapsule)
-            .background(100.n1 withNight 20.n1),
+            .appLiquidGlassSurface(
+                shape = ContinuousCapsule,
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
         contentPadding = PaddingValues(8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -390,11 +350,16 @@ private fun DialDialog(
 ) {
     val context = LocalContext.current
     if (tel != null) {
+        val dialogShape = SmoothRoundedCornerShape(32.dp)
         Dialog(onDismissRequest = onDismiss) {
             Column(
                 modifier = Modifier
-                    .clip(SmoothRoundedCornerShape(32.dp))
-                    .background(96.n1 withNight 10.n1)
+                    .appLiquidGlassSurface(
+                        shape = dialogShape,
+                        fallbackColor = 96.n1 withNight 10.n1,
+                        level = LiquidGlassSurfaceLevel.Floating,
+                        backdropSamplingEnabled = false
+                    )
             ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
@@ -402,7 +367,7 @@ private fun DialDialog(
                 ) {
                     Text(
                         text = "请选择校区",
-                        color = 0.n1 withNight 100.n1,
+                        color = MaterialTheme.colorScheme.onSurface,
                         style = MaterialTheme.typography.headlineMedium
                     )
                 }
@@ -410,7 +375,7 @@ private fun DialDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(2.dp)
-                        .background(80.n1 withNight 30.n1)
+                        .background(MaterialTheme.colorScheme.outlineVariant)
                 )
                 Row(
                     modifier = Modifier
@@ -428,14 +393,14 @@ private fun DialDialog(
                                 onDismiss()
                             }
                             .padding(24.dp, 16.dp),
-                        color = 0.n1 withNight 100.n1,
+                        color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center
                     )
                     Box(
                         modifier = Modifier
                             .width(2.dp)
                             .fillMaxHeight()
-                            .background(80.n1 withNight 30.n1)
+                            .background(MaterialTheme.colorScheme.outlineVariant)
                     )
                     Text(
                         text = "龙河校区",
@@ -448,7 +413,7 @@ private fun DialDialog(
                                 onDismiss()
                             }
                             .padding(24.dp, 16.dp),
-                        color = 0.n1 withNight 100.n1,
+                        color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center
                     )
                 }

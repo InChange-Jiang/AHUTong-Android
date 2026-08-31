@@ -6,29 +6,33 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBar as MaterialNavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import com.ahu.ahutong.ui.components.LiquidBottomTab
 import com.ahu.ahutong.ui.components.LiquidBottomTabs
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.kyant.backdrop.Backdrop
+import top.yukonga.miuix.kmp.basic.NavigationBar as MiuixNavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationItem as MiuixNavigationItem
 
 private data class BottomDestination(
     val route: String,
@@ -38,19 +42,18 @@ private data class BottomDestination(
 )
 
 private val bottomDestinations = listOf(
-    BottomDestination("home", "主页", Icons.Outlined.Home, Icons.Outlined.Home),
-    BottomDestination("schedule", "课表", Icons.Outlined.TableChart, Icons.Outlined.TableChart),
-    BottomDestination("tools", "小工具", Icons.Outlined.Build, Icons.Outlined.Build),
-    BottomDestination("settings", "设置", Icons.Outlined.Settings, Icons.Outlined.Settings)
+    BottomDestination("home", "主页", Icons.Filled.Home, Icons.Outlined.Home),
+    BottomDestination("schedule", "课表", Icons.Filled.TableChart, Icons.Outlined.TableChart),
+    BottomDestination("tools", "小工具", Icons.Filled.Build, Icons.Outlined.Build),
+    BottomDestination("settings", "设置", Icons.Filled.Settings, Icons.Outlined.Settings)
 )
 
 @Composable
 fun BoxScope.BottomNavBar(
-    navController: NavHostController,
-    backdrop: Backdrop
+    backdrop: Backdrop,
+    selectedRoute: String?,
+    onDestinationSelected: (String) -> Unit
 ) {
-    val currentRoute by navController.currentBackStackEntryAsState()
-    val selectedRoute = currentRoute?.destination?.route
     if (selectedRoute !in bottomDestinations.map { it.route }) return
 
     if (LocalIsLiquidGlassEnabled.current) {
@@ -66,7 +69,7 @@ fun BoxScope.BottomNavBar(
                     bottomDestinations.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
                 },
                 onTabSelected = { index ->
-                    navController.navigatePreservingHome(bottomDestinations[index].route)
+                    onDestinationSelected(bottomDestinations[index].route)
                 },
                 backdrop = backdrop,
                 tabsCount = bottomDestinations.size,
@@ -75,8 +78,9 @@ fun BoxScope.BottomNavBar(
                 bottomDestinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
                     LiquidBottomTab(
+                        selected = selected,
                         onClick = {
-                            navController.navigatePreservingHome(destination.route)
+                            onDestinationSelected(destination.route)
                         }
                     ) {
                         Icon(
@@ -95,8 +99,31 @@ fun BoxScope.BottomNavBar(
                 }
             }
         }
+    } else if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
+        val selectedIndex = bottomDestinations
+            .indexOfFirst { it.route == selectedRoute }
+            .coerceAtLeast(0)
+        MiuixNavigationBar(
+            items = bottomDestinations.mapIndexed { index, destination ->
+                MiuixNavigationItem(
+                    label = destination.label,
+                    icon = if (index == selectedIndex) {
+                        destination.selectedIcon
+                    } else {
+                        destination.unselectedIcon
+                    }
+                )
+            },
+            selected = selectedIndex,
+            onClick = { index ->
+                onDestinationSelected(bottomDestinations[index].route)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.BottomCenter)
+        )
     } else {
-        NavigationBar(
+        MaterialNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter),
@@ -107,7 +134,7 @@ fun BoxScope.BottomNavBar(
                 val selected = selectedRoute == destination.route
                 NavigationBarItem(
                     selected = selected,
-                    onClick = { navController.navigatePreservingHome(destination.route) },
+                    onClick = { onDestinationSelected(destination.route) },
                     icon = {
                         Icon(
                             imageVector = if (selected) {
@@ -129,13 +156,5 @@ fun BoxScope.BottomNavBar(
                 )
             }
         }
-    }
-}
-
-private fun NavController.navigatePreservingHome(route: String) {
-    if (currentBackStackEntry?.destination?.route == route) return
-    navigate(route) {
-        popUpTo("home") { inclusive = false }
-        launchSingleTop = true
     }
 }

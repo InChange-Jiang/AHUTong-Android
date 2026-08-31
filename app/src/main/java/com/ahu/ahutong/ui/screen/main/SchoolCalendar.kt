@@ -26,7 +26,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -46,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -60,7 +60,13 @@ import com.ahu.ahutong.R
 import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
+import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.ahu.ahutong.utils.FileUtils
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.a1
@@ -69,6 +75,7 @@ import com.kyant.monet.withNight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
 @Composable
@@ -81,6 +88,7 @@ fun SchoolCalendar(navController: NavHostController) {
     var isLoading by remember { mutableStateOf(false) }
     var progress by remember { mutableFloatStateOf(0f) }
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
+    val chromeContentColor = Color.White
 
     val fetchCalendar = {
         scope.launch(Dispatchers.IO) {
@@ -196,7 +204,9 @@ fun SchoolCalendar(navController: NavHostController) {
             Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .background(Color.Black.copy(alpha = 0.4f))
+                    .padding(16.dp)
+                    .clip(SmoothRoundedCornerShape(20.dp))
+                    .background(Color.Black.copy(alpha = 0.68f))
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -214,10 +224,10 @@ fun SchoolCalendar(navController: NavHostController) {
                         }
                     }
                 }) {
-                    Text("保存", color = Color.White)
+                    Text("保存", color = chromeContentColor)
                 }
                 TextButton(onClick = { navController.popBackStack() }) {
-                    Text("退出", color = Color.White)
+                    Text("退出", color = chromeContentColor)
                 }
             }
         }
@@ -230,11 +240,11 @@ fun SchoolCalendar(navController: NavHostController) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
                 Text(
                     text = if (progress > 0f) "正在下载 ${(progress * 100).toInt()}%" else "正在获取校历...",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White
+                    color = chromeContentColor
                 )
             }
         }

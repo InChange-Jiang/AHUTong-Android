@@ -9,8 +9,8 @@ import androidx.annotation.NonNull;
  */
 public class AHUResponse<T> {
     private T data;
-    private String msg;
-    private Integer code;
+    private String msg = "";
+    private int code = -1;
 
     public T getData() {
         return data;
@@ -28,11 +28,11 @@ public class AHUResponse<T> {
         this.msg = msg;
     }
 
-    public Integer getCode() {
+    public int getCode() {
         return code;
     }
 
-    public void setCode(Integer code) {
+    public void setCode(int code) {
         this.code = code;
     }
 

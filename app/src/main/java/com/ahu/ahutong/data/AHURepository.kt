@@ -29,9 +29,11 @@ import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.utils.DES
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
@@ -53,6 +55,7 @@ object AHURepository {
         WebVerificationRequired
     }
 
+    @Volatile
     private var dataSource: BaseDataSource = SdkDataSource()
     fun initializeDataSource(useMock: Boolean = AHUCache.getMockData()) {
         dataSource = if (useMock) MockDataSource() else SdkDataSource()
@@ -92,18 +95,16 @@ object AHURepository {
 
         try {
             val response = dataSource.getSchedule()
-
-            AHUCache.getSchoolTerm()?.let{
-                AHUCache.saveSchedule(it,response.data)
-            }
-
-            if (response.isSuccessful) {
-                Result.success(response.data)
+            val schedule = response.data
+            if (response.isSuccessful && schedule != null) {
+                AHUCache.getSchoolTerm()?.let { AHUCache.saveSchedule(it, schedule) }
+                Result.success(schedule)
 
             } else {
-                Result.failure(Throwable(response.msg))
+                Result.failure(IllegalStateException(response.msg.ifBlank { "课表响应缺少数据" }))
             }
         } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -118,13 +119,15 @@ object AHURepository {
 
         try {
             val response = dataSource.getNextSchedule()
-            if (response.isSuccessful) {
-                AHUCache.saveNextSchedule(response.data)
-                Result.success(response.data)
+            val schedule = response.data
+            if (response.isSuccessful && schedule != null) {
+                AHUCache.saveNextSchedule(schedule)
+                Result.success(schedule)
             } else {
-                Result.failure(Throwable(response.msg))
+                Result.failure(IllegalStateException(response.msg.ifBlank { "下学期课表响应缺少数据" }))
             }
         } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -266,9 +269,13 @@ object AHURepository {
     /**
      * 爬虫登录
      */
-    suspend fun loginWithCrawler(username: String, password: String): AHUResponse<User> =
+    suspend fun loginWithCrawler(
+        username: String,
+        password: String,
+        preferNative: Boolean = true
+    ): AHUResponse<User> =
         withContext(Dispatchers.IO) {
-            getHttpClient()?.let { httpClient ->
+            if (preferNative) getHttpClient()?.let { httpClient ->
                 val result = AHUResponse<User>()
                 try {
                     httpClient.init("")
@@ -288,11 +295,12 @@ object AHURepository {
 
                     Log.w(TAG, "Rust login failed, fallback to Android crawler", loginResult.exceptionOrNull())
                 } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
                     Log.w(TAG, "Rust login threw, fallback to Android crawler", e)
                 }
             }
 
-            if (RustSDK.isNativeLoaded()) {
+            if (preferNative && RustSDK.isNativeLoaded()) {
                 val result = AHUResponse<User>()
                 try {
                     RustSDK.initSafe("")
@@ -312,49 +320,53 @@ object AHURepository {
 
                     Log.w(TAG, "Rust JNI login failed, fallback to Android crawler", loginResult.exceptionOrNull())
                 } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
                     Log.w(TAG, "Rust JNI login threw, fallback to Android crawler", e)
                 }
             }
 
             val adwmhLogin = async(Dispatchers.IO) {
+                try {
+                    var failedTimes = 0
+                    var info: Info? = null
+                    // Captcha recognition is fallible, so retry without letting one malformed
+                    // response cancel the parallel JWXT session refresh.
+                    while (failedTimes < 5) {
+                        Log.e(TAG, "loginWithCrawler: ${failedTimes + 1} 登录")
+                        val captchaBytes = AdwmhApi.LOGIN_API.getAuthCode().bytes()
+                        val captchaPart = MultipartBody.Part.createFormData(
+                            "captcha", "img.jpg",
+                            captchaBytes.toRequestBody("image/jpg".toMediaType())
+                        )
+                        val captcha = AhuTong.API
+                            .getCaptchaResult(captchaPart)
+                            .result
 
-                var failedTimes = 0
-                var info: Info? = null
-                // 二维码可能识别失败，尝试5次呢
-                while (failedTimes < 5) {
-                    Log.e(TAG, "loginWithCrawler: ${failedTimes+1} 登录", )
-                    val captchaBytes = AdwmhApi.API.getAuthCode().bytes()
-                    Log.e(TAG, "loginWithCrawler: ${captchaBytes}", )
-                    val captchaPart = MultipartBody.Part.createFormData(
-                        "captcha", "img.jpg",
-                        captchaBytes.toRequestBody("image/jpg".toMediaType())
-                    )
-                    val captcha = AhuTong.API
-                        .getCaptchaResult(captchaPart)
-                        .result
+                        info = AdwmhApi.LOGIN_API.loginWithCaptcha(
+                            username,
+                            password,
+                            0,
+                            captcha
+                        ).use { body ->
+                            Gson().fromJson(body.string(), Info::class.java)
+                        }
 
-
-                    Log.e(TAG, "loginWithCrawler: ${captcha}", )
-                    info = AdwmhApi.API.loginWithCaptcha(
-                        username,
-                        password,
-                        0,
-                        captcha
-                    )
-
-                    if (info.code == 10000) {
-                        Log.e(TAG, "loginWithCrawler: $info")
-                        return@async info
+                        if (info?.code == 10000) {
+                            Log.i(TAG, "Android crawler login succeeded")
+                            return@async info
+                        }
+                        failedTimes++
                     }
-                    failedTimes++
+                    info
+                } catch (e: Throwable) {
+                    if (e is CancellationException) throw e
+                    Log.w(TAG, "Android crawler login failed without cancelling JWXT refresh", e)
+                    null
                 }
-
-                return@async info
-
             }
 
             val jwxtLogin = async {
-                val loginPage = JwxtApi.API.fetchLoginInfo()
+                val loginPage = JwxtApi.LOGIN_API.fetchLoginInfo()
                 val finalUrl = loginPage.raw().request.url.toString()
 
                 if (loginPage.code() == WEB_VERIFICATION_REQUIRED_CODE) {
@@ -381,18 +393,18 @@ object AHURepository {
                 lt?.let {
                     val cipher = DES().strEnc(username + password + lt, "1", "2", "3")
 
-                    val res = JwxtApi.API.device(
+                    val res = JwxtApi.LOGIN_API.device(
                         "https://one.ahu.edu.cn/cas/device",
                         username.length,
                         password.length,
                         cipher
                     )
-                    Log.e(TAG, "loginWithCrawler: $res")
+                    Log.d(TAG, "JWXT device handshake completed with HTTP ${res.code()}")
 
                     val jwxtLoginUrl = "https://one.ahu.edu.cn/cas/login" +
                             "?service=https%3A%2F%2Fjw.ahu.edu.cn%2Fstudent%2Fsso%2Flogin"
 
-                    val jwxtResponse = JwxtApi.API.login(
+                    val jwxtResponse = JwxtApi.LOGIN_API.login(
                         jwxtLoginUrl,
                         cipher,
                         username.length,
@@ -431,6 +443,7 @@ object AHURepository {
             }
 
             if (user != null && jwxtLoginResult == JwxtLoginResult.Succeeded) {
+                syncAndroidCookiesToRust()
                 result.code = 0
                 result.data = user
                 result.msg = "登录成功"
@@ -440,6 +453,138 @@ object AHURepository {
             result.msg = "登录失败"
             return@withContext result
         }
+
+    /**
+     * Restores the central CAS session for a concrete first-party service. A valid JWXT
+     * service cookie does not imply that the CAS TGC is still valid, so campus-card flows
+     * must authenticate the exact service URL instead of reloading the JWXT home page.
+     */
+    suspend fun refreshCentralCasSession(
+        username: String,
+        password: String,
+        casLoginUrl: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (!casLoginUrl.startsWith("https://one.ahu.edu.cn/cas/login", ignoreCase = true)) {
+            Log.w(TAG, "Rejected non-campus CAS refresh URL")
+            return@withContext false
+        }
+
+        try {
+            val loginPage = JwxtApi.LOGIN_API.fetchUrl(casLoginUrl)
+            val pageFinalUrl = loginPage.raw().request.url.toString()
+            if (loginPage.code() == WEB_VERIFICATION_REQUIRED_CODE) {
+                loginPage.errorBody()?.close()
+                return@withContext false
+            }
+            if (!loginPage.isSuccessful) {
+                loginPage.errorBody()?.close()
+                return@withContext false
+            }
+
+            if (!pageFinalUrl.contains("one.ahu.edu.cn/cas/login", ignoreCase = true)) {
+                loginPage.body()?.close()
+                return@withContext true
+            }
+
+            val loginBody = loginPage.body() ?: return@withContext false
+            val document = Jsoup.parse(loginBody.use { it.string() })
+            val loginTicket = document.selectFirst("input[name=lt]")?.attr("value")
+                ?.takeIf { it.isNotBlank() }
+                ?: return@withContext false
+            val execution = document.selectFirst("input[name=execution]")?.attr("value")
+                ?.takeIf { it.isNotBlank() }
+                ?: "e1s1"
+            val action = document.selectFirst("form#loginForm")?.attr("action")
+                ?.takeIf { it.isNotBlank() }
+                ?: return@withContext false
+            val loginPostUrl = resolveCasLoginAction(pageFinalUrl, action)
+                ?: return@withContext false
+            val cipher = DES().strEnc(username + password + loginTicket, "1", "2", "3")
+
+            val deviceResponse = JwxtApi.LOGIN_API.device(
+                url = "https://one.ahu.edu.cn/cas/device",
+                username = username.length,
+                password = password.length,
+                rsa = cipher
+            )
+            val deviceResponseText = deviceResponse.body()?.use { it.string() }.orEmpty()
+            deviceResponse.errorBody()?.close()
+            val deviceStatus = parseCasDeviceStatus(deviceResponseText)
+            val deviceReady = when (deviceStatus) {
+                "ok" -> true
+                "unbind" -> {
+                    val confirmation = JwxtApi.LOGIN_API.confirmDeviceForSession(
+                        url = "https://one.ahu.edu.cn/cas/device",
+                        saveDevice = 0
+                    )
+                    val confirmationText = confirmation.body()?.use { it.string() }.orEmpty()
+                    confirmation.errorBody()?.close()
+                    confirmation.isSuccessful && parseCasDeviceStatus(confirmationText) == "ok"
+                }
+                else -> false
+            }
+            if (!deviceResponse.isSuccessful || !deviceReady) {
+                Log.w(TAG, "Central CAS device verification was rejected (status=$deviceStatus)")
+                return@withContext false
+            }
+
+            val loginResponse = JwxtApi.LOGIN_API.login(
+                url = loginPostUrl,
+                rsa = cipher,
+                username = username.length,
+                password = password.length,
+                lt = loginTicket,
+                execution = execution
+            )
+            val finalUrl = loginResponse.raw().request.url.toString()
+            val succeeded = loginResponse.isSuccessful &&
+                !finalUrl.contains("one.ahu.edu.cn/cas/login", ignoreCase = true)
+            loginResponse.body()?.close()
+            loginResponse.errorBody()?.close()
+            if (succeeded) syncAndroidCookiesToRust()
+            succeeded
+        } catch (error: Exception) {
+            Log.w(TAG, "Central CAS refresh failed (${error.javaClass.simpleName})")
+            false
+        }
+    }
+
+    private fun parseCasDeviceStatus(responseText: String): String? = runCatching {
+        @Suppress("UNCHECKED_CAST")
+        (Gson().fromJson(responseText, Map::class.java) as? Map<String, Any?>)
+            ?.get("info")
+            ?.toString()
+    }.getOrNull()
+
+    /**
+     * Android's CookieJar retains the effective host for host-only cookies. Exporting from it
+     * avoids the ambiguity of inferring domains from cookie names such as JSESSIONID.
+     */
+    private suspend fun syncAndroidCookiesToRust() {
+        val cookiesJson = Gson().toJson(
+            com.ahu.ahutong.data.crawler.manager.CookieManager.cookieJar
+                .allCookies
+                .map { cookie ->
+                    mapOf(
+                        "name" to cookie.name,
+                        "value" to cookie.value,
+                        "domain" to cookie.domain,
+                        "path" to cookie.path,
+                        "secure" to cookie.secure,
+                        "http_only" to cookie.httpOnly
+                    )
+                }
+        )
+        AHUCache.saveRustCookies(cookiesJson)
+
+        val localServiceImported = getHttpClient()
+            ?.init(cookiesJson)
+            ?.onFailure { Log.w(TAG, "Failed to sync Android session to local service", it) }
+            ?.isSuccess == true
+        if (!localServiceImported && RustSDK.isNativeLoaded()) {
+            RustSDK.initSafe(cookiesJson)
+        }
+    }
 
     suspend fun importWebLoginCookies(cookiesJson: String): Result<Unit> =
         withContext(Dispatchers.IO) {
@@ -461,6 +606,7 @@ object AHURepository {
 
                 Result.success(Unit)
             } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 Log.w(TAG, "Failed to import WebView login cookies", e)
                 Result.failure(e)
             }
@@ -493,6 +639,7 @@ object AHURepository {
             AHUCache.saveRustCookies(cookies)
             Log.d(TAG, "Persisted Rust JNI cookies: ${cookies.length} bytes")
         } catch (t: Throwable) {
+            if (t is CancellationException) throw t
             Log.w(TAG, "Failed to persist Rust JNI cookies", t)
         }
     }
@@ -550,6 +697,9 @@ object AHURepository {
 
     suspend fun getBathroomInfo(bathroom: String, tel: String): AHUResponse<BathroomTelInfo> =
         withContext(Dispatchers.IO) {
+            if (!ensureYcardCredential()) {
+                return@withContext ycardCredentialNotReadyResponse()
+            }
             dataSource.getBathroomTelInfo(bathroom = bathroom, tel = tel)
         }
 
@@ -660,6 +810,7 @@ object AHURepository {
                     Result.failure(Throwable(response.msg))
                 }
             } catch (e: Throwable) {
+                if (e is CancellationException) throw e
                 Result.failure(e)
             }
         }
@@ -676,6 +827,7 @@ object AHURepository {
                 Result.failure(Throwable(msg))
             }
         } catch (e: Throwable) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -685,3 +837,6 @@ object AHURepository {
         return take(2) + "***" + takeLast(2)
     }
 }
+
+internal fun resolveCasLoginAction(pageUrl: String, action: String): String? =
+    pageUrl.toHttpUrlOrNull()?.resolve(action)?.toString()

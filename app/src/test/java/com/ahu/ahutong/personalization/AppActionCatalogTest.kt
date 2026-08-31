@@ -36,6 +36,14 @@ class AppActionCatalogTest {
     }
 
     @Test
+    fun recentElectricityRoomsRouteUsesPaymentEntryAction() {
+        assertEquals(
+            AppActionId.OPEN_ELECTRICITY_PAYMENT,
+            AppActionCatalog.actionForRoute("electricity_recent_rooms")
+        )
+    }
+
+    @Test
     fun outputSchemaHasReservedClassesAtEnd() {
         assertEquals(AppActionCatalog.OTHER_OUTPUT_ID, AppActionCatalog.outputIds.takeLast(2).first())
         assertEquals(AppActionCatalog.NONE_OUTPUT_ID, AppActionCatalog.outputIds.last())
@@ -61,7 +69,7 @@ class AppActionCatalogTest {
             repositoryRoot,
             "app/src/main/java/com/ahu/ahutong/ui/screen/Main.kt"
         ).readText()
-        val literalRoutes = Regex("animatedComposable\\(\\\"([^\\\"]+)\\\"")
+        val literalRoutes = Regex("animatedComposable\\((?:[A-Za-z_][A-Za-z0-9_]*,\\s*)?\\\"([^\\\"]+)\\\"")
             .findAll(mainSource)
             .map { it.groupValues[1] }
             .filterNot { it == "debug" }

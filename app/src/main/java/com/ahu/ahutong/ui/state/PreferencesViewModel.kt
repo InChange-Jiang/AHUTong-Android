@@ -2,9 +2,10 @@ package com.ahu.ahutong.ui.state
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
+import com.ahu.ahutong.data.dao.DEFAULT_THEME_COLOR
 import com.ahu.ahutong.data.model.AppThemeMode
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.bootstrap.BootstrapContributionStatus
 import com.ahu.ahutong.personalization.semantic.MutationId
@@ -12,6 +13,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -20,6 +22,8 @@ class PreferencesViewModel @Inject constructor(
     private val preferencesManager: PreferencesManager,
     private val behaviorRuntime: BehaviorPredictionRuntime
 ) : ViewModel() {
+
+    private val startupThemePreferences = preferencesManager.getStartupThemePreferences()
 
     private val _personalizationEnabled = MutableStateFlow<Boolean?>(null)
     val personalizationEnabled: StateFlow<Boolean?> = _personalizationEnabled.asStateFlow()
@@ -36,19 +40,28 @@ class PreferencesViewModel @Inject constructor(
     private val _showQRCode = MutableStateFlow(false)
     val showQRCode: StateFlow<Boolean> = _showQRCode.asStateFlow()
 
-    private val _useCmbCardRecharge = MutableStateFlow(AHUCache.isCmbCardRechargePreferred())
-    val useCmbCardRecharge: StateFlow<Boolean> = _useCmbCardRecharge.asStateFlow()
-
     private val _isShowAllCourse = MutableStateFlow(false)
     val isShowAllCourse: StateFlow<Boolean> = _isShowAllCourse.asStateFlow()
 
-    private val _useLiquidGlass = MutableStateFlow(true)
-    val useLiquidGlass: StateFlow<Boolean> = _useLiquidGlass.asStateFlow()
+    private val _appUiTheme = MutableStateFlow(
+        startupThemePreferences?.appUiTheme ?: AppUiTheme.LIQUID_GLASS
+    )
+    val appUiTheme: StateFlow<AppUiTheme> = _appUiTheme.asStateFlow()
 
-    private val _themeColor = MutableStateFlow<String?>(null)
+    private val _useBuiltInSecurePasswordKeyboard = MutableStateFlow(true)
+    val useBuiltInSecurePasswordKeyboard: StateFlow<Boolean> =
+        _useBuiltInSecurePasswordKeyboard.asStateFlow()
+
+    private val _isUiThemePreferenceReady = MutableStateFlow(startupThemePreferences != null)
+    val isUiThemePreferenceReady: StateFlow<Boolean> =
+        _isUiThemePreferenceReady.asStateFlow()
+
+    private val _themeColor = MutableStateFlow(startupThemePreferences?.themeColor)
     val themeColor: StateFlow<String?> = _themeColor.asStateFlow()
 
-    private val _appThemeMode = MutableStateFlow(AppThemeMode.FOLLOW_SYSTEM)
+    private val _appThemeMode = MutableStateFlow(
+        startupThemePreferences?.themeMode ?: AppThemeMode.FOLLOW_SYSTEM
+    )
     val appThemeMode: StateFlow<AppThemeMode> = _appThemeMode.asStateFlow()
 
     private val _courseReminderEnabled = MutableStateFlow(false)
@@ -70,10 +83,23 @@ class PreferencesViewModel @Inject constructor(
         viewModelScope.launch { preferencesManager.predictivePrefetchEnabled.collect { _predictivePrefetchEnabled.value = it } }
         viewModelScope.launch { preferencesManager.wifiOnlyPrefetch.collect { _wifiOnlyPrefetch.value = it } }
         viewModelScope.launch { preferencesManager.behaviorRetentionDays.collect { _behaviorRetentionDays.value = it } }
-        viewModelScope.launch { preferencesManager.themeMode.collect { _appThemeMode.value = it } }
         viewModelScope.launch {
-            preferencesManager.themeColor.collect {
-                _themeColor.value = it
+            combine(
+                preferencesManager.appUiTheme,
+                preferencesManager.themeColor,
+                preferencesManager.themeMode
+            ) { appUiTheme, themeColor, themeMode ->
+                Triple(appUiTheme, themeColor, themeMode)
+            }.collect { (appUiTheme, themeColor, themeMode) ->
+                _appUiTheme.value = appUiTheme
+                _themeColor.value = themeColor
+                _appThemeMode.value = themeMode
+                _isUiThemePreferenceReady.value = true
+                preferencesManager.rememberStartupThemePreferences(
+                    appUiTheme = appUiTheme,
+                    themeColor = themeColor,
+                    themeMode = themeMode
+                )
             }
         }
         viewModelScope.launch {
@@ -87,8 +113,8 @@ class PreferencesViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            preferencesManager.useLiquidGlass.collect {
-                _useLiquidGlass.value = it
+            preferencesManager.useBuiltInSecurePasswordKeyboard.collect {
+                _useBuiltInSecurePasswordKeyboard.value = it
             }
         }
         viewModelScope.launch {
@@ -167,11 +193,27 @@ class PreferencesViewModel @Inject constructor(
         }
     }
 
-    fun setUseLiquidGlass(value: Boolean) {
+    fun setAppUiTheme(value: AppUiTheme) {
+        val oldValue = _appUiTheme.value
+        _appUiTheme.value = value
+        val nextThemeColor = when {
+            value == AppUiTheme.MIUIX -> DEFAULT_THEME_COLOR
+            _themeColor.value == DEFAULT_THEME_COLOR -> null
+            else -> _themeColor.value
+        }
+        _themeColor.value = nextThemeColor
         viewModelScope.launch {
-            val oldValue = _useLiquidGlass.value
-            preferencesManager.setUseLiquidGlass(value)
-            behaviorRuntime.recordCommittedMutation(MutationId.LIQUID_GLASS_CHANGED, oldValue, value)
+            // The Miuix default is a real preference, not just a temporary UI selection.
+            // Persist it with the theme switch so the color collector cannot restore the
+            // previous system accent during a hot switch or after process recreation.
+            preferencesManager.setThemeColor(nextThemeColor)
+            preferencesManager.setAppUiTheme(value)
+            behaviorRuntime.recordCommittedMutation(
+                MutationId.THEME_CHANGED,
+                oldValue.storageValue,
+                value.storageValue,
+                coarseValueBucket = "UI_STYLE_CHANGED"
+            )
         }
     }
 
@@ -183,24 +225,9 @@ class PreferencesViewModel @Inject constructor(
         }
     }
 
-    fun setUseCmbCardRecharge(value: Boolean) {
+    fun setUseBuiltInSecurePasswordKeyboard(value: Boolean) {
         viewModelScope.launch {
-            val oldValue = AHUCache.isCmbCardRechargePreferred()
-            if (oldValue == value) {
-                _useCmbCardRecharge.value = oldValue
-                return@launch
-            }
-            AHUCache.setCmbCardRechargePreferred(value)
-            val committedValue = AHUCache.isCmbCardRechargePreferred()
-            _useCmbCardRecharge.value = committedValue
-            if (committedValue == value) {
-                behaviorRuntime.recordCommittedMutation(
-                    MutationId.CMB_RECHARGE_PREFERENCE_CHANGED,
-                    oldValue,
-                    committedValue,
-                    coarseValueBucket = if (committedValue) "ENABLED" else "DISABLED"
-                )
-            }
+            preferencesManager.setUseBuiltInSecurePasswordKeyboard(value)
         }
     }
 
@@ -213,8 +240,9 @@ class PreferencesViewModel @Inject constructor(
     }
 
     fun setThemeColor(value: String?) {
+        val oldValue = _themeColor.value
+        _themeColor.value = value
         viewModelScope.launch {
-            val oldValue = _themeColor.value
             preferencesManager.setThemeColor(value)
             behaviorRuntime.recordCommittedMutation(MutationId.THEME_CHANGED, oldValue, value, coarseValueBucket = "COLOR_CHANGED")
         }

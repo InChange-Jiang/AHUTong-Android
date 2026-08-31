@@ -21,12 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import com.ahu.ahutong.data.model.Course
+import com.ahu.ahutong.ui.components.AppDialogSurface
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 
@@ -47,11 +48,9 @@ fun CourseDetailDialog(
         6 to "六",
         7 to "七"
     )
-    Dialog(onDismissRequest = onDismiss) {
+    AppDialogSurface(onDismissRequest = onDismiss) {
         Column(
-            modifier = Modifier
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(96.n1 withNight 10.n1)
+            modifier = Modifier.fillMaxWidth()
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),

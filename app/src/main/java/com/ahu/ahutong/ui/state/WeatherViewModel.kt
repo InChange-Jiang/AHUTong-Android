@@ -1,6 +1,8 @@
 package com.ahu.ahutong.ui.state
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.LocationManager
 import android.util.Log
@@ -9,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.ContextCompat
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.weather.WeatherApi
 import com.ahu.ahutong.data.weather.WeatherResponse
@@ -51,18 +54,38 @@ data class WeatherHomeConfig(
         AHUCache.saveWeatherHomeShowWeather(showWeather)
         AHUCache.saveWeatherHomeShowAqi(showAqi)
         AHUCache.saveWeatherHomeShowLocation(showLocation)
+        cachedConfig = CachedWeatherHomeConfig(AHUCache.getCurrentUser()?.xh, this)
     }
 
     companion object {
+        private data class CachedWeatherHomeConfig(
+            val userId: String?,
+            val config: WeatherHomeConfig
+        )
+
+        @Volatile
+        private var cachedConfig: CachedWeatherHomeConfig? = null
+
         fun fromCache(): WeatherHomeConfig {
-            return WeatherHomeConfig(
-                showOnHome = AHUCache.getWeatherShowOnHome(),
-                mode = WeatherHomeMode.fromCacheValue(AHUCache.getWeatherHomeMode()),
-                showTemp = AHUCache.getWeatherHomeShowTemp(),
-                showWeather = AHUCache.getWeatherHomeShowWeather(),
-                showAqi = AHUCache.getWeatherHomeShowAqi(),
-                showLocation = AHUCache.getWeatherHomeShowLocation(),
-            )
+            val userId = AHUCache.getCurrentUser()?.xh
+            cachedConfig
+                ?.takeIf { it.userId == userId }
+                ?.let { return it.config }
+            return synchronized(this) {
+                cachedConfig
+                    ?.takeIf { it.userId == userId }
+                    ?.config
+                    ?: WeatherHomeConfig(
+                        showOnHome = AHUCache.getWeatherShowOnHome(),
+                        mode = WeatherHomeMode.fromCacheValue(AHUCache.getWeatherHomeMode()),
+                        showTemp = AHUCache.getWeatherHomeShowTemp(),
+                        showWeather = AHUCache.getWeatherHomeShowWeather(),
+                        showAqi = AHUCache.getWeatherHomeShowAqi(),
+                        showLocation = AHUCache.getWeatherHomeShowLocation(),
+                    ).also { config ->
+                        cachedConfig = CachedWeatherHomeConfig(userId, config)
+                    }
+            }
         }
     }
 }
@@ -111,7 +134,7 @@ class WeatherViewModel @Inject constructor(
                 Log.d("Weather", "Weather content loaded")
                 reportReady()
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather")
+                Log.e("Weather", "Failed to fetch weather", e)
                 errorMessage = e.message ?: "获取天气失败"
                 reportError()
             } finally {
@@ -143,7 +166,7 @@ class WeatherViewModel @Inject constructor(
                 Log.d("Weather", "Weather content loaded by saved location")
                 reportReady()
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather by saved location")
+                Log.e("Weather", "Failed to fetch weather by saved location", e)
                 errorMessage = e.message ?: "获取天气失败"
                 reportError()
             } finally {
@@ -195,13 +218,14 @@ class WeatherViewModel @Inject constructor(
                     reportReady()
                 }
             } catch (e: Exception) {
-                Log.e("Weather", "Failed to fetch weather by location")
+                Log.e("Weather", "Failed to fetch weather by location", e)
                 try {
                     val result = WeatherApi.API.getWeather()
                     weather = result
                     errorMessage = null
                     reportReady()
                 } catch (e2: Exception) {
+                    Log.e("Weather", "IP weather fallback failed", e2)
                     errorMessage = e2.message ?: "获取天气失败"
                     reportError()
                 }
@@ -216,6 +240,16 @@ class WeatherViewModel @Inject constructor(
      * 尝试获取区级名称（locality = 蜀山区），否则市（subAdminArea = 合肥市）
      */
     private fun getCityNameFromGps(context: Context): String? {
+        val hasFineLocation = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        val hasCoarseLocation = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!hasFineLocation && !hasCoarseLocation) return null
+
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val location = runCatching {
             locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)

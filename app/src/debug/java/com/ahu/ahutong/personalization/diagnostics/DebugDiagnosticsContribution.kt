@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +70,10 @@ import com.ahu.ahutong.personalization.prefetch.PrefetchCoordinator
 import com.ahu.ahutong.personalization.prefetch.PrefetchDiagnostic
 import com.ahu.ahutong.personalization.prefetch.PrefetchState
 import com.ahu.ahutong.personalization.ui.SuggestionPolicy
+import com.ahu.ahutong.ui.components.LocalLiquidGlassContentBackdrop
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import java.time.LocalDate
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,6 +135,7 @@ class DebugDiagnosticsContribution @Inject constructor(
         val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
         val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
         val ballPx = with(density) { 52.dp.toPx() }
+        val contentBackdrop = LocalLiquidGlassContentBackdrop.current
         val horizontalInsetPx = with(density) { 12.dp.toPx() }
         val minX = -(screenWidthPx - ballPx - horizontalInsetPx * 2).coerceAtLeast(0f)
         val maxY = (screenHeightPx / 2f - ballPx).coerceAtLeast(0f)
@@ -143,7 +149,12 @@ class DebugDiagnosticsContribution @Inject constructor(
                 .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
                 .padding(end = 12.dp)
                 .size(52.dp)
-                .clip(CircleShape)
+                .appLiquidGlassSurface(
+                    shape = CircleShape,
+                    fallbackColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    level = LiquidGlassSurfaceLevel.Floating,
+                    backdrop = contentBackdrop
+                )
                 .pointerInput(minX, maxY) {
                     detectDragGestures(
                         onDragEnd = {
@@ -161,7 +172,7 @@ class DebugDiagnosticsContribution @Inject constructor(
                     onLongClick = preferences::togglePaused
                 ),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.tertiaryContainer,
+            color = Color.Transparent,
             shadowElevation = 8.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -198,7 +209,9 @@ private fun DiagnosticsScreen(
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .fillMaxSize()
+            .appLiquidGlassSceneBackground(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -844,11 +857,18 @@ private fun DiagnosticsSection(
     title: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val shape = MaterialTheme.shapes.large
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 1.dp
+        modifier = Modifier
+            .fillMaxWidth()
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        color = Color.Transparent,
+        tonalElevation = 0.dp
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),

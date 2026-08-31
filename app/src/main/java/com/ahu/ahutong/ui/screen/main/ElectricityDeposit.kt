@@ -1,694 +1,433 @@
 package com.ahu.ahutong.ui.screen.main
 
-import android.widget.Toast
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.PayState
-import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppComponentTokens
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppSelectField
+import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.state.CampusDataItem
 import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
-import com.kyant.monet.a1
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
-import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
-import com.ahu.ahutong.personalization.action.AppActionId
 import kotlinx.coroutines.delay
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
 
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ElectricityDeposit(
+    onBack: () -> Unit,
+    onOpenRecentRooms: () -> Unit,
     viewModel: ElectricityDepositViewModel = hiltViewModel()
 ) {
-    DisposableEffect(viewModel) {
-        onDispose { viewModel.onPresetSurfaceDisposed() }
-    }
     val behaviorReporter = rememberBehaviorActionReporter()
-    val payState = viewModel.payState.collectAsState()
-    LaunchedEffect(payState.value) {
-        when (payState.value) {
-            is PayState.Succeeded, is PayState.Failed -> {
-                delay(1000)
-                viewModel.resetPaymentState()
-            }
-
-            else -> {
-
-            }
-        }
-    }
-
-    val focusManager = LocalFocusManager.current
+    val payState by viewModel.payState.collectAsState()
     val campusList by viewModel.campusList.collectAsState()
     val selectedCampus by viewModel.selectedCampus.collectAsState()
-
     val buildingsList by viewModel.buildingsList.collectAsState()
     val selectedBuilding by viewModel.selectedBuilding.collectAsState()
-
     val floorsList by viewModel.floorsList.collectAsState()
     val selectedFloor by viewModel.selectedFloor.collectAsState()
-
     val roomsList by viewModel.roomsList.collectAsState()
     val selectedRoom by viewModel.selectedRoom.collectAsState()
-
     val roomInfo by viewModel.roomInfo.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val historyOptions by viewModel.historyOptions.collectAsState()
-    val presetCandidates by viewModel.presetCandidates.collectAsState()
+    val focusManager = LocalFocusManager.current
 
-    var campusDropdownExpanded by remember { mutableStateOf(false) }
-    var buildingsDropdownExpanded by remember { mutableStateOf(false) }
-    var floorsDropdownExpanded by remember { mutableStateOf(false) }
-    var roomsDropdownExpanded by remember { mutableStateOf(false) }
-
-    val context = LocalContext.current
-    var infoClickCount by remember { mutableStateOf(0) }
-    var currentToast by remember { mutableStateOf<Toast?>(null) }
-    fun showToast(msg: String) {
-        currentToast?.cancel()
-        currentToast = Toast.makeText(context, msg, Toast.LENGTH_SHORT).also { it.show() }
+    var amount by rememberSaveable { mutableStateOf("") }
+    var showPasswordDialog by rememberSaveable { mutableStateOf(false) }
+    var password by rememberSaveable { mutableStateOf("") }
+    var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
+    val campusOptions = remember(campusList) {
+        campusList.map { AppSelectOption(it, it.name) }
     }
-    fun validateBefore(level: Int): Boolean {
-        val msg = when {
-            level >= 1 && selectedCampus == null -> "请先选择校区"
-            level >= 2 && selectedBuilding == null -> "请先选择楼栋"
-            level >= 3 && selectedFloor == null -> "请先选择楼层"
-            else -> null
+    val buildingOptions = remember(buildingsList) {
+        buildingsList.map { AppSelectOption(it, it.name) }
+    }
+    val floorOptions = remember(floorsList) {
+        floorsList.map { AppSelectOption(it, it.name) }
+    }
+    val roomOptions = remember(roomsList) {
+        roomsList.map { AppSelectOption(it, it.name) }
+    }
+
+    LaunchedEffect(payState) {
+        if (payState is PayState.Succeeded || payState is PayState.Failed) {
+            delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
+            viewModel.resetPaymentState()
         }
-        return if (msg != null) {
-            showToast(msg)
-            false
-        } else true
     }
 
-    val openBuildingMenu = { if (validateBefore(1)) buildingsDropdownExpanded = true }
-    val openFloorMenu = { if (validateBefore(2)) floorsDropdownExpanded = true }
-    val openRoomMenu = { if (validateBefore(3)) roomsDropdownExpanded = true }
+    val canPay = selectedCampus != null && selectedBuilding != null && selectedFloor != null &&
+        selectedRoom != null && amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
+        !isLoading && payState is PayState.Idle
 
-    var showResetDialog by remember { mutableStateOf(false) }
-
-    var amount by remember { mutableStateOf("") }
-
-    var showDialog by remember { mutableStateOf(false) }
-    var password by remember { mutableStateOf("") }
-    var errorMsg by remember { mutableStateOf<String?>(null) }
-
-    Column(
+    AppScrollablePageLayout(
+        title = "电控缴费",
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .systemBarsPadding(),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp
     ) {
-        Text(
-            text = "电控缴费",
-            modifier = Modifier.padding(24.dp, 32.dp),
-            style = MaterialTheme.typography.headlineMedium
-        )
-
-        presetCandidates.firstOrNull()?.let { candidate ->
-            LaunchedEffect(candidate.opportunityId, candidate.presetId) {
-                viewModel.onPresetCandidateVisible(candidate)
-            }
-            Text(
-                text = "使用最近房间",
+        if (errorMessage != null) {
+            Column(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(SmoothRoundedCornerShape(16.dp))
-                    .background(90.a1 withNight 30.n1)
-                    .clickable { viewModel.applyPresetCandidate(candidate) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                color = 10.n1 withNight 90.n1,
-                style = MaterialTheme.typography.titleMedium
+                    .fillMaxWidth()
+                    .appLiquidGlassSurface(
+                        shape = AppComponentTokens.CardShape,
+                        fallbackColor = MaterialTheme.colorScheme.errorContainer,
+                        level = LiquidGlassSurfaceLevel.Panel
+                    )
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("电控信息加载失败", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = errorMessage.orEmpty(),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                AppButton(
+                    onClick = viewModel::retry,
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppButtonVariant.Secondary
+                ) {
+                    Text("重新加载")
+                }
+            }
+        }
+
+        if (historyOptions.isNotEmpty()) {
+            AppButton(
+                onClick = onOpenRecentRooms,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                enabled = !isLoading,
+                variant = AppButtonVariant.Secondary
+            ) {
+                Text("最近使用的房间")
+            }
+        }
+
+        val loadingSelector = when {
+            !isLoading -> null
+            selectedCampus == null -> ElectricitySelectorLevel.Campus
+            selectedBuilding == null -> ElectricitySelectorLevel.Building
+            selectedFloor == null -> ElectricitySelectorLevel.Floor
+            selectedRoom == null -> ElectricitySelectorLevel.Room
+            else -> ElectricitySelectorLevel.Room
+        }
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            ElectricitySelectorField(
+                label = "校区",
+                selected = selectedCampus,
+                options = campusOptions,
+                onSelected = viewModel::onCampusSelected,
+                modifier = Modifier,
+                placeholder = "请选择校区",
+                enabled = !isLoading,
+                loading = loadingSelector == ElectricitySelectorLevel.Campus
+            )
+            ElectricitySelectorField(
+                label = "楼栋",
+                selected = selectedBuilding,
+                options = buildingOptions,
+                onSelected = viewModel::onBuildingSelected,
+                modifier = Modifier,
+                placeholder = "请先选择校区",
+                enabled = selectedCampus != null && !isLoading,
+                loading = loadingSelector == ElectricitySelectorLevel.Building
+            )
+            ElectricitySelectorField(
+                label = "楼层",
+                selected = selectedFloor,
+                options = floorOptions,
+                onSelected = viewModel::onfloorSelected,
+                modifier = Modifier,
+                placeholder = "请先选择楼栋",
+                enabled = selectedBuilding != null && !isLoading,
+                loading = loadingSelector == ElectricitySelectorLevel.Floor
+            )
+            ElectricitySelectorField(
+                label = "房间",
+                selected = selectedRoom,
+                options = roomOptions,
+                onSelected = viewModel::onRoomSelected,
+                modifier = Modifier,
+                placeholder = "请先选择楼层",
+                enabled = selectedFloor != null && !isLoading,
+                loading = loadingSelector == ElectricitySelectorLevel.Room
             )
         }
 
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .clip(SmoothRoundedCornerShape(16.dp))
-                .background(100.n1 withNight 20.n1)
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clickable { campusDropdownExpanded = true },
-
-                ) {
-                Text(
-                    text = "选择校区",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { campusDropdownExpanded = true }
-                ) {
-                    Text(
-                        text = selectedCampus?.name ?: "请选择校区"
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "展开校区列表"
-                    )
-
-                    DropdownMenu(
-                        expanded = campusDropdownExpanded,
-                        modifier = Modifier.heightIn(max = 350.dp).background(99.n1 withNight 10.n1),
-                        onDismissRequest = { campusDropdownExpanded = false },
-                    ) {
-                        campusList.forEach { campus ->
-                            DropdownMenuItem(
-                                text = { Text(campus.name, color = 10.n1 withNight 90.n1) },
-                                onClick = {
-                                    viewModel.onCampusSelected(campus)
-                                    campusDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clickable { openBuildingMenu() },
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = "选择楼栋", style = MaterialTheme.typography.titleMedium)
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { openBuildingMenu() }
-                ) {
-                    Text(
-                        text = selectedBuilding?.name ?: "请选择楼栋"
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "展开楼栋列表"
-                    )
-
-                    DropdownMenu(
-                        expanded = buildingsDropdownExpanded,
-                        modifier = Modifier.heightIn(max = 450.dp).background(99.n1 withNight 10.n1),
-                        onDismissRequest = { buildingsDropdownExpanded = false },
-                    ) {
-                        buildingsList.forEach { building ->
-                            DropdownMenuItem(
-                                text = { Text(building.name, color = 10.n1 withNight 90.n1) },
-                                onClick = {
-                                    viewModel.onBuildingSelected(building)
-                                    buildingsDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clickable { openFloorMenu() },
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = "选择楼层", style = MaterialTheme.typography.titleMedium)
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { openFloorMenu() },
-                ) {
-                    Text(
-                        text = selectedFloor?.name ?: "请选择楼层"
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "展开楼层列表"
-                    )
-
-                    DropdownMenu(
-                        expanded = floorsDropdownExpanded,
-                        modifier = Modifier.heightIn(max = 450.dp).background(99.n1 withNight 10.n1),
-                        onDismissRequest = { floorsDropdownExpanded = false },
-                    ) {
-                        floorsList.forEach { floor ->
-                            DropdownMenuItem(
-                                text = { Text(floor.name, color = 10.n1 withNight 90.n1) },
-                                onClick = {
-                                    viewModel.onfloorSelected(floor)
-                                    floorsDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    .clickable { openRoomMenu() },
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = "选择房间", style = MaterialTheme.typography.titleMedium)
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { openRoomMenu() },
-                ) {
-                    Text(
-                        text = selectedRoom?.name ?: "请选择房间"
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = "展开房间列表"
-                    )
-
-                    DropdownMenu(
-                        expanded = roomsDropdownExpanded,
-                        onDismissRequest = { roomsDropdownExpanded = false },
-                        modifier = Modifier.heightIn(max = 500.dp).background(99.n1 withNight 10.n1)
-                    ) {
-                        roomsList.forEach { room ->
-                            DropdownMenuItem(
-                                text = { Text(room.name, color = 10.n1 withNight 90.n1) },
-                                onClick = {
-                                    viewModel.onRoomSelected(room)
-                                    roomsDropdownExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            if (historyOptions.size == 2) {
+        roomInfo?.takeIf(String::isNotBlank)?.let { info ->
                 Column(
                     modifier = Modifier
                         .padding(horizontal = 16.dp)
-                        .padding(bottom = 8.dp)
-                        .fillMaxWidth(),
+                        .fillMaxWidth()
+                        .appLiquidGlassSurface(
+                            shape = AppComponentTokens.CardShape,
+                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                            level = LiquidGlassSurfaceLevel.Panel
+                        )
+                        .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    historyOptions.forEach { item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                text = item.label,
-                                modifier = Modifier
-                                    .clip(SmoothRoundedCornerShape(16.dp))
-                                    .background(90.a1 withNight 30.n1)
-                                    .padding(8.dp)
-                                    .clickable { viewModel.selectHistory(item) },
-                                color = 10.n1 withNight 90.n1,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
+                    Text(
+                        text = "房间信息",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = info.replace("，", "\n"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
                 }
             }
-
-            Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-                    // 4. 将 clickable 替换为 combinedClickable
-                    .combinedClickable(
-                        onClick = {
-                            // --- 这里是之前的单击逻辑，保持不变 ---
-                            infoClickCount++
-                            currentToast?.cancel()
-                            val message = when {
-                                infoClickCount == 1 -> "点击五次查看累计充值记录，长按清空记录"
-                                infoClickCount == 2 -> "再点击三次即可查看累计充值记录"
-                                infoClickCount == 3 -> "再点击两次即可查看累计充值记录"
-                                infoClickCount == 4 -> "再点击一次即可查看累计充值记录"
-                                infoClickCount >= 5 -> {
-                                    val chargeInfo = AHUCache.getElectricityChargeInfo()
-                                    if (chargeInfo != null) {
-                                        "从${chargeInfo.firstChargeDate}起累计电费充值金额为：${
-                                            "%.2f".format(
-                                                chargeInfo.totalAmount
-                                            )
-                                        }元"
-                                    } else {
-                                        "暂无充值记录"
-                                    }
-                                }
-
-                                else -> null
-                            }
-                            if (message != null) {
-                                val toastLength =
-                                    if (infoClickCount >= 5) Toast.LENGTH_LONG else Toast.LENGTH_SHORT
-                                val newToast = Toast.makeText(context, message, toastLength)
-                                newToast.show()
-                                currentToast = newToast
-                            }
-                        },
-                        onLongClick = {
-                            showResetDialog = true
-                        }
-                    ),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(text = "信息", style = MaterialTheme.typography.titleMedium)
-                Text(text = roomInfo?.replace("，", "\n") ?: "")
-            }
-        }
 
         Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .clip(SmoothRoundedCornerShape(16.dp))
-                .background(100.n1 withNight 20.n1),
-        ) {
-
-            Text(
-                text = "缴费金额",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.titleMedium
-
-            )
-
-            TextField(
-                value = amount,
-                onValueChange = { newText ->
-                    if (newText.isEmpty()) {
-                        amount = newText
-                        return@TextField
-                    }
-                    val regex = Regex("^\\d*\\.?\\d{0,2}$")
-                    if (regex.matches(newText)) {
-                        amount = newText
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
-                placeholder = { Text("请输入金额", color = 30.n1 withNight 70.n1) },
-                textStyle = TextStyle(fontSize = 16.sp, color = 10.n1 withNight 90.n1),
-
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Decimal,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = { focusManager.clearFocus() }
-                ),
-                singleLine = true
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Box(
                 modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-                    .clip(SmoothRoundedCornerShape(32.dp))
-                    .background(
-                        animateColorAsState(
-                            targetValue = when (payState.value) {
-                                is PayState.Idle -> 90.a1 withNight 85.a1
-                                is PayState.InProgress -> 70.a1 withNight 60.a1
-                                is PayState.Failed -> Color.Red
-                                is PayState.Succeeded -> 70.a1 withNight 60.a1
-                            }
-                        ).value
-                    )
-                    .animateContentSize(spring(stiffness = Spring.StiffnessLow))
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                when (payState.value) {
-                    is PayState.Idle -> {
-                        Text(
-                            text = "确认",
-                            modifier = Modifier
-                                .clickable(
-                                    role = Role.Button,
-                                    onClick = {
-                                        when {
-                                            selectedCampus == null -> showToast("请先选择校区")
-                                            selectedBuilding == null -> showToast("请先选择楼栋")
-                                            selectedFloor == null -> showToast("请先选择楼层")
-                                            selectedRoom == null -> showToast("请先选择房间")
-                                            amount.isBlank() -> showToast("请输入缴费金额")
-                                            (amount.toDoubleOrNull() ?: 0.0) <= 0.0 -> showToast("请输入有效金额")
-                                            else -> showDialog = true
-                                        }
-                                    }
-                                )
-                                .padding(24.dp, 16.dp),
-                            color = 0.n1,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                Text(
+                    text = "缴费金额",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                AppTextField(
+                    value = amount,
+                    onValueChange = { input ->
+                        if (input.isEmpty() || Regex("^\\d*\\.?\\d{0,2}$").matches(input)) {
+                            amount = input
+                        }
+                    },
+                    label = "金额（元）",
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                )
+            }
 
-                    is PayState.InProgress -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                            verticalAlignment = Alignment.CenterVertically
+        Column(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                when (val state = payState) {
+                    PayState.Idle -> Unit
+                    PayState.InProgress -> Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AppCircularProgressIndicator(size = 24.dp, strokeWidth = 3.dp)
+                        Text("  正在提交缴费", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    is PayState.Succeeded -> Text(
+                        text = "缴费成功，订单号：${state.message}",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    is PayState.Failed -> Text(
+                        text = "缴费失败：${state.message}",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                AppButton(
+                    onClick = { showPasswordDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = canPay
+                ) {
+                    Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
+                }
+        }
+    }
+
+    if (showPasswordDialog) {
+        SecurePaymentPasswordDialog(
+            password = password,
+            onPasswordChange = {
+                password = it
+                passwordError = null
+            },
+            title = "请输入校园卡密码",
+            errorMessage = passwordError,
+            onDismissRequest = {
+                showPasswordDialog = false
+                password = ""
+                passwordError = null
+            },
+            onConfirm = { confirmedPassword ->
+                if (confirmedPassword.length == 6) {
+                    showPasswordDialog = false
+                    behaviorReporter.organic(AppActionId.CONFIRM_ELECTRICITY_PAYMENT)
+                    viewModel.pay(amount, confirmedPassword)
+                } else {
+                    passwordError = "密码必须是 6 位数字"
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun ElectricityRecentRooms(
+    onBack: () -> Unit,
+    onRoomSelected: () -> Unit,
+    viewModel: ElectricityDepositViewModel
+) {
+    val historyOptions by viewModel.historyOptions.collectAsState()
+    AppScrollablePageLayout(
+        title = "最近使用的房间",
+        onBack = onBack,
+        modifier = Modifier
+            .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp
+    ) {
+        if (historyOptions.isEmpty()) {
+            Text(
+                text = "暂无最近使用的房间",
+                modifier = Modifier.padding(horizontal = 20.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge
+            )
+        } else {
+            historyOptions.forEach { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppButton(
+                        onClick = {
+                            viewModel.selectHistory(item)
+                            onRoomSelected()
+                        },
+                        modifier = Modifier.weight(1f),
+                        variant = AppButtonVariant.Secondary
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = 100.n1,
-                                strokeWidth = 6.dp
-                            )
+                            Text(item.label, style = MaterialTheme.typography.titleSmall)
                             Text(
-                                text = "支付中...",
-                                modifier = Modifier.padding(4.dp),
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium
+                                text = listOfNotNull(
+                                    item.selection.campus?.name,
+                                    item.selection.building?.name,
+                                    item.selection.floor?.name
+                                ).joinToString(" · "),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1
                             )
                         }
                     }
-
-                    is PayState.Succeeded -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = 100.n1
-                            )
-                            Text(
-                                text = "支付成功！ 订单号：${(payState.value as PayState.Succeeded).message}",
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .clickable {
-
-                                    },
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                        }
-                    }
-
-                    is PayState.Failed -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp),
-                                tint = 100.n1
-                            )
-                            Text(
-                                text = "支付失败！",
-                                modifier = Modifier.padding(4.dp),
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                        }
+                    AppButton(
+                        onClick = { viewModel.deleteHistory(item) },
+                        variant = AppButtonVariant.Destructive
+                    ) {
+                        Text("删除")
                     }
                 }
             }
         }
-        if (showDialog) {
-            AlertDialog(
-                containerColor = 100.n1 withNight 20.n1,
-                textContentColor = 10.n1 withNight 90.n1,
-                onDismissRequest = { showDialog = false },
-                title = { Text("请输入校园卡密码", color = 10.n1 withNight 90.n1) },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            value = password,
-                            onValueChange = { input ->
-                                if (input.length <= 6 && input.all { it.isDigit() }) {
-                                    password = input
-                                    errorMsg = null
-                                }
-                            },
-                            label = { Text("密码 (6位数字)", color = 40.n1 withNight 60.n1) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            visualTransformation = PasswordVisualTransformation(),
-                            isError = errorMsg != null,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = 10.n1 withNight 90.n1,
-                                unfocusedTextColor = 10.n1 withNight 90.n1,
-                                focusedBorderColor = 20.n1 withNight 80.n1
-                            )
-                        )
-                        if (errorMsg != null) {
-                            Text(
-                                text = errorMsg!!,
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (password.length == 6) {
-                            showDialog = false
-                            // 调用 ViewModel 中的 pay 函数
-                            behaviorReporter.organic(AppActionId.CONFIRM_ELECTRICITY_PAYMENT)
-                            viewModel.pay(amount, password)
-                        } else {
-                            errorMsg = "密码必须是6位数字"
-                        }
-                    }) {
-                        Text("确认", color = 10.n1 withNight 90.n1)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        showDialog = false
-                        password = ""
-                        errorMsg = null
-                    }) {
-                        Text("取消", color = 10.n1 withNight 90.n1)
-                    }
-                }
-            )
-        }
-        if (showResetDialog) {
-            AlertDialog(
-                containerColor = 100.n1 withNight 20.n1,
-                titleContentColor = 10.n1 withNight 90.n1,
-                textContentColor = 40.n1 withNight 70.n1,
-                onDismissRequest = { showResetDialog = false },
-                title = { Text("确认操作") },
-                text = { Text("您确定要将累计充值金额清零吗？此操作不可撤销。") },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            AHUCache.clearElectricityChargeInfo()
-                            Toast.makeText(context, "累计记录已清零", Toast.LENGTH_SHORT).show()
-                            showResetDialog = false
-                        }
-                    ) {
-                        Text("确认", color = 40.a1 withNight 80.a1)
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = { showResetDialog = false }
-                    ) {
-                        Text("取消", color = 40.a1 withNight 80.a1)
-                    }
-                }
+    }
+}
+
+@Composable
+private fun ElectricitySelectorField(
+    label: String,
+    selected: CampusDataItem?,
+    options: List<AppSelectOption<CampusDataItem>>,
+    onSelected: (CampusDataItem) -> Unit,
+    modifier: Modifier,
+    placeholder: String,
+    enabled: Boolean,
+    loading: Boolean
+) {
+    Box(modifier = modifier.fillMaxWidth()) {
+        AppSelectField(
+            label = label,
+            selected = selected,
+            options = options,
+            onSelected = onSelected,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = placeholder,
+            enabled = enabled,
+            miuixStandalone = true
+        )
+        if (loading) {
+            AppCircularProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 48.dp),
+                size = 20.dp,
+                strokeWidth = 2.5.dp
             )
         }
     }
 }
+
+private enum class ElectricitySelectorLevel {
+    Campus,
+    Building,
+    Floor,
+    Room
+}
+
+private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L

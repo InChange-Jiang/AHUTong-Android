@@ -25,6 +25,12 @@ class LicenseViewModel : ViewModel() {
                 "Apache Software License 2.0"
             ),
             License(
+                "Miuix",
+                "compose-miuix-ui contributors",
+                "https://github.com/compose-miuix-ui/miuix",
+                "Apache License 2.0"
+            ),
+            License(
                 "Gson",
                 "Google",
                 "https://github.com/google/gson",

@@ -11,7 +11,10 @@ class CourseReminderBootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED -> {
-                CourseReminderScheduler.reschedule(context)
+                val pendingResult = goAsync()
+                CourseReminderScheduler.reschedule(context).invokeOnCompletion {
+                    pendingResult.finish()
+                }
             }
         }
     }

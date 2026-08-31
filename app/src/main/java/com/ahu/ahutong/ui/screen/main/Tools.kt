@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.screen.main
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -70,6 +68,10 @@ import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.utils.FileUtils
 import com.ahu.ahutong.R
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.capsule.ContinuousCapsule
@@ -81,6 +83,8 @@ import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Edit
 
 @Composable
 fun Tools(
@@ -110,6 +114,7 @@ fun Tools(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             .verticalScroll(rememberScrollState())
             .systemBarsPadding()
             .padding(bottom = 96.dp),
@@ -127,7 +132,10 @@ fun Tools(
                 style = MaterialTheme.typography.headlineMedium
             )
             if (homeEditEnabled) {
-                IconButton(
+                AppHeaderIconButton(
+                    imageVector = Icons.Outlined.Edit,
+                    miuixImageVector = MiuixIcons.Useful.Edit,
+                    contentDescription = "编辑首页",
                     onClick = {
                         onEditHome()
                         navController.navigate("home") {
@@ -137,12 +145,7 @@ fun Tools(
                             launchSingleTop = true
                         }
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = "编辑首页"
-                    )
-                }
+                )
             }
         }
         FlowRow(
@@ -172,8 +175,10 @@ fun Tools(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(100.n1 withNight 30.n1),
+                .appLiquidGlassSurface(
+                    shape = SmoothRoundedCornerShape(32.dp),
+                    fallbackColor = 100.n1 withNight 30.n1
+                ),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Text(
@@ -181,28 +186,29 @@ fun Tools(
                 modifier = Modifier.padding(24.dp),
                 style = MaterialTheme.typography.titleLarge
             )
-            Image(
-                painter = painterResource(id = R.mipmap.schedule_widget_prev),
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(R.mipmap.schedule_widget_prev)
+                    .crossfade(false)
+                    .build(),
                 contentDescription = "桌面课表微件",
-                modifier = Modifier.align(Alignment.CenterHorizontally)
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                contentScale = ContentScale.Fit
             )
-            Text(
-                text = "添加",
+            AppButton(
+                onClick = {
+                    scope.launch {
+                        GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
+                            ScheduleAppWidgetReceiver::class.java
+                        )
+                    }
+                },
                 modifier = Modifier
                     .padding(16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(90.a1)
-                    .clickable {
-                        scope.launch {
-                            GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
-                                ScheduleAppWidgetReceiver::class.java
-                            )
-                        }
-                    }
-                    .padding(16.dp, 8.dp),
-                color = 0.n1,
-                style = MaterialTheme.typography.titleMedium
-            )
+                    .fillMaxWidth()
+            ) {
+                Text("添加", style = MaterialTheme.typography.titleMedium)
+            }
         }
     }
 }

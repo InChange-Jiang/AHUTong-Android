@@ -20,21 +20,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavHostController
-import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.kyant.monet.a1
 import com.kyant.monet.withNight
-import java.text.SimpleDateFormat
-import java.util.Locale
 
 @Composable
 fun AtAGlance(
     todayCourses: List<Course>,
     currentMinutes: Int,
-    navController: NavHostController,
+    currentDateText: String,
+    onOpenSchedule: () -> Unit,
     isInSemester: Boolean = true,
     enabled: Boolean = true,
     trailingContent: @Composable RowScope.() -> Unit = {}
@@ -55,7 +52,6 @@ fun AtAGlance(
     } else {
         false
     }
-    val date = SimpleDateFormat("MM-dd / EE", Locale.CHINA).format(DebugClock.nowDate())
     Column(
         modifier = Modifier.padding(vertical = 0.dp),
         verticalArrangement = Arrangement.spacedBy(32.dp)
@@ -68,7 +64,7 @@ fun AtAGlance(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = date,
+                text = currentDateText,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyLarge
             )
@@ -80,7 +76,7 @@ fun AtAGlance(
                 .clip(SmoothRoundedCornerShape(32.dp))
                 .then(
                     if (enabled) {
-                        Modifier.clickable { navController.navigate("schedule") }
+                        Modifier.clickable(onClick = onOpenSchedule)
                     } else {
                         Modifier
                     }

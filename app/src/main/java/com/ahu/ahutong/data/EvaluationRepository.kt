@@ -12,7 +12,9 @@ import com.ahu.ahutong.data.model.EvalQuestionnaire
 import com.ahu.ahutong.data.model.EvalSearchResult
 import com.ahu.ahutong.data.model.EvalSemester
 import com.ahu.ahutong.data.model.EvalSubmitRequest
+import com.ahu.ahutong.data.model.EvalTask
 import com.ahu.ahutong.data.model.EvalTaskItem
+import com.ahu.ahutong.data.model.EvalTeacher
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.reflect.TypeToken
@@ -35,7 +37,15 @@ object EvaluationRepository {
     private var currentSemesterId: String = ""
 
     suspend fun getSemesters(): Result<List<EvalSemester>> = runCatching {
-        requestWithSession { api.getSemesters() }.requireData()
+        requestWithSession { api.getSemesters() }.requireData().orEmpty().map { semester ->
+            semester.copy(
+                id = semester.id.orEmpty(),
+                nameZh = semester.nameZh.orEmpty(),
+                nameEn = semester.nameEn.orEmpty(),
+                code = semester.code.orEmpty(),
+                schoolYear = semester.schoolYear.orEmpty()
+            )
+        }
     }
 
     fun getCurrentSemesterId(): String = currentSemesterId
@@ -52,7 +62,7 @@ object EvaluationRepository {
                 semesterId = semesterId,
                 evaluated = evaluated
             )
-        }.requireData().items
+        }.requireData().items.orEmpty().map(EvalTaskItem::sanitized)
     }
 
     suspend fun getQuestions(questionnaireId: String): Result<EvalQuestionnaireForm> = runCatching {
@@ -60,8 +70,19 @@ object EvaluationRepository {
             api.getQuestionnaire(questionnaireId)
         }.requireData()
         val type = object : TypeToken<List<EvalQuestion>>() {}.type
-        val questions = gson.fromJson<List<EvalQuestion>>(questionnaire.questions, type).orEmpty()
-        EvalQuestionnaireForm(questionnaire, questions)
+        val sanitizedQuestionnaire = questionnaire.copy(
+            id = questionnaire.id.orEmpty(),
+            nameZh = questionnaire.nameZh.orEmpty(),
+            questions = questionnaire.questions.orEmpty().ifBlank { "[]" },
+            questionNum = questionnaire.questionNum.orEmpty(),
+            evaluateTypeId = questionnaire.evaluateTypeId.orEmpty(),
+            name = questionnaire.name.orEmpty()
+        )
+        val questions = gson.fromJson<List<EvalQuestion>>(
+            sanitizedQuestionnaire.questions,
+            type
+        ).orEmpty()
+        EvalQuestionnaireForm(sanitizedQuestionnaire, questions)
     }
 
     suspend fun checkParam(stdSumTaskId: String): Result<EvalCheckParam> = runCatching {
@@ -70,13 +91,13 @@ object EvaluationRepository {
 
     suspend fun checkSubmit(request: EvalSubmitRequest): Result<String> = runCatching {
         val response = requestWithSession { api.checkSubmit(request) }
-        check(response.code == 0) { response.msg.ifBlank { "提交检查失败" } }
+        check(response.code == 0) { response.msg.orEmpty().ifBlank { "提交检查失败" } }
         response.data.orEmpty()
     }
 
     suspend fun submit(request: EvalSubmitRequest): Result<Unit> = runCatching {
         val response = requestWithSession { api.submit(request) }
-        check(response.code == 0) { response.msg.ifBlank { "提交失败" } }
+        check(response.code == 0) { response.msg.orEmpty().ifBlank { "提交失败" } }
     }
 
     private suspend fun <T> requestWithSession(
@@ -93,6 +114,11 @@ object EvaluationRepository {
             return callEvaluationApi("评教接口请求失败") { block() }
         }
         if (first.code == 0) return first
+
+        // Business validation errors are final responses, not evidence of an expired login.
+        // Retrying every non-zero response forced a complete token bootstrap and made the
+        // evaluation page look broken or extremely slow.
+        if (!first.indicatesExpiredSession()) return first
 
         ensureToken(forceRefresh = true)
         return callEvaluationApi("评教接口请求失败") { block() }
@@ -122,7 +148,7 @@ object EvaluationRepository {
             api.tokenRenew(mapOf("token" to seedToken))
         }
         check(response.code == 0 && response.data?.token?.isNotBlank() == true) {
-            response.msg.ifBlank { "评教 token 续期失败" }
+            response.msg.orEmpty().ifBlank { "评教 token 续期失败" }
         }
         val renewed = response.data!!.token
         EvaluationApi.setAuthorizationToken(renewed)
@@ -131,7 +157,7 @@ object EvaluationRepository {
         val account = callEvaluationApi("评教身份初始化失败") {
             api.getAccount(renewed)
         }
-        check(account.code == 0) { account.msg.ifBlank { "评教身份初始化失败" } }
+        check(account.code == 0) { account.msg.orEmpty().ifBlank { "评教身份初始化失败" } }
         currentSemesterId = account.data?.currentSemesterId.orEmpty()
         val identity = account.data?.currentIdentity
             ?.takeIf { it.isNotBlank() }
@@ -140,10 +166,10 @@ object EvaluationRepository {
         val currentYear = callEvaluationApi("评教学年初始化失败") {
             api.getCurrentYear(renewed)
         }
-        check(currentYear.code == 0) { currentYear.msg.ifBlank { "评教学年初始化失败" } }
+        check(currentYear.code == 0) { currentYear.msg.orEmpty().ifBlank { "评教学年初始化失败" } }
         Log.i(TAG, "eval current year initialized")
         val menu = getHomeMenuWithCookieRetry(identity)
-        check(menu.code == 0) { menu.msg.ifBlank { "评教菜单初始化失败" } }
+        check(menu.code == 0) { menu.msg.orEmpty().ifBlank { "评教菜单初始化失败" } }
         Log.i(TAG, "eval menu initialized")
         token = renewed
         AHUCache.saveEvalToken(renewed)
@@ -264,8 +290,18 @@ object EvaluationRepository {
     }
 
     private fun <T> EvalApiResponse<T>.requireData(): T {
-        check(code == 0 && data != null) { msg.ifBlank { "评教接口返回异常" } }
+        check(code == 0 && data != null) { msg.orEmpty().ifBlank { "评教接口返回异常" } }
         return data
+    }
+
+    private fun EvalApiResponse<*>.indicatesExpiredSession(): Boolean {
+        val normalized = msg.orEmpty().lowercase()
+        return code == 401 ||
+            normalized.contains("token") ||
+            normalized.contains("unauthorized") ||
+            normalized.contains("未登录") ||
+            normalized.contains("登录失效") ||
+            normalized.contains("登录过期")
     }
 
     private suspend fun <T> callEvaluationApi(
@@ -283,6 +319,35 @@ object EvaluationRepository {
         val message: String = ""
     )
 }
+
+/** Gson can still assign JSON null to Kotlin non-null properties; normalize at the API edge. */
+private fun EvalTaskItem.sanitized(): EvalTaskItem = copy(
+    lessonId = lessonId.orEmpty(),
+    studentId = studentId.orEmpty(),
+    courseName = courseName.orEmpty(),
+    lessonCode = lessonCode.orEmpty(),
+    lessonNameZh = lessonNameZh.orEmpty(),
+    taskList = taskList.orEmpty().map(EvalTask::sanitized)
+)
+
+private fun EvalTask.sanitized(): EvalTask = copy(
+    stdSumEvaBatchId = stdSumEvaBatchId.orEmpty(),
+    evaluationQuestionnaireId = evaluationQuestionnaireId.orEmpty(),
+    evaluationQuestionnaireName = evaluationQuestionnaireName.orEmpty(),
+    teachers = teachers.orEmpty().map(EvalTeacher::sanitized),
+    days = days.orEmpty(),
+    stdSumTaskId = stdSumTaskId.orEmpty()
+)
+
+private fun EvalTeacher.sanitized(): EvalTeacher = copy(
+    stdSumTaskId = stdSumTaskId.orEmpty(),
+    teacherId = teacherId.orEmpty(),
+    personId = personId.orEmpty(),
+    role = role.orEmpty(),
+    teacherName = teacherName.orEmpty(),
+    status = status.orEmpty(),
+    code = code.orEmpty()
+)
 
 data class EvalQuestionnaireForm(
     val questionnaire: EvalQuestionnaire,

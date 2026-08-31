@@ -15,7 +15,7 @@ import com.ahu.ahutong.R
 import com.ahu.ahutong.notification.model.CourseReminderPayload
 
 object CourseReminderNotifier {
-    fun showReminder(
+    suspend fun showReminder(
         context: Context,
         payload: CourseReminderPayload
     ): Boolean {
@@ -68,7 +68,13 @@ object CourseReminderNotifier {
             .setContentIntent(buildContentIntent(context, payload.notificationId))
             .build()
 
-        NotificationManagerCompat.from(context).notify(payload.notificationId, notification)
+        if (!canPostNotifications(context)) return
+        try {
+            NotificationManagerCompat.from(context).notify(payload.notificationId, notification)
+        } catch (_: SecurityException) {
+            // Permission can be revoked between the explicit check and the notify call.
+            return
+        }
     }
 
     private fun canPostNotifications(context: Context): Boolean {

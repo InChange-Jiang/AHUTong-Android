@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
 import androidx.compose.material.icons.outlined.Delete
@@ -50,8 +49,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.repository.DownloadedFile
 import com.ahu.ahutong.data.repository.RepositoryManager
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppPageHeader
+import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.RepositoryViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -86,35 +90,22 @@ fun RepositoryDownloads(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
-            .background(96.n1 withNight 10.n1)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
     ) {
-        // 顶栏
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController.popBackStack() }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回"
-                )
-            }
-            Text(
-                text = if (isManaging) "已选择 ${selectedPaths.size} 项" else "已下载文件",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
-            if (files.isNotEmpty()) {
-                TextButton(onClick = {
-                    isManaging = !isManaging
-                    if (!isManaging) selectedPaths = emptySet()
-                }) {
-                    Text(if (isManaging) "完成" else "管理")
+        AppPageHeader(
+            title = if (isManaging) "已选择 ${selectedPaths.size} 项" else "已下载文件",
+            onBack = { navController.popBackStack() },
+            actions = {
+                if (files.isNotEmpty()) {
+                    TextButton(onClick = {
+                        isManaging = !isManaging
+                        if (!isManaging) selectedPaths = emptySet()
+                    }) {
+                        Text(if (isManaging) "完成" else "管理")
+                    }
                 }
             }
-        }
+        )
 
         if (files.isEmpty()) {
             Box(
@@ -161,8 +152,11 @@ fun RepositoryDownloads(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(12.dp)
-                        .clip(SmoothRoundedCornerShape(16.dp))
-                        .background(100.n1 withNight 30.n1)
+                        .appLiquidGlassSurface(
+                            shape = SmoothRoundedCornerShape(16.dp),
+                            fallbackColor = 100.n1 withNight 30.n1,
+                            level = LiquidGlassSurfaceLevel.Floating
+                        )
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -183,7 +177,7 @@ fun RepositoryDownloads(
                     ) {
                         Text(
                             "删除选中 (${selectedPaths.size})",
-                            color = if (selectedPaths.isNotEmpty()) Color(0xFFFF5252)
+                            color = if (selectedPaths.isNotEmpty()) MaterialTheme.colorScheme.error
                                     else secondaryTextColor
                         )
                     }
@@ -235,44 +229,14 @@ private fun ConfirmDialog(
     onCancel: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    Dialog(onDismissRequest = onCancel) {
-        Column(
-            modifier = Modifier
-                .clip(SmoothRoundedCornerShape(24.dp))
-                .background(96.n1 withNight 10.n1)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = title,
-                color = 0.n1 withNight 100.n1,
-                style = MaterialTheme.typography.titleMedium
-            )
-            Text(
-                text = message,
-                color = 30.n1 withNight 90.n1,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                Text(
-                    text = "取消",
-                    modifier = Modifier.clickable { onCancel() }.padding(horizontal = 12.dp, vertical = 8.dp),
-                    color = 40.a1 withNight 80.a1,
-                    style = MaterialTheme.typography.labelLarge
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Text(
-                    text = "删除",
-                    modifier = Modifier.clickable { onConfirm() }.padding(horizontal = 12.dp, vertical = 8.dp),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color(0xFFFF5252)
-                )
-            }
-        }
-    }
+    SettingsConfirmationDialog(
+        title = title,
+        message = message,
+        confirmLabel = "删除",
+        onConfirm = onConfirm,
+        onDismiss = onCancel,
+        destructive = true
+    )
 }
 
 @Composable
@@ -375,7 +339,7 @@ private fun DownloadedFileRow(
                 Icon(
                     imageVector = Icons.Outlined.Delete,
                     contentDescription = "删除",
-                    tint = Color(0xFFFF5252),
+                    tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(22.dp)
                 )
             }

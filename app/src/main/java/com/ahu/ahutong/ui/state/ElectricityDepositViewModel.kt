@@ -9,6 +9,11 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.FormBody
 import android.util.Log
@@ -186,36 +191,22 @@ class ElectricityDepositViewModel @Inject constructor(
     val presetCandidates: StateFlow<List<PresetCandidate>> = _presetCandidates
     private var activePresetInteraction: PresetInteractionToken? = null
     private var candidatesAtOpportunity: List<PresetCandidate> = emptyList()
+    private var selectionLoadJob: Job? = null
 
     init {
-        _campusList.value = emptyList()
-        _selectedCampus.value = null
         val history = AHUCache.getElectricityDepositHistory()
-        if (history.size == 2) {
-            _historyOptions.value = history
-            fetchCampuses()
+            .filter(ElectricityDepositHistoryItem::confirmedByPayment)
+            .sortedByDescending(ElectricityDepositHistoryItem::updatedAt)
+            .take(MAX_ROOM_HISTORY)
+        _historyOptions.value = history
+        val lastSelection = AHUCache.getRoomSelection()
+            ?.takeIf(::isCompleteSelection)
+            ?: history.firstOrNull { isCompleteSelection(it.selection) }?.selection
+        if (lastSelection != null) {
+            Log.d("ElectricityDepositViewModel", "选择从缓存恢复")
+            loadAndRestoreSelection(lastSelection)
         } else {
-            val lastSelection = AHUCache.getRoomSelection()
-            if (history.isEmpty() && lastSelection != null) {
-                val seedLabel = normalizeLabel(lastSelection.room?.name ?: "")
-                if (seedLabel.isNotBlank()) {
-                    AHUCache.saveElectricityDepositHistory(
-                        listOf(
-                            ElectricityDepositHistoryItem(
-                                selection = lastSelection,
-                                label = seedLabel,
-                                updatedAt = System.currentTimeMillis()
-                            )
-                        )
-                    )
-                }
-            }
-            if (lastSelection != null) {
-                Log.d("ElectricityDepositViewModel", "选择从缓存恢复")
-                loadAndRestoreSelection(lastSelection)
-            } else {
-                fetchCampuses()
-            }
+            fetchCampuses()
         }
         viewModelScope.launch {
             _presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.ELECTRICITY)
@@ -223,7 +214,8 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     private fun loadAndRestoreSelection(selection: RoomSelectionInfo, commitPresetOnRoomRequest: Boolean = false) {
-        viewModelScope.launch {
+        selectionLoadJob?.cancel()
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
@@ -231,19 +223,51 @@ class ElectricityDepositViewModel @Inject constructor(
                 _selectedBuilding.value = selection.building
                 _selectedFloor.value = selection.floor
                 _selectedRoom.value = selection.room
+                _campusList.value = listOfNotNull(selection.campus)
+                _buildingsList.value = listOfNotNull(selection.building)
+                _floorsList.value = listOfNotNull(selection.floor)
+                _roomsList.value = listOfNotNull(selection.room)
 
-                getCampus().data?.let { _campusList.value = it } ?: throw Exception("加载校区列表失败")
-                getBuildings().data?.let { _buildingsList.value = it } ?: throw Exception("加载楼栋列表失败")
-                getFloor().data?.let { _floorsList.value = it } ?: throw Exception("加载楼层列表失败")
-                getRoom().data?.let { _roomsList.value = it } ?: throw Exception("加载房间列表失败")
-                if (commitPresetOnRoomRequest) recordRoomPreset()
-                getRoomInfo().data?.let {
+                // Restore the useful content first. Selector option lists are secondary and should
+                // not keep the whole page blocked while a remembered room balance is available.
+                val roomDetails = getRoomInfo()
+                (roomDetails.data as? RoomInfoMap)?.let {
                     _fullRoomDetails.value = it
                     _roomInfo.value = it.showData?.info
-                } ?: throw Exception("加载房间信息失败")
+                    persistCurrentSelection()
+                    behaviorRuntime.onContentStateChanged(
+                        SemanticDomain.ELECTRICITY,
+                        ContentStateBucket.READY,
+                        freshnessBucket = 0,
+                        resultCount = ResultCountBucket.ONE_TO_FIVE
+                    )
+                } ?: throw Exception(roomDetails.msg ?: "加载房间信息失败")
+                _isLoading.value = false
 
+                val (campuses, buildings, floors, rooms) = coroutineScope {
+                    val campusesRequest = async { getCampus() }
+                    val buildingsRequest = async { getBuildings() }
+                    val floorsRequest = async { getFloor() }
+                    val roomsRequest = async { getRoom() }
+                    listOf(
+                        campusesRequest.await(),
+                        buildingsRequest.await(),
+                        floorsRequest.await(),
+                        roomsRequest.await()
+                    )
+                }
+                @Suppress("UNCHECKED_CAST")
+                (campuses.data as? List<CampusDataItem>)?.let { _campusList.value = it }
+                @Suppress("UNCHECKED_CAST")
+                (buildings.data as? List<CampusDataItem>)?.let { _buildingsList.value = it }
+                @Suppress("UNCHECKED_CAST")
+                (floors.data as? List<CampusDataItem>)?.let { _floorsList.value = it }
+                @Suppress("UNCHECKED_CAST")
+                (rooms.data as? List<CampusDataItem>)?.let { _roomsList.value = it }
+                if (commitPresetOnRoomRequest) recordRoomPreset()
                 Log.d("ElectricityDepositViewModel", "从缓存恢复选择成功")
-
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _errorMessage.value = e.message ?: "恢复选择时发生未知错误"
                 Log.e("ElectricityDepositViewModel", "恢复选择失败", e)
@@ -254,11 +278,20 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     fun selectHistory(item: ElectricityDepositHistoryItem) {
-        _historyOptions.value = emptyList()
         loadAndRestoreSelection(item.selection)
     }
 
+    fun deleteHistory(item: ElectricityDepositHistoryItem) {
+        val deletedKey = selectionKey(item.selection)
+        val updatedHistory = _historyOptions.value.filterNot {
+            selectionKey(it.selection) == deletedKey
+        }
+        _historyOptions.value = updatedHistory
+        AHUCache.saveElectricityDepositHistory(updatedHistory)
+    }
+
     fun onCampusSelected(campus: CampusDataItem) {
+        selectionLoadJob?.cancel()
         _selectedCampus.value = campus
         _buildingsList.value = emptyList()
         _selectedBuilding.value = null
@@ -271,6 +304,7 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     fun onBuildingSelected(building: CampusDataItem) {
+        selectionLoadJob?.cancel()
         _selectedBuilding.value = building
         _floorsList.value = emptyList()
         _selectedFloor.value = null
@@ -281,6 +315,7 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     fun onfloorSelected(floor: CampusDataItem) {
+        selectionLoadJob?.cancel()
         _selectedFloor.value = floor
         _roomsList.value = emptyList()
         _selectedRoom.value = null
@@ -289,26 +324,46 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     fun onRoomSelected(room: CampusDataItem) {
+        selectionLoadJob?.cancel()
         _selectedRoom.value = room
         _roomInfo.value = null
         fetchRoomInfo()
     }
 
+    fun retry() {
+        when {
+            _selectedCampus.value == null -> fetchCampuses()
+            _selectedBuilding.value == null -> fetchBuildings()
+            _selectedFloor.value == null -> fetchFloor()
+            _selectedRoom.value == null -> fetchRoom()
+            else -> fetchRoomInfo()
+        }
+    }
+
     private fun fetchCampuses() {
-        viewModelScope.launch {
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
                 val response = getCampus()
                 if (response.code == 0 && response.data != null) {
-                    _campusList.value = response.data!!
+                    val items = response.data!!
+                    _campusList.value = items
+                    if (_selectedCampus.value == null) {
+                        items.firstOrNull()?.let { first ->
+                            _selectedCampus.value = first
+                            fetchBuildings()
+                        }
+                    }
                 } else {
                     _errorMessage.value = response.msg ?: "加载校区失败"
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
             } finally {
-                _isLoading.value = false
+                if (_errorMessage.value != null || _selectedCampus.value == null) {
+                    _isLoading.value = false
+                }
             }
         }
     }
@@ -321,7 +376,7 @@ class ElectricityDepositViewModel @Inject constructor(
             .add("level", "0")
             .build()
         try {
-            val res = YcardApi.API.getFeeItemThirdData(formBody)
+            val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
             Log.d("ElectricityDepositViewModel", "getCampus响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -361,20 +416,23 @@ class ElectricityDepositViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
                 val response = getBuildings()
                 if (response.code == 0 && response.data != null) {
-                    _buildingsList.value = response.data!!
+                    val items = response.data!!
+                    _buildingsList.value = items
                 } else {
                     _errorMessage.value = response.msg ?: "加载楼栋失败"
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
             } finally {
-                _isLoading.value = false
+                if (_errorMessage.value != null || _selectedBuilding.value == null) {
+                    _isLoading.value = false
+                }
             }
         }
     }
@@ -387,8 +445,6 @@ class ElectricityDepositViewModel @Inject constructor(
             return responseWrapper
         }
 
-        _isLoading.value = true
-        _errorMessage.value = null
         val formBody = FormBody.Builder()
             .add("feeitemid", "488")
             .add("type", "select")
@@ -397,7 +453,7 @@ class ElectricityDepositViewModel @Inject constructor(
             .build()
 
         try {
-            val res = YcardApi.API.getFeeItemThirdData(formBody)
+            val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
             Log.d("ElectricityDepositViewModel", "getBuildings响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -422,8 +478,6 @@ class ElectricityDepositViewModel @Inject constructor(
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-        } finally {
-            _isLoading.value = false
         }
         return responseWrapper
     }
@@ -434,20 +488,23 @@ class ElectricityDepositViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
                 val response = getFloor()
                 if (response.code == 0 && response.data != null) {
-                    _floorsList.value = response.data!!
+                    val items = response.data!!
+                    _floorsList.value = items
                 } else {
                     _errorMessage.value = response.msg ?: "加载楼层失败"
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
             } finally {
-                _isLoading.value = false
+                if (_errorMessage.value != null || _selectedFloor.value == null) {
+                    _isLoading.value = false
+                }
             }
         }
     }
@@ -474,7 +531,7 @@ class ElectricityDepositViewModel @Inject constructor(
             .build()
 
         try {
-            val res = YcardApi.API.getFeeItemThirdData(formBody)
+            val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
             Log.d("ElectricityDepositViewModel", "getFloor响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -509,20 +566,23 @@ class ElectricityDepositViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
                 val response = getRoom()
                 if (response.code == 0 && response.data != null) {
-                    _roomsList.value = response.data!!
+                    val items = response.data!!
+                    _roomsList.value = items
                 } else {
                     _errorMessage.value = response.msg ?: "加载房间失败"
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
             } finally {
-                _isLoading.value = false
+                if (_errorMessage.value != null || _selectedRoom.value == null) {
+                    _isLoading.value = false
+                }
             }
         }
     }
@@ -555,7 +615,7 @@ class ElectricityDepositViewModel @Inject constructor(
             .build()
 
         try {
-            val res = YcardApi.API.getFeeItemThirdData(formBody)
+            val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
             Log.d("ElectricityDepositViewModel", "getRoom响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -590,21 +650,22 @@ class ElectricityDepositViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch {
+        selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                recordRoomPreset()
                 val response = getRoomInfo()
                 if (response.code == 0 && response.data != null) {
                     _fullRoomDetails.value = response.data
                     _roomInfo.value = response.data.showData?.info
+                    persistCurrentSelection()
                     behaviorRuntime.onContentStateChanged(
                         SemanticDomain.ELECTRICITY,
                         ContentStateBucket.READY,
                         freshnessBucket = 0,
                         resultCount = ResultCountBucket.ONE_TO_FIVE
                     )
+                    launch { recordRoomPreset() }
                 } else {
                     _errorMessage.value = response.msg ?: "加载房间信息失败"
                     reportRoomError()
@@ -719,7 +780,7 @@ class ElectricityDepositViewModel @Inject constructor(
             .build()
 
         try {
-            val res = YcardApi.API.getFeeItemThirdData(formBody)
+            val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
             Log.d("ElectricityDepositViewModel", "getRoomInfo响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -783,7 +844,7 @@ class ElectricityDepositViewModel @Inject constructor(
             )
         )
         try {
-            val res = YcardApi.API.pay(formBody)
+            val res = YcardApi.authorizedCall { pay(formBody) }
             Log.d("ElectricityDepositViewModel", "getPaymentOrder响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -824,7 +885,7 @@ class ElectricityDepositViewModel @Inject constructor(
         )
 
         try {
-            val res = YcardApi.API.pay(formBody)
+            val res = YcardApi.authorizedCall { pay(formBody) }
             Log.d("ElectricityDepositViewModel", "getAccountPayInfo响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
@@ -918,7 +979,7 @@ class ElectricityDepositViewModel @Inject constructor(
                 )
 
                 Log.d("ElectricityDepositViewModel", "开始执行最终支付请求...")
-                val finalRes = YcardApi.API.pay(finalFormBody)
+                val finalRes = YcardApi.authorizedCall { pay(finalFormBody) }
                 Log.d("ElectricityDepositViewModel", "最终支付请求完成，响应码: ${finalRes.code()}")
                 val responseBody = finalRes.body()?.string()
 
@@ -952,18 +1013,16 @@ class ElectricityDepositViewModel @Inject constructor(
                             floor = _selectedFloor.value,
                             room = _selectedRoom.value
                         )
-                        saveRoomSelection(roomSelectionInfo)
-
-                        val label = normalizeLabel(_fullRoomDetails.value?.data?.roomName ?: _selectedRoom.value?.name ?: "")
-                        val newItem = ElectricityDepositHistoryItem(
+                        persistCurrentSelection(
                             selection = roomSelectionInfo,
-                            label = label,
-                            updatedAt = System.currentTimeMillis()
+                            confirmedByPayment = true
                         )
-                        val existingHistory = AHUCache.getElectricityDepositHistory()
-                        val key = selectionKey(roomSelectionInfo)
-                        val updatedHistory = (listOf(newItem) + existingHistory.filter { selectionKey(it.selection) != key }).take(2)
-                        AHUCache.saveElectricityDepositHistory(updatedHistory)
+                        delay(1_000L)
+                        val refreshedInfo = getRoomInfo()
+                        if (refreshedInfo.code == 0 && refreshedInfo.data != null) {
+                            _fullRoomDetails.value = refreshedInfo.data
+                            _roomInfo.value = refreshedInfo.data.showData?.info
+                        }
                     } else {
                         val errorMessage = parsedResponse.msg ?: "支付失败，未知错误"
                         _errorMessage.value = errorMessage
@@ -1018,6 +1077,45 @@ class ElectricityDepositViewModel @Inject constructor(
         return builder.build()
     }
 
+    private fun isCompleteSelection(selection: RoomSelectionInfo): Boolean {
+        return selection.campus != null &&
+            selection.building != null &&
+            selection.floor != null &&
+            selection.room != null
+    }
+
+    private fun persistCurrentSelection(
+        selection: RoomSelectionInfo = RoomSelectionInfo(
+            campus = _selectedCampus.value,
+            building = _selectedBuilding.value,
+            floor = _selectedFloor.value,
+            room = _selectedRoom.value
+        ),
+        confirmedByPayment: Boolean = false
+    ) {
+        if (!isCompleteSelection(selection)) return
+
+        saveRoomSelection(selection)
+        if (!confirmedByPayment) return
+        val label = normalizeLabel(
+            _fullRoomDetails.value?.data?.roomName ?: selection.room?.name.orEmpty()
+        )
+        if (label.isBlank()) return
+
+        val item = ElectricityDepositHistoryItem(
+            selection = selection,
+            label = label,
+            updatedAt = System.currentTimeMillis(),
+            confirmedByPayment = true
+        )
+        val key = selectionKey(selection)
+        val updatedHistory = (listOf(item) + _historyOptions.value.filter {
+            selectionKey(it.selection) != key
+        }).take(MAX_ROOM_HISTORY)
+        _historyOptions.value = updatedHistory
+        AHUCache.saveElectricityDepositHistory(updatedHistory)
+    }
+
     private fun selectionKey(selection: RoomSelectionInfo): String {
         return listOf(
             selection.campus?.value,
@@ -1034,5 +1132,9 @@ class ElectricityDepositViewModel @Inject constructor(
         }
         val parts = value.split(Regex("\\s+")).filter { it.isNotBlank() }
         return if (parts.isEmpty()) "" else parts.last()
+    }
+
+    private companion object {
+        const val MAX_ROOM_HISTORY = 12
     }
 }

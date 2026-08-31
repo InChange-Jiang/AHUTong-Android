@@ -1,11 +1,5 @@
 package com.ahu.ahutong.ui.screen.main
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,27 +7,16 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,23 +26,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.data.crawler.PayState
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppFilterChip
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
 import com.ahu.ahutong.ui.state.NetworkRechargePageState
 import com.ahu.ahutong.ui.state.NetworkRechargeUiData
 import com.ahu.ahutong.ui.state.NetworkRechargeViewModel
-import com.kyant.monet.a1
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
@@ -68,6 +54,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun NetworkRecharge(
+    onBack: () -> Unit,
     viewModel: NetworkRechargeViewModel = viewModel()
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
@@ -87,8 +74,12 @@ fun NetworkRecharge(
 
     LaunchedEffect(payState) {
         when (payState) {
-            is PayState.Succeeded, is PayState.Failed -> {
-                delay(1200)
+            is PayState.Succeeded -> {
+                delay(1_000L)
+                viewModel.load()
+            }
+            is PayState.Failed -> {
+                delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
                 viewModel.resetPayState()
             }
 
@@ -96,19 +87,13 @@ fun NetworkRecharge(
         }
     }
 
-    Column(
+    AppScrollablePageLayout(
+        title = "网费充值",
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .systemBarsPadding(),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
     ) {
-        Text(
-            text = "网费充值",
-            modifier = Modifier.padding(24.dp, 32.dp),
-            style = MaterialTheme.typography.headlineMedium
-        )
-
         when (val state = pageState) {
             NetworkRechargePageState.Loading -> {
                 LoadingCard()
@@ -172,72 +157,35 @@ fun NetworkRecharge(
     }
 
     if (showDialog) {
-        AlertDialog(
-            containerColor = 100.n1 withNight 20.n1,
-            titleContentColor = 10.n1 withNight 90.n1,
-            textContentColor = 10.n1 withNight 90.n1,
-            onDismissRequest = { showDialog = false },
-            title = { Text("请输入校园卡密码") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { input ->
-                            if (input.length <= 6 && input.all { it.isDigit() }) {
-                                password = input
-                                passwordError = null
-                            }
-                        },
-                        label = { Text("密码 (6位数字)", color = 40.n1 withNight 60.n1) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        visualTransformation = PasswordVisualTransformation(),
-                        isError = passwordError != null,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = 10.n1 withNight 90.n1,
-                            unfocusedTextColor = 10.n1 withNight 90.n1,
-                            focusedBorderColor = 20.n1 withNight 80.n1
-                        )
-                    )
-                    passwordError?.let {
-                        Text(
-                            text = it,
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
+        SecurePaymentPasswordDialog(
+            password = password,
+            onPasswordChange = {
+                password = it
+                passwordError = null
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (password.length == 6) {
-                            showDialog = false
-                            behaviorReporter.organic(AppActionId.SUBMIT_NETWORK_RECHARGE)
-                            viewModel.pay(amount, password)
-                            password = ""
-                            passwordError = null
-                        } else {
-                            passwordError = "密码必须是6位数字"
-                        }
-                    }
-                ) {
-                    Text("确认", color = 10.n1 withNight 90.n1)
-                }
+            title = "请输入校园卡密码",
+            errorMessage = passwordError,
+            onDismissRequest = {
+                showDialog = false
+                password = ""
+                passwordError = null
             },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showDialog = false
-                        password = ""
-                        passwordError = null
-                    }
-                ) {
-                    Text("取消", color = 10.n1 withNight 90.n1)
+            onConfirm = { confirmedPassword ->
+                if (confirmedPassword.length == 6) {
+                    showDialog = false
+                    behaviorReporter.organic(AppActionId.SUBMIT_NETWORK_RECHARGE)
+                    viewModel.pay(amount, confirmedPassword)
+                    password = ""
+                    passwordError = null
+                } else {
+                    passwordError = "密码必须是6位数字"
                 }
             }
         )
     }
 }
+
+private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L
 
 @Composable
 private fun LoadingCard() {
@@ -245,12 +193,15 @@ private fun LoadingCard() {
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(24.dp),
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            )
             .padding(24.dp),
         contentAlignment = Alignment.Center
     ) {
-        CircularProgressIndicator(color = 30.n1 withNight 70.n1)
+        AppCircularProgressIndicator()
     }
 }
 
@@ -263,8 +214,11 @@ private fun ErrorCard(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(24.dp),
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -273,12 +227,9 @@ private fun ErrorCard(
             color = 10.n1 withNight 90.n1,
             style = MaterialTheme.typography.bodyLarge
         )
-        Text(
-            text = "重试",
-            modifier = Modifier.clickable(onClick = onRetry),
-            color = 30.n1 withNight 70.n1,
-            style = MaterialTheme.typography.titleMedium
-        )
+        AppButton(onClick = onRetry, variant = AppButtonVariant.Secondary) {
+            Text("重试")
+        }
     }
 }
 
@@ -290,8 +241,11 @@ private fun NetworkAccountCard(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(24.dp),
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -347,8 +301,11 @@ private fun AmountCard(
         modifier = Modifier
             .padding(horizontal = 16.dp)
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(24.dp),
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            )
     ) {
         Text(
             text = "充值金额",
@@ -365,37 +322,22 @@ private fun AmountCard(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 quickAmounts.forEach { quickAmount ->
-                    Text(
-                        text = quickAmount,
-                        modifier = Modifier
-                            .clip(SmoothRoundedCornerShape(16.dp))
-                            .background(90.a1 withNight 30.n1)
-                            .clickable { onQuickAmountClick(quickAmount) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        color = 10.n1 withNight 90.n1,
-                        style = MaterialTheme.typography.bodyMedium
+                    AppFilterChip(
+                        selected = amount == normalizeQuickAmount(quickAmount),
+                        onClick = { onQuickAmountClick(quickAmount) },
+                        label = { Text(quickAmount) }
                     )
                 }
             }
         }
 
-        TextField(
+        AppTextField(
             value = amount,
             onValueChange = onAmountChange,
-            modifier = Modifier.fillMaxWidth(),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            ),
-            placeholder = {
-                Text(
-                    text = if (maxAmount.isNullOrBlank()) "请输入金额" else "请输入金额，单次最高 $maxAmount 元",
-                    color = 30.n1 withNight 70.n1
-                )
-            },
-            textStyle = TextStyle(fontSize = 16.sp, color = 10.n1 withNight 90.n1),
+            label = if (maxAmount.isNullOrBlank()) "金额（元）" else "金额（最高 $maxAmount 元）",
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Decimal,
                 imeAction = ImeAction.Done
@@ -420,102 +362,57 @@ private fun RechargeActionRow(
     payState: PayState,
     onConfirm: () -> Unit
 ) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        when (payState) {
+            PayState.Idle -> Unit
+            PayState.InProgress -> Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppCircularProgressIndicator(size = 22.dp, strokeWidth = 3.dp)
+                Text("  正在充值", style = MaterialTheme.typography.bodyLarge)
+            }
+            is PayState.Failed -> StatusMessage(
+                icon = Icons.Default.Close,
+                message = "充值失败：${payState.message}",
+                isError = true
+            )
+            is PayState.Succeeded -> StatusMessage(
+                icon = Icons.Default.Check,
+                message = "充值成功，正在刷新账户信息",
+                isError = false
+            )
+        }
+        AppButton(
+            onClick = onConfirm,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = payState is PayState.Idle
+        ) {
+            Text(if (payState is PayState.InProgress) "正在充值" else "确认充值")
+        }
+    }
+}
+
+@Composable
+private fun StatusMessage(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    message: String,
+    isError: Boolean
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .navigationBarsPadding()
-                .padding(16.dp)
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(
-                    animateColorAsState(
-                        targetValue = when (payState) {
-                            PayState.Idle -> 90.a1 withNight 85.a1
-                            PayState.InProgress -> 70.a1 withNight 60.a1
-                            is PayState.Failed -> Color.Red
-                            is PayState.Succeeded -> 70.a1 withNight 60.a1
-                        }
-                    ).value
-                )
-                .animateContentSize(spring(stiffness = Spring.StiffnessLow))
-        ) {
-            when (payState) {
-                PayState.Idle -> {
-                    Text(
-                        text = "确认",
-                        modifier = Modifier
-                            .clickable(onClick = onConfirm)
-                            .padding(24.dp, 16.dp),
-                        color = 0.n1,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-
-                PayState.InProgress -> {
-                    Row(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = 100.n1,
-                            strokeWidth = 4.dp
-                        )
-                        Text(
-                            text = "支付中",
-                            color = 100.n1,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-
-                is PayState.Failed -> {
-                    Row(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = 100.n1
-                        )
-                        Text(
-                            text = "充值失败：${payState.message}",
-                            color = 100.n1,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-
-                is PayState.Succeeded -> {
-                    Row(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Check,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = 100.n1
-                        )
-                        Text(
-                            text = "充值成功！订单号：${payState.message}",
-                            color = 100.n1,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
-                }
-            }
-        }
+        val color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = color)
+        Text(message, color = color, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

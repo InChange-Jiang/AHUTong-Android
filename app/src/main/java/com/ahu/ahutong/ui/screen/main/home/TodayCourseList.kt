@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.screen.main.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,7 +15,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -28,8 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.model.Course
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.kyant.monet.a1
@@ -40,19 +38,22 @@ import com.kyant.monet.withNight
 fun TodayCourseList(
     todayCourses: List<Course>,
     currentMinutes: Int,
-    navController: NavHostController?,
+    onOpenSchedule: () -> Unit,
     enabled: Boolean = true
 ) {
+    val panelShape = SmoothRoundedCornerShape(32.dp)
     if (todayCourses.isEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(100.n1 withNight 20.n1)
+                .appLiquidGlassSurface(
+                    shape = panelShape,
+                    fallbackColor = 100.n1 withNight 20.n1
+                )
                 .then(
                     if (enabled) {
-                        Modifier.clickable { navController?.navigate("schedule") }
+                        Modifier.clickable(onClick = onOpenSchedule)
                     } else {
                         Modifier
                     }
@@ -85,11 +86,13 @@ fun TodayCourseList(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(SmoothRoundedCornerShape(32.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = panelShape,
+                fallbackColor = 100.n1 withNight 20.n1
+            )
             .then(
                 if (enabled) {
-                    Modifier.clickable { navController?.navigate("schedule") }
+                    Modifier.clickable(onClick = onOpenSchedule)
                 } else {
                     Modifier
                 }

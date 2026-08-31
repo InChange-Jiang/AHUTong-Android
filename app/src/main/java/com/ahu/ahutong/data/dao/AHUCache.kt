@@ -1,12 +1,14 @@
 package com.ahu.ahutong.data.dao
 
 import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.crawler.model.adwnh.CampusItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundTypeItem
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.model.ElectricityChargeInfo
 import com.ahu.ahutong.data.model.ElectricityDepositHistoryItem
+import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.data.model.EvalPreset
 import com.ahu.ahutong.data.model.Exam
 import com.ahu.ahutong.data.model.GpaRankInfo
@@ -14,6 +16,7 @@ import com.ahu.ahutong.data.model.Grade
 import com.ahu.ahutong.data.model.GradeStudentProfile
 import com.ahu.ahutong.data.model.RoomSelectionInfo
 import com.ahu.ahutong.data.model.User
+import com.ahu.ahutong.data.security.SecureStorage
 import com.ahu.ahutong.ext.fromJson
 import com.ahu.ahutong.sdk.RustSDK
 import com.google.gson.Gson
@@ -32,6 +35,20 @@ object AHUCache {
     }
 
     private val kv_init: MMKV = MMKV.mmkvWithID("ahu")
+
+    private val currentUserCacheLock = Any()
+    @Volatile
+    private var currentUserCacheInitialized = false
+    @Volatile
+    private var currentUserCache: User? = null
+
+    @Volatile
+    private var mockDataCache: Boolean? = null
+    @Volatile
+    private var mockCurrentTimeCacheInitialized = false
+    @Volatile
+    private var mockCurrentTimeCache: Long? = null
+
     private val kv: MMKV
         get() {
             val user = getCurrentUser()
@@ -48,47 +65,68 @@ object AHUCache {
         return value.replace(Regex("[^A-Za-z0-9_.-]"), "_")
     }
 
-    private fun userBoxName(): String {
-        val userId = getCurrentUser()?.xh?.takeIf { it.isNotEmpty() } ?: "guest"
-        return "user_${sanitizeBoxPart(userId)}"
+    private fun userBoxName(userId: String? = getCurrentUser()?.xh): String {
+        val stableUserId = userId?.takeIf { it.isNotEmpty() } ?: "guest"
+        return "user_${sanitizeBoxPart(stableUserId)}"
     }
 
     private fun initPutString(key: String, value: String) {
-        RustSDK.kvPutStringSafe(INIT_BOX, key, value)
+        SecureStorage.putString("$INIT_BOX.$key", value)
+        RustSDK.kvRemoveSafe(INIT_BOX, key)
+        kv_init.removeValueForKey(key)
     }
 
     private fun initGetString(key: String): String? {
-        return RustSDK.kvGetStringSafe(INIT_BOX, key)
+        SecureStorage.getString("$INIT_BOX.$key")?.let { return it }
+        return RustSDK.kvGetStringSafe(INIT_BOX, key)?.also { value ->
+            SecureStorage.putString("$INIT_BOX.$key", value)
+            RustSDK.kvRemoveSafe(INIT_BOX, key)
+        }
     }
 
     private fun initGetStringOrMigrate(key: String, fallback: () -> String?): String? {
         initGetString(key)?.let { return it }
-        return fallback()?.also {
-            if (it.isNotEmpty()) initPutString(key, it)
+        return fallback()?.also { value ->
+            if (value.isNotEmpty()) initPutString(key, value)
+            kv_init.removeValueForKey(key)
         }
     }
 
     private fun initRemove(key: String) {
+        SecureStorage.remove("$INIT_BOX.$key")
         RustSDK.kvRemoveSafe(INIT_BOX, key)
+        kv_init.removeValueForKey(key)
     }
 
     private fun userPutString(key: String, value: String) {
-        RustSDK.kvPutStringSafe(userBoxName(), key, value)
+        val boxName = userBoxName()
+        SecureStorage.putString("$boxName.$key", value)
+        RustSDK.kvRemoveSafe(boxName, key)
+        kv.removeValueForKey(key)
     }
 
     private fun userGetString(key: String): String? {
-        return RustSDK.kvGetStringSafe(userBoxName(), key)
+        val boxName = userBoxName()
+        SecureStorage.getString("$boxName.$key")?.let { return it }
+        return RustSDK.kvGetStringSafe(boxName, key)?.also { value ->
+            SecureStorage.putString("$boxName.$key", value)
+            RustSDK.kvRemoveSafe(boxName, key)
+        }
     }
 
     private fun userGetStringOrMigrate(key: String, fallback: () -> String?): String? {
         userGetString(key)?.let { return it }
-        return fallback()?.also {
-            if (it.isNotEmpty()) userPutString(key, it)
+        return fallback()?.also { value ->
+            if (value.isNotEmpty()) userPutString(key, value)
+            kv.removeValueForKey(key)
         }
     }
 
     private fun userRemove(key: String) {
-        RustSDK.kvRemoveSafe(userBoxName(), key)
+        val boxName = userBoxName()
+        SecureStorage.remove("$boxName.$key")
+        RustSDK.kvRemoveSafe(boxName, key)
+        kv.removeValueForKey(key)
     }
 
     /**
@@ -97,12 +135,23 @@ object AHUCache {
     fun clearAll() {
         val boxName = userBoxName()
         val currentKv = kv
+        SecureStorage.clearPrefix("$INIT_BOX.")
+        SecureStorage.clearPrefix("$boxName.")
+        SecureStorage.clearPrefix("user_guest.")
         RustSDK.kvClearBoxSafe(INIT_BOX)
         RustSDK.kvClearBoxSafe(boxName)
         RustSDK.kvClearBoxSafe("user_guest")
         kv_init.clearAll()
         currentKv.clearAll()
         MMKV.mmkvWithID("ahu_guest").clearAll()
+        synchronized(currentUserCacheLock) {
+            currentUserCache = null
+            currentUserCacheInitialized = true
+        }
+        mockDataCache = null
+        mockCurrentTimeCache = null
+        mockCurrentTimeCacheInitialized = false
+        homeWidgetSlotsCache = null
     }
 
     /**
@@ -112,15 +161,23 @@ object AHUCache {
     fun saveCurrentUser(user: User) {
         val data = Gson().toJson(user)
         initPutString("current_user", data)
-        kv_init.encode("current_user", data)
+        synchronized(currentUserCacheLock) {
+            currentUserCache = user
+            currentUserCacheInitialized = true
+        }
+        homeWidgetSlotsCache = null
     }
 
     /**
      * 清除本地登陆状态
      */
     fun clearCurrentUser() {
-        initPutString("current_user", "")
-        kv_init.encode("current_user", "")
+        initRemove("current_user")
+        synchronized(currentUserCacheLock) {
+            currentUserCache = null
+            currentUserCacheInitialized = true
+        }
+        homeWidgetSlotsCache = null
     }
 
     /**
@@ -128,8 +185,20 @@ object AHUCache {
      * @return User?
      */
     fun getCurrentUser(): User? {
-        val data = initGetStringOrMigrate("current_user") { kv_init.decodeString("current_user") } ?: ""
-        return data.fromJson(User::class.java)
+        if (currentUserCacheInitialized) return currentUserCache
+        return synchronized(currentUserCacheLock) {
+            if (currentUserCacheInitialized) {
+                currentUserCache
+            } else {
+                val data = initGetStringOrMigrate("current_user") {
+                    kv_init.decodeString("current_user")
+                }.orEmpty()
+                data.fromJson(User::class.java).also { user ->
+                    currentUserCache = user
+                    currentUserCacheInitialized = true
+                }
+            }
+        }
     }
 
     /**
@@ -145,8 +214,8 @@ object AHUCache {
      * @param password String
      */
     fun saveWisdomPassword(password: String) {
-        initPutString("password_wisdom", password)
-        kv_init.encode("password_wisdom", password)
+        if (password.isEmpty()) initRemove("password_wisdom")
+        else initPutString("password_wisdom", password)
     }
 
     /**
@@ -158,8 +227,8 @@ object AHUCache {
     }
 
     fun saveEvalToken(token: String) {
-        userPutString("eval_token", token)
-        kv.encode("eval_token", token)
+        if (token.isEmpty()) userRemove("eval_token")
+        else userPutString("eval_token", token)
     }
 
     fun getEvalToken(): String? {
@@ -169,7 +238,6 @@ object AHUCache {
     fun saveEvalPreset(preset: EvalPreset) {
         val data = Gson().toJson(preset)
         userPutString("eval_preset", data)
-        kv.encode("eval_preset", data)
     }
 
     fun getEvalPreset(): EvalPreset {
@@ -187,13 +255,11 @@ object AHUCache {
     fun saveSchedule(schoolYear: String, schoolTerm: String, schedule: List<Course>) {
         val data = Gson().toJson(schedule)
         userPutString("$schoolYear-$schoolTerm.schedule", data)
-        kv.putString("$schoolYear-$schoolTerm.schedule", data)
     }
 
     fun saveSchedule(schoolTerm: String,schedule: List<Course>) {
         val data = Gson().toJson(schedule)
         userPutString("$schoolTerm.schedule", data)
-        kv.putString("$schoolTerm.schedule", data) // 2025-2026-1
     }
 
     /**
@@ -216,11 +282,13 @@ object AHUCache {
 
     fun saveNextSchedule(schedule: List<Course>) {
         val data = Gson().toJson(schedule)
-        kv.putString("next.schedule", data)
+        userPutString("next.schedule", data)
     }
 
     fun getNextSchedule(): List<Course>? {
-        val data = kv.getString("next.schedule", "") ?: ""
+        val data = userGetStringOrMigrate("next.schedule") {
+            kv.getString("next.schedule", "")
+        } ?: ""
         return data.fromJson(object : TypeToken<List<Course>>() {}.type)
     }
 
@@ -231,7 +299,6 @@ object AHUCache {
     fun saveGrade(grade: Grade) {
         val data = Gson().toJson(grade)
         userPutString("grade", data)
-        kv.encode("grade", data)
     }
 
     /**
@@ -250,7 +317,7 @@ object AHUCache {
     fun saveExamInfo(exams: List<Exam>) {
         val data = Gson().toJson(exams)
         userPutString("exams", data)
-        kv.encode("exams", data)
+        userPutString("exams_updated_at", System.currentTimeMillis().toString())
     }
 
     /**
@@ -260,6 +327,10 @@ object AHUCache {
     fun getExamInfo(): List<Exam>? {
         val data = userGetStringOrMigrate("exams") { kv.decodeString("exams") } ?: ""
         return data.fromJson(object : TypeToken<List<Exam>>() {}.type)
+    }
+
+    fun getExamInfoUpdatedAt(): Long {
+        return userGetString("exams_updated_at")?.toLongOrNull() ?: 0L
     }
 
     /**
@@ -281,7 +352,6 @@ object AHUCache {
      */
     fun saveSchoolTermStartTime(schoolYear: String, schoolTerm: String, startTime: String) {
         userPutString("startTime-$schoolYear-$schoolTerm", startTime)
-        kv.encode("startTime-$schoolYear-$schoolTerm", startTime)
     }
 
     fun getSchoolTermInSemester(schoolYear: String, schoolTerm: String): Boolean? {
@@ -304,11 +374,9 @@ object AHUCache {
         val key = "inSemester-$schoolYear-$schoolTerm"
         val value = isInSemester.toString()
         userPutString(key, value)
-        kv.encode(key, value)
 
         val observedOnKey = "inSemesterObservedOn-$schoolYear-$schoolTerm"
         userPutString(observedOnKey, observedOn)
-        kv.encode(observedOnKey, observedOn)
     }
 
     /**
@@ -328,7 +396,6 @@ object AHUCache {
      */
     fun saveSchoolYear(schoolYear: String) {
         userPutString("defaultSchoolYear", schoolYear)
-        kv.encode("defaultSchoolYear", schoolYear)
     }
 
     /**
@@ -350,7 +417,6 @@ object AHUCache {
      */
     fun saveSchoolTerm(schoolTerm: String) {
         userPutString("defaultSchoolTerm", schoolTerm)
-        kv.putString("defaultSchoolTerm", schoolTerm)
     }
 
     /**
@@ -370,7 +436,6 @@ object AHUCache {
      */
     fun saveIsShowAllCourse(isCourse: Boolean) {
         userPutString("isShowAllCourse", isCourse.toString())
-        kv.putBoolean("isShowAllCourse", isCourse)
     }
 
     fun isShowWidgetTip(): Boolean {
@@ -382,11 +447,18 @@ object AHUCache {
 
     fun ignoreWidgetTip() {
         userPutString("is_show_widget_dialog", false.toString())
-        kv.putBoolean("is_show_widget_dialog", false)
     }
 
     private const val HOME_WIDGET_SLOTS_KEY = "home_widget_slots"
     private const val HOME_WIDGET_SLOT_COUNT = 8
+
+    private data class HomeWidgetSlotsCache(
+        val userId: String?,
+        val slots: List<String?>
+    )
+
+    @Volatile
+    private var homeWidgetSlotsCache: HomeWidgetSlotsCache? = null
 
     private fun defaultHomeWidgetSlots(): List<String?> {
         return listOf("bathroom", "electricity") + List(HOME_WIDGET_SLOT_COUNT - 2) { null }
@@ -401,39 +473,55 @@ object AHUCache {
     }
 
     fun getHomeWidgetSlots(): List<String?> {
+        val userId = getCurrentUser()?.xh
+        homeWidgetSlotsCache
+            ?.takeIf { it.userId == userId }
+            ?.let { return it.slots }
         val data = userGetStringOrMigrate(HOME_WIDGET_SLOTS_KEY) {
             kv.decodeString(HOME_WIDGET_SLOTS_KEY)
         } ?: ""
-        if (data.isBlank()) return defaultHomeWidgetSlots()
-
-        return runCatching {
-            Gson().fromJson<List<String?>>(
-                data,
-                object : TypeToken<List<String?>>() {}.type
-            )
-        }.getOrNull()
-            ?.let(::normalizeHomeWidgetSlots)
-            ?: defaultHomeWidgetSlots()
+        val slots = if (data.isBlank()) {
+            defaultHomeWidgetSlots()
+        } else {
+            runCatching {
+                Gson().fromJson<List<String?>>(
+                    data,
+                    object : TypeToken<List<String?>>() {}.type
+                )
+            }.getOrNull()
+                ?.let(::normalizeHomeWidgetSlots)
+                ?: defaultHomeWidgetSlots()
+        }
+        homeWidgetSlotsCache = HomeWidgetSlotsCache(userId, slots)
+        return slots
     }
 
     fun saveHomeWidgetSlots(slots: List<String?>) {
         val normalizedSlots = normalizeHomeWidgetSlots(slots)
         val data = Gson().toJson(normalizedSlots)
         userPutString(HOME_WIDGET_SLOTS_KEY, data)
-        kv.encode(HOME_WIDGET_SLOTS_KEY, data)
+        homeWidgetSlotsCache = HomeWidgetSlotsCache(getCurrentUser()?.xh, normalizedSlots)
     }
 
     fun logout() {
-        clearCurrentUser()
+        val userId = getCurrentUser()?.xh
+        val boxName = userBoxName(userId)
+        val currentUserKv = if (userId.isNullOrEmpty()) {
+            MMKV.mmkvWithID("ahu_guest")
+        } else {
+            MMKV.mmkvWithID("ahu_$userId")
+        }
+        SecureStorage.clearPrefix("$boxName.")
+        RustSDK.kvClearBoxSafe(boxName)
+        currentUserKv.clearAll()
         saveWisdomPassword("")
-        saveEvalToken("")
         saveRustCookies("")
+        clearCurrentUser()
     }
 
 
     fun savePhone(phone:String){
         userPutString("phone", phone)
-        kv.putString("phone",phone)
     }
 
     fun getPhone() : String?{
@@ -443,7 +531,6 @@ object AHUCache {
 
     fun setJwxtStudentId(id: String){
         userPutString("jwxt_stu_id", id)
-        kv.putString("jwxt_stu_id",id)
     }
 
     fun getJwxtStudentId() : String?{
@@ -458,7 +545,6 @@ object AHUCache {
     fun setGradeStudentProfiles(profiles: List<GradeStudentProfile>) {
         val data = Gson().toJson(profiles)
         userPutString("jwxt_student_profiles", data)
-        kv.encode("jwxt_student_profiles", data)
     }
 
     fun getGradeStudentProfiles(): List<GradeStudentProfile> {
@@ -474,7 +560,6 @@ object AHUCache {
         val idMap = map.mapKeys { it.key.id }
         val data = Gson().toJson(idMap)
         userPutString("per_profile_grades", data)
-        kv.encode("per_profile_grades", data)
     }
 
     fun getPerProfileGrades(): Map<String, Grade?> {
@@ -488,7 +573,6 @@ object AHUCache {
 
     fun saveString(key: String ,value : String){
         userPutString(key, value)
-        kv.putString(key,value)
     }
 
     fun saveRustCookies(cookiesJson: String) {
@@ -497,7 +581,6 @@ object AHUCache {
         } else {
             initPutString("rust_cookies_json", cookiesJson)
         }
-        kv_init.putString("rust_cookies_json", cookiesJson)
     }
 
     fun getRustCookies(): String {
@@ -516,7 +599,6 @@ object AHUCache {
 
     fun setAgreementAccepted(){
         userPutString("agreementAccepted", true.toString())
-        kv.putBoolean("agreementAccepted",true)
     }
 
     fun isPrivacyAccepted(): Boolean{
@@ -528,7 +610,6 @@ object AHUCache {
 
     fun setPrivacyAccepted(){
         userPutString("privacyAccepted", true.toString())
-        kv.putBoolean("privacyAccepted",true)
     }
 
     fun isBusinessAccepted(): Boolean{
@@ -540,21 +621,49 @@ object AHUCache {
 
     fun setBusinessAccepted(){
         userPutString("businessAccepted", true.toString())
-        kv.putBoolean("businessAccepted",true)
     }
 
-    fun isCmbCardRechargePreferred(): Boolean {
-        userGetString("cmb_card_recharge_preferred")?.toBooleanStrictOrNull()?.let { return it }
-        val value = kv.getBoolean("cmb_card_recharge_preferred", false)
-        if (kv.containsKey("cmb_card_recharge_preferred")) {
-            userPutString("cmb_card_recharge_preferred", value.toString())
+    fun getCardRechargeBank(): CardRechargeBank? {
+        CardRechargeBank.fromStorage(userGetString("card_recharge_bank"))?.let { return it }
+        CardRechargeBank.fromStorage(kv.decodeString("card_recharge_bank"))?.let { bank ->
+            userPutString("card_recharge_bank", bank.storageValue)
+            return bank
         }
-        return value
+
+        val legacyValue = userGetString("cmb_card_recharge_preferred")
+            ?.toBooleanStrictOrNull()
+            ?: if (kv.containsKey("cmb_card_recharge_preferred")) {
+                kv.getBoolean("cmb_card_recharge_preferred", false)
+            } else {
+                null
+            }
+        return legacyValue?.let { preferred ->
+            val bank = if (preferred) {
+                CardRechargeBank.CHINA_MERCHANTS_BANK
+            } else {
+                CardRechargeBank.AGRICULTURAL_BANK
+            }
+            setCardRechargeBank(bank)
+            bank
+        }
     }
+
+    fun setCardRechargeBank(bank: CardRechargeBank) {
+        userPutString("card_recharge_bank", bank.storageValue)
+        kv.putString("card_recharge_bank", bank.storageValue)
+    }
+
+    fun isCmbCardRechargePreferred(): Boolean =
+        getCardRechargeBank() == CardRechargeBank.CHINA_MERCHANTS_BANK
 
     fun setCmbCardRechargePreferred(preferred: Boolean) {
-        userPutString("cmb_card_recharge_preferred", preferred.toString())
-        kv.putBoolean("cmb_card_recharge_preferred", preferred)
+        setCardRechargeBank(
+            if (preferred) {
+                CardRechargeBank.CHINA_MERCHANTS_BANK
+            } else {
+                CardRechargeBank.AGRICULTURAL_BANK
+            }
+        )
     }
 
     /**
@@ -571,7 +680,6 @@ object AHUCache {
     fun saveElectricityDepositHistory(history: List<ElectricityDepositHistoryItem>) {
         val data = Gson().toJson(history)
         userPutString("electricity_room_history", data)
-        kv.encode("electricity_room_history", data)
     }
 
     fun getElectricityDepositHistory(): List<ElectricityDepositHistoryItem> {
@@ -592,7 +700,6 @@ object AHUCache {
     fun saveElectricityChargeInfo(info: ElectricityChargeInfo) {
         val data = Gson().toJson(info)
         userPutString("electricity_charge_acl", data)
-        kv.encode("electricity_charge_acl", data)
     }
 
     /**
@@ -627,7 +734,6 @@ object AHUCache {
     fun saveRoomSelection(info: RoomSelectionInfo) {
         val data = Gson().toJson(info)
         userPutString("room_selection_info", data)
-        kv.encode("room_selection_info", data)
     }
 
     /**
@@ -636,7 +742,6 @@ object AHUCache {
      */
     fun saveCardBalance(balance: Double) {
         userPutString("card_balance", balance.toString())
-        kv.encode("card_balance", balance)
     }
 
     /**
@@ -652,23 +757,38 @@ object AHUCache {
     }
 
     fun getMockData(): Boolean {
-        initGetString("mock_data")?.toBooleanStrictOrNull()?.let { return it }
-        if (!kv.containsKey("mock_data")) return false
-        return kv.decodeBool("mock_data").also {
-            initPutString("mock_data", it.toString())
+        if (!BuildConfig.DEBUG) {
+            mockDataCache = false
+            return false
         }
+        mockDataCache?.let { return it }
+        val value = initGetString("mock_data")?.toBooleanStrictOrNull()
+            ?: if (!kv.containsKey("mock_data")) {
+                false
+            } else {
+                kv.decodeBool("mock_data").also {
+                    initPutString("mock_data", it.toString())
+                }
+            }
+        mockDataCache = value
+        return value
     }
 
     fun setMockData(enable: Boolean) {
+        if (!BuildConfig.DEBUG) {
+            initRemove("mock_data")
+            kv.removeValueForKey("mock_data")
+            mockDataCache = false
+            return
+        }
         initPutString("mock_data", enable.toString())
-        kv.encode("mock_data", enable)
+        mockDataCache = enable
     }
 
     // === 天气 adcode 缓存（用于精准到区级） ===
 
     fun saveWeatherAdcode(adcode: String) {
         initPutString("weather_adcode", adcode)
-        kv_init.encode("weather_adcode", adcode)
     }
 
     fun getWeatherAdcode(): String? {
@@ -678,21 +798,33 @@ object AHUCache {
     }
 
     fun saveMockCurrentTimeMillis(value: Long) {
+        if (!BuildConfig.DEBUG) return
         initPutString("mock_current_time_millis", value.toString())
-        kv.encode("mock_current_time_millis", value)
+        mockCurrentTimeCache = value
+        mockCurrentTimeCacheInitialized = true
     }
 
     fun getMockCurrentTimeMillis(): Long? {
-        initGetString("mock_current_time_millis")?.toLongOrNull()?.let { return it }
-        if (!kv.containsKey("mock_current_time_millis")) return null
-        return kv.decodeLong("mock_current_time_millis").also {
-            initPutString("mock_current_time_millis", it.toString())
-        }
+        if (!BuildConfig.DEBUG) return null
+        if (mockCurrentTimeCacheInitialized) return mockCurrentTimeCache
+        val value = initGetString("mock_current_time_millis")?.toLongOrNull()
+            ?: if (!kv.containsKey("mock_current_time_millis")) {
+                null
+            } else {
+                kv.decodeLong("mock_current_time_millis").also {
+                    initPutString("mock_current_time_millis", it.toString())
+                }
+            }
+        mockCurrentTimeCache = value
+        mockCurrentTimeCacheInitialized = true
+        return value
     }
 
     fun clearMockCurrentTimeMillis() {
         initRemove("mock_current_time_millis")
         kv.removeValueForKey("mock_current_time_millis")
+        mockCurrentTimeCache = null
+        mockCurrentTimeCacheInitialized = true
     }
 
     fun getGrayOverride(key: String): String? {
@@ -715,7 +847,6 @@ object AHUCache {
         map[studentId] = gpaRankInfo
         val data = Gson().toJson(map)
         userPutString("gpa_rank_info_map", data)
-        kv.encode("gpa_rank_info_map", data)
     }
     /**
      * 获取指定 studentId 的缓存 GPA 排名信息
@@ -744,18 +875,16 @@ object AHUCache {
      * 保存失物招领校区缓存
      */
     fun saveLostFoundCampus(campus: List<CampusItem>) {
-        kv.encode(
-            "lost_found_campus",
-            Gson().toJson(campus)
-        )
+        userPutString("lost_found_campus", Gson().toJson(campus))
     }
 
     /**
      * 获取失物招领校区缓存
      */
     fun getLostFoundCampus(): List<CampusItem> {
-        val data =
-            kv.decodeString("lost_found_campus") ?: ""
+        val data = userGetStringOrMigrate("lost_found_campus") {
+            kv.decodeString("lost_found_campus")
+        } ?: ""
 
         if (data.isEmpty()) return emptyList()
 
@@ -768,18 +897,16 @@ object AHUCache {
      * 保存失物招领类型缓存
      */
     fun saveLostFoundType(types: List<LostFoundTypeItem>) {
-        kv.encode(
-            "lost_found_type",
-            Gson().toJson(types)
-        )
+        userPutString("lost_found_type", Gson().toJson(types))
     }
 
     /**
      * 获取失物招领类型缓存
      */
     fun getLostFoundType(): List<LostFoundTypeItem> {
-        val data =
-            kv.decodeString("lost_found_type") ?: ""
+        val data = userGetStringOrMigrate("lost_found_type") {
+            kv.decodeString("lost_found_type")
+        } ?: ""
 
         if (data.isEmpty()) return emptyList()
 
@@ -795,10 +922,7 @@ object AHUCache {
         state: Int,
         items: List<LostFoundItem>
     ) {
-        kv.encode(
-            "lost_found_list_$state",
-            Gson().toJson(items)
-        )
+        userPutString("lost_found_list_$state", Gson().toJson(items))
     }
 
     /**
@@ -807,10 +931,8 @@ object AHUCache {
     fun getLostFoundList(
         state: Int
     ): List<LostFoundItem> {
-        val data =
-            kv.decodeString(
-                "lost_found_list_$state"
-            ) ?: ""
+        val key = "lost_found_list_$state"
+        val data = userGetStringOrMigrate(key) { kv.decodeString(key) } ?: ""
 
         if (data.isEmpty()) return emptyList()
 
@@ -844,19 +966,17 @@ object AHUCache {
     fun clearLostFoundList(
         state: Int
     ) {
-        kv.removeValueForKey(
-            "lost_found_list_$state"
-        )
+        userRemove("lost_found_list_$state")
     }
 
     /**
      * 清除全部失物招领缓存
      */
     fun clearLostFoundCache() {
-        kv.removeValueForKey("lost_found_campus")
-        kv.removeValueForKey("lost_found_type")
-        kv.removeValueForKey("lost_found_list_1")
-        kv.removeValueForKey("lost_found_list_2")
+        userRemove("lost_found_campus")
+        userRemove("lost_found_type")
+        userRemove("lost_found_list_1")
+        userRemove("lost_found_list_2")
     }
 
     /**
@@ -870,50 +990,62 @@ object AHUCache {
     private const val WEATHER_HOME_SHOW_LOCATION_KEY = "weather_home_show_location"
 
     fun saveWeatherShowOnHome(enabled: Boolean) {
-        kv.encode(WEATHER_SHOW_ON_HOME_KEY, enabled)
+        userPutString(WEATHER_SHOW_ON_HOME_KEY, enabled.toString())
     }
 
     fun getWeatherShowOnHome(): Boolean {
-        return kv.decodeBool(WEATHER_SHOW_ON_HOME_KEY, false)
+        userGetString(WEATHER_SHOW_ON_HOME_KEY)?.toBooleanStrictOrNull()?.let { return it }
+        val value = kv.decodeBool(WEATHER_SHOW_ON_HOME_KEY, false)
+        if (kv.containsKey(WEATHER_SHOW_ON_HOME_KEY)) userPutString(WEATHER_SHOW_ON_HOME_KEY, value.toString())
+        return value
     }
 
     fun saveWeatherHomeMode(mode: String) {
-        kv.encode(WEATHER_HOME_MODE_KEY, mode)
+        userPutString(WEATHER_HOME_MODE_KEY, mode)
     }
 
     fun getWeatherHomeMode(): String {
-        return kv.decodeString(WEATHER_HOME_MODE_KEY) ?: "detailed"
+        return userGetStringOrMigrate(WEATHER_HOME_MODE_KEY) {
+            kv.decodeString(WEATHER_HOME_MODE_KEY)
+        } ?: "detailed"
     }
 
     fun saveWeatherHomeShowTemp(enabled: Boolean) {
-        kv.encode(WEATHER_HOME_SHOW_TEMP_KEY, enabled)
+        userPutString(WEATHER_HOME_SHOW_TEMP_KEY, enabled.toString())
     }
 
     fun getWeatherHomeShowTemp(): Boolean {
-        return kv.decodeBool(WEATHER_HOME_SHOW_TEMP_KEY, true)
+        return getUserBooleanOrMigrate(WEATHER_HOME_SHOW_TEMP_KEY, true)
     }
 
     fun saveWeatherHomeShowWeather(enabled: Boolean) {
-        kv.encode(WEATHER_HOME_SHOW_WEATHER_KEY, enabled)
+        userPutString(WEATHER_HOME_SHOW_WEATHER_KEY, enabled.toString())
     }
 
     fun getWeatherHomeShowWeather(): Boolean {
-        return kv.decodeBool(WEATHER_HOME_SHOW_WEATHER_KEY, true)
+        return getUserBooleanOrMigrate(WEATHER_HOME_SHOW_WEATHER_KEY, true)
     }
 
     fun saveWeatherHomeShowAqi(enabled: Boolean) {
-        kv.encode(WEATHER_HOME_SHOW_AQI_KEY, enabled)
+        userPutString(WEATHER_HOME_SHOW_AQI_KEY, enabled.toString())
     }
 
     fun getWeatherHomeShowAqi(): Boolean {
-        return kv.decodeBool(WEATHER_HOME_SHOW_AQI_KEY, true)
+        return getUserBooleanOrMigrate(WEATHER_HOME_SHOW_AQI_KEY, true)
     }
 
     fun saveWeatherHomeShowLocation(enabled: Boolean) {
-        kv.encode(WEATHER_HOME_SHOW_LOCATION_KEY, enabled)
+        userPutString(WEATHER_HOME_SHOW_LOCATION_KEY, enabled.toString())
     }
 
     fun getWeatherHomeShowLocation(): Boolean {
-        return kv.decodeBool(WEATHER_HOME_SHOW_LOCATION_KEY, true)
+        return getUserBooleanOrMigrate(WEATHER_HOME_SHOW_LOCATION_KEY, true)
+    }
+
+    private fun getUserBooleanOrMigrate(key: String, defaultValue: Boolean): Boolean {
+        userGetString(key)?.toBooleanStrictOrNull()?.let { return it }
+        val value = kv.decodeBool(key, defaultValue)
+        if (kv.containsKey(key)) userPutString(key, value.toString())
+        return value
     }
 }

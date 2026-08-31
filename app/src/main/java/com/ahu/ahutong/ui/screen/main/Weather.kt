@@ -1,5 +1,7 @@
 package com.ahu.ahutong.ui.screen.main
 
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+
 import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,22 +28,41 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.weather.WeatherResponse
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppComponentTokens
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppToggle
+import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.state.WeatherHomeMode
 import com.ahu.ahutong.ui.state.WeatherViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.a1
 import com.kyant.monet.withNight
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
+import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
+import top.yukonga.miuix.kmp.icon.icons.useful.Search
+import top.yukonga.miuix.kmp.icon.icons.useful.Settings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Weather(
-    weatherViewModel: WeatherViewModel = hiltViewModel()
+    weatherViewModel: WeatherViewModel = hiltViewModel(),
+    onBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val weather = weatherViewModel.weather
@@ -72,87 +93,65 @@ fun Weather(
         }
     }
 
-    Column(
+    val submitCitySearch = {
+        if (searchCity.isNotBlank()) {
+            weatherViewModel.fetchWeather(searchCity)
+            showSearch = false
+        }
+    }
+
+    AppScrollablePageLayout(
+        title = weatherViewModel.locationName.ifBlank { "天气" },
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp,
+        actions = {
+            AppHeaderIconButton(
+                imageVector = if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                miuixImageVector = if (showSearch) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
+                contentDescription = if (showSearch) "关闭搜索" else "搜索城市",
+                onClick = {
+                    showSearch = !showSearch
+                    if (!showSearch) searchCity = ""
+                }
+            )
+            AppHeaderIconButton(
+                imageVector = Icons.Default.Settings,
+                miuixImageVector = MiuixIcons.Useful.Settings,
+                contentDescription = "设置",
+                onClick = { showSettings = true }
+            )
+            AppHeaderIconButton(
+                imageVector = Icons.Default.Refresh,
+                miuixImageVector = MiuixIcons.Useful.Refresh,
+                contentDescription = "刷新",
+                onClick = {
+                    weatherViewModel.refresh()
+                    Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(modifier = Modifier.padding(horizontal = AppComponentTokens.HeaderHorizontalPadding)) {
             if (showSearch) {
-                IconButton(onClick = {
-                    showSearch = false
-                    searchCity = ""
-                }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, "关闭搜索")
-                }
-                val doSearch = {
-                    if (searchCity.isNotBlank()) {
-                        weatherViewModel.fetchWeather(searchCity)
-                        showSearch = false
-                    }
-                }
-                OutlinedTextField(
+                AppSearchField(
                     value = searchCity,
                     onValueChange = { searchCity = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    placeholder = { Text("输入城市名，如 合肥") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = 0.n1 withNight 100.n1,
-                        unfocusedTextColor = 0.n1 withNight 100.n1,
-                        cursorColor = 90.a1 withNight 90.a1,
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { doSearch() }),
-                    trailingIcon = {
-                        if (searchCity.isNotEmpty()) {
-                            IconButton(onClick = { searchCity = "" }) {
-                                Icon(Icons.Default.Close, "清空")
-                            }
-                        } else {
-                            IconButton(onClick = { doSearch() }) {
-                                Icon(Icons.Default.Search, "搜索")
-                            }
-                        }
-                    }
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = "输入城市名，如 合肥",
+                    onSearch = { submitCitySearch() }
                 )
-            } else {
-                Text(
-                    text = weatherViewModel.locationName.ifBlank { "天气" },
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Row {
-                    IconButton(onClick = { showSearch = true }) {
-                        Icon(Icons.Default.Search, "搜索城市")
-                    }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, "设置")
-                    }
-                    IconButton(onClick = {
-                        weatherViewModel.refresh()
-                        Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
-                    }) {
-                        Icon(Icons.Default.Refresh, "刷新")
-                    }
-                }
+                Spacer(Modifier.height(16.dp))
             }
-        }
 
         if (weatherViewModel.isLoading) {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(48.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
             }
         } else if (weatherViewModel.errorMessage != null) {
             Column(
@@ -161,7 +160,7 @@ fun Weather(
             ) {
                 Text(weatherViewModel.errorMessage!!, color = MaterialTheme.colorScheme.error)
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { weatherViewModel.refresh() }) {
+                AppButton(onClick = { weatherViewModel.refresh() }) {
                     Text("重试")
                 }
             }
@@ -216,14 +215,23 @@ fun Weather(
             }
 
             Spacer(Modifier.height(24.dp))
+            }
         }
     }
 
     if (showSettings) {
         val config = weatherViewModel.homeConfig
+        val sheetShape = BottomSheetDefaults.ExpandedShape
         ModalBottomSheet(
             onDismissRequest = { showSettings = false },
-            containerColor = 100.n1 withNight 15.n1,
+            modifier = Modifier.appLiquidGlassSurface(
+                shape = sheetShape,
+                fallbackColor = 100.n1 withNight 15.n1,
+                level = LiquidGlassSurfaceLevel.Floating,
+                backdropSamplingEnabled = false
+            ),
+            shape = sheetShape,
+            containerColor = Color.Transparent,
             tonalElevation = 0.dp
         ) {
             Column(
@@ -298,7 +306,11 @@ fun Weather(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(item.label, modifier = Modifier.weight(1f), color = 0.n1 withNight 100.n1)
-                        Switch(checked = item.value, onCheckedChange = item.onChange)
+                        AppToggle(
+                            checked = item.value,
+                            onCheckedChange = item.onChange,
+                            contentDescription = item.label
+                        )
                     }
                 }
 
@@ -314,33 +326,31 @@ private fun WeatherModeChip(
     selected: Boolean,
     onClick: () -> Unit
 ) {
-    FilterChip(
+    AppFilterChip(
         selected = selected,
         onClick = onClick,
         label = {
             Text(
                 text = text,
-                color = if (selected) {
-                    100.n1 withNight 100.n1
-                } else {
-                    0.n1 withNight 100.n1
-                }
+                style = MaterialTheme.typography.labelLarge
             )
-        },
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = 100.n1 withNight 20.n1,
-            labelColor = 0.n1 withNight 100.n1,
-            selectedContainerColor = 85.a1 withNight 35.a1,
-            selectedLabelColor = 100.n1 withNight 100.n1
-        )
+        }
     )
 }
 
 @Composable
 private fun WeatherCard(weather: WeatherResponse) {
+    val shape = AppComponentTokens.CardShape
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = 90.a1 withNight 30.a1)
+        modifier = Modifier
+            .fillMaxWidth()
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = 90.a1 withNight 30.a1,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(20.dp),
@@ -391,9 +401,17 @@ private fun InfoItem(label: String, value: String) {
 
 @Composable
 private fun ForecastCard(day: com.ahu.ahutong.data.weather.ForecastDay) {
+    val shape = AppComponentTokens.CardShape
     Card(
-        modifier = Modifier.width(100.dp),
-        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+        modifier = Modifier
+            .width(100.dp)
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
@@ -419,9 +437,17 @@ private fun AqiCard(weather: WeatherResponse) {
         6 -> androidx.compose.ui.graphics.Color(0xFF880E4F)
         else -> androidx.compose.ui.graphics.Color.Gray
     }
+    val shape = AppComponentTokens.CardShape
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+        modifier = Modifier
+            .fillMaxWidth()
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = 100.n1 withNight 20.n1,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -487,9 +513,17 @@ private fun UmbrellaCard(weather: WeatherResponse) {
     else
         androidx.compose.ui.graphics.Color(0xFF4CAF50).copy(alpha = 0.15f)
 
+    val shape = AppComponentTokens.CardShape
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = bgColor)
+        modifier = Modifier
+            .fillMaxWidth()
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = bgColor,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -513,9 +547,17 @@ private fun HourlyCard(h: com.ahu.ahutong.data.weather.HourlyForecast) {
     val datePart = timeStr.substringAfter("-").take(5) // "MM-DD"
     val hour = timeStr.substringAfter(sep).take(2)     // "HH"
     val label = if (datePart.length == 5 && hour.length == 2) "${datePart}日${hour}时" else timeStr
+    val shape = AppComponentTokens.CardShape
     Card(
-        modifier = Modifier.width(88.dp),
-        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+        modifier = Modifier
+            .width(88.dp)
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                level = LiquidGlassSurfaceLevel.Panel
+            ),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Column(
             modifier = Modifier.padding(8.dp),
@@ -532,6 +574,12 @@ private fun HourlyCard(h: com.ahu.ahutong.data.weather.HourlyForecast) {
 
 @Composable
 private fun LifeIndicesGrid(indices: com.ahu.ahutong.data.weather.LifeIndices) {
+    val scheme = MaterialTheme.colorScheme
+    val ratingColor = if (scheme.background.luminance() > 0.5f) {
+        lerp(scheme.primary, Color.Black, 0.18f)
+    } else {
+        scheme.primary
+    }
     val items = listOf(
         "穿衣" to indices.clothing,
         "紫外线" to indices.uv,
@@ -552,13 +600,26 @@ private fun LifeIndicesGrid(indices: com.ahu.ahutong.data.weather.LifeIndices) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { (label, item) ->
+                    val shape = AppComponentTokens.CardShape
                     Card(
-                        modifier = Modifier.weight(1f),
-                        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+                        modifier = Modifier
+                            .weight(1f)
+                            .appLiquidGlassSurface(
+                                shape = shape,
+                                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                                level = LiquidGlassSurfaceLevel.Panel
+                            ),
+                        shape = shape,
+                        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
                     ) {
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(label, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(item!!.level ?: "", color = 90.a1 withNight 85.a1, fontSize = 13.sp)
+                            Text(
+                                item!!.level ?: "",
+                                color = ratingColor,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp
+                            )
                             if (!item.brief.isNullOrBlank()) {
                                 Text(item.brief, style = MaterialTheme.typography.bodySmall, color = 50.n1 withNight 80.n1)
                             }

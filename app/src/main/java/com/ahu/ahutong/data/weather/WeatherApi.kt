@@ -1,5 +1,6 @@
 package com.ahu.ahutong.data.weather
 
+import com.ahu.ahutong.BuildConfig
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -23,13 +24,18 @@ interface WeatherApi {
 
     companion object {
         private val loggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
             level = HttpLoggingInterceptor.Level.BASIC
         }
 
         private val okHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            .addInterceptor(loggingInterceptor)
+            .apply {
+                if (BuildConfig.DEBUG) addInterceptor(loggingInterceptor)
+            }
             .build()
 
         val API: WeatherApi = Retrofit.Builder()

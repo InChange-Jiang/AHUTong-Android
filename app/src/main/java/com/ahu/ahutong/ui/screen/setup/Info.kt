@@ -48,7 +48,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.R
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.state.ScheduleViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.a1
 import com.kyant.monet.n1
@@ -70,6 +73,7 @@ fun Info(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             .imePadding()
     ) {
         Column(
@@ -96,8 +100,11 @@ fun Info(
                 onValueChange = { schoolYear = it },
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(100.n1 withNight 20.n1),
+                    .appLiquidGlassSurface(
+                        shape = ContinuousCapsule,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Control
+                    ),
                 textStyle = LocalTextStyle.current.copy(color = LocalContentColor.current),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
@@ -125,8 +132,11 @@ fun Info(
             LazyRow(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(100.n1 withNight 20.n1),
+                    .appLiquidGlassSurface(
+                        shape = ContinuousCapsule,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Panel
+                    ),
                 contentPadding = PaddingValues(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -155,8 +165,11 @@ fun Info(
                 onValueChange = { currentWeek = it },
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(100.n1 withNight 20.n1),
+                    .appLiquidGlassSurface(
+                        shape = ContinuousCapsule,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Control
+                    ),
                 textStyle = LocalTextStyle.current.copy(color = LocalContentColor.current),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,

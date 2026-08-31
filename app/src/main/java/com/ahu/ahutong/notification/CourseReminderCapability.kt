@@ -10,15 +10,14 @@ import androidx.core.app.NotificationManagerCompat
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.ahu.ahutong.notification.model.CourseReminderPayload
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 object CourseReminderCapability {
     private const val ANDROID_16_API = 36
 
     fun isAndroid16Plus(): Boolean = Build.VERSION.SDK_INT >= ANDROID_16_API
 
-    fun isLiveCountdownEnabled(context: Context): Boolean = runBlocking {
-        PreferencesManager(context).courseReminderLiveCountdownEnabled.first()
+    suspend fun isLiveCountdownEnabled(context: Context): Boolean {
+        return PreferencesManager(context).courseReminderLiveCountdownEnabled.first()
     }
 
     fun canUsePromotedNotifications(context: Context): Boolean {
@@ -38,7 +37,7 @@ object CourseReminderCapability {
         return notificationManager.canPostPromotedNotifications()
     }
 
-    fun shouldTryLiveCountdown(
+    suspend fun shouldTryLiveCountdown(
         context: Context,
         payload: CourseReminderPayload
     ): Boolean {

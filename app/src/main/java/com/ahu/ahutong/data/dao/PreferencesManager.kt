@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.preferencesDataStore
 import com.ahu.ahutong.data.model.AppThemeMode
+import com.ahu.ahutong.data.model.AppUiTheme
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -17,6 +18,9 @@ object PreferencesKeys {
     val SHOW_QR_CODE = booleanPreferencesKey("show_qr_code")
     val IS_SHOW_ALL_COURSE = booleanPreferencesKey("is_show_all_course")
     val USE_LIQUID_GLASS = booleanPreferencesKey("use_liquid_glass")
+    val UI_THEME = stringPreferencesKey("ui_theme")
+    val USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD =
+        booleanPreferencesKey("use_built_in_secure_password_keyboard")
     val COURSE_REMINDER_ENABLED = booleanPreferencesKey("course_reminder_enabled")
     val COURSE_REMINDER_LIVE_COUNTDOWN_ENABLED =
         booleanPreferencesKey("course_reminder_live_countdown_enabled")
@@ -44,12 +48,52 @@ object PreferencesKeys {
     val BEHAVIOR_RETENTION_DAYS = intPreferencesKey("behavior_retention_days")
 }
 
+const val DEFAULT_THEME_COLOR = "default"
+
 private val Context.dataStore by preferencesDataStore(name = "user_pref")
 
 class PreferencesManager @Inject constructor(@param:ApplicationContext private val context: Context) {
 
+    data class StartupThemePreferences(
+        val appUiTheme: AppUiTheme,
+        val themeColor: String?,
+        val themeMode: AppThemeMode
+    )
+
+    private val startupThemeMirror by lazy {
+        context.getSharedPreferences("startup_theme_mirror", Context.MODE_PRIVATE)
+    }
+
+    fun getStartupThemePreferences(): StartupThemePreferences? {
+        if (!startupThemeMirror.getBoolean("initialized", false)) return null
+        return StartupThemePreferences(
+            appUiTheme = AppUiTheme.fromStorage(
+                startupThemeMirror.getString("ui_theme", null),
+                legacyUseLiquidGlass = null
+            ),
+            themeColor = startupThemeMirror.getString("theme_color", null),
+            themeMode = AppThemeMode.fromStorage(
+                startupThemeMirror.getString("theme_mode", null)
+            )
+        )
+    }
+
+    fun rememberStartupThemePreferences(
+        appUiTheme: AppUiTheme,
+        themeColor: String?,
+        themeMode: AppThemeMode
+    ) {
+        startupThemeMirror.edit()
+            .putBoolean("initialized", true)
+            .putString("ui_theme", appUiTheme.storageValue)
+            .putString("theme_color", themeColor)
+            .putString("theme_mode", themeMode.storageValue)
+            .apply()
+    }
+
     suspend fun clearAll() {
         context.dataStore.edit { preferences -> preferences.clear() }
+        startupThemeMirror.edit().clear().apply()
     }
 
     val personalizationEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -238,13 +282,33 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
         }
     }
 
-    val useLiquidGlass: Flow<Boolean> = context.dataStore.data.map { prefs ->
-        prefs[PreferencesKeys.USE_LIQUID_GLASS] ?: true
+    val appUiTheme: Flow<AppUiTheme> = context.dataStore.data.map { prefs ->
+        AppUiTheme.fromStorage(
+            value = prefs[PreferencesKeys.UI_THEME],
+            legacyUseLiquidGlass = prefs[PreferencesKeys.USE_LIQUID_GLASS]
+        )
     }
 
-    suspend fun setUseLiquidGlass(value: Boolean) {
+    suspend fun setAppUiTheme(value: AppUiTheme) {
         context.dataStore.edit { prefs ->
-            prefs[PreferencesKeys.USE_LIQUID_GLASS] = value
+            prefs[PreferencesKeys.UI_THEME] = value.storageValue
+            if (value == AppUiTheme.MIUIX) {
+                prefs[PreferencesKeys.THEME_COLOR] = DEFAULT_THEME_COLOR
+            } else if (prefs[PreferencesKeys.THEME_COLOR] == DEFAULT_THEME_COLOR) {
+                // "默认"是 Miuix 自己的蓝色，不应泄漏成 Material/LiquidGlass 的颜色。
+                prefs.remove(PreferencesKeys.THEME_COLOR)
+            }
+            prefs.remove(PreferencesKeys.USE_LIQUID_GLASS)
+        }
+    }
+
+    val useBuiltInSecurePasswordKeyboard: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD] ?: true
+    }
+
+    suspend fun setUseBuiltInSecurePasswordKeyboard(value: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[PreferencesKeys.USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD] = value
         }
     }
 

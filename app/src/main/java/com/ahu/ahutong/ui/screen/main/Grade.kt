@@ -24,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,22 +33,39 @@ import com.ahu.ahutong.data.GradeEvaluationGate
 import com.ahu.ahutong.data.crawler.model.jwxt.CourseGrade
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.Grade
 import com.ahu.ahutong.data.model.GradeStudentProfile
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppFilterChip
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppSelectField
+import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppCard
+import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.GradeViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.personalization.action.AppActionId
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
+import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
+import top.yukonga.miuix.kmp.icon.icons.useful.Search
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Grade(
     gradeViewModel: GradeViewModel = hiltViewModel(),
-    onNavigateToEvaluation: () -> Unit = {}
+    onNavigateToEvaluation: () -> Unit = {},
+    onBack: (() -> Unit)? = null
 ) {
     DisposableEffect(gradeViewModel) {
         onDispose { gradeViewModel.onPresetSurfaceDisposed() }
@@ -62,7 +80,6 @@ fun Grade(
 
     var searchExpanded by rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
-    var termMenuExpanded by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = searchExpanded) {
         searchExpanded = false
@@ -123,92 +140,43 @@ fun Grade(
         }
         .orEmpty()
 
-    Box(
+    AppScrollablePageLayout(
+        title = stringResource(id = R.string.grade),
+        onBack = onBack,
+        scrollState = scrollState,
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp,
+        actions = {
+            AppHeaderIconButton(
+                imageVector = Icons.Default.Refresh,
+                miuixImageVector = MiuixIcons.Useful.Refresh,
+                contentDescription = "刷新成绩",
+                onClick = {
+                    behaviorReporter.organic(AppActionId.MANUAL_REFRESH_GRADE)
+                    gradeViewModel.refreshGrade()
+                }
+            )
+            AppHeaderIconButton(
+                imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
+                miuixImageVector = if (searchExpanded) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
+                contentDescription = if (searchExpanded) "关闭搜索" else "搜索成绩",
+                onClick = {
+                    searchExpanded = !searchExpanded
+                    if (!searchExpanded) searchQuery = ""
+                }
+            )
+        }
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp, 32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = stringResource(id = R.string.grade),
-                        color = 0.n1 withNight 100.n1,
-                        style = MaterialTheme.typography.headlineMedium
-                    )
-
-                    Row(
-                        modifier = Modifier
-                            .clip(ContinuousCapsule)
-                            .background(100.n1 withNight 30.n1)
-                    ) {
-                        IconButton(
-                            onClick = {
-                                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_GRADE)
-                                gradeViewModel.refreshGrade()
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "刷新成绩",
-                                tint = 0.n1 withNight 100.n1
-                            )
-                        }
-
-                        IconButton(
-                            onClick = {
-                                searchExpanded = !searchExpanded
-                                if (!searchExpanded) searchQuery = ""
-                            }
-                        ) {
-                            Icon(
-                                imageVector = if (searchExpanded)
-                                    Icons.Default.Close
-                                else
-                                    Icons.Default.Search,
-                                contentDescription = null,
-                                tint = 0.n1 withNight 100.n1
-                            )
-                        }
-                    }
-                }
-
-                if (searchExpanded) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = ContinuousCapsule,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = 0.n1 withNight 100.n1,
-                            unfocusedTextColor = 0.n1 withNight 100.n1,
-                            cursorColor = 90.a1 withNight 90.a1,
-                        ),
-                        placeholder = {
-                            Text(
-                                text = "搜索课程",
-                                color = 50.n1 withNight 70.n1
-                            )
-                        }
-                    )
-                }
-            }
+        if (searchExpanded) {
+            AppSearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                placeholder = "搜索课程"
+            )
+        }
 
             // Profile selector - shown when student has multiple profiles (micro-major/minor)
             if (!searchExpanded && gradeViewModel.studentProfiles.size > 1) {
@@ -220,22 +188,15 @@ fun Grade(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     gradeViewModel.studentProfiles.forEachIndexed { index, profile ->
-                        FilterChip(
+                        AppFilterChip(
                             selected = gradeViewModel.selectedProfileIndex == index,
                             onClick = { gradeViewModel.selectProfile(index) },
                             label = {
                                 Text(
                                     text = profile.displayName,
-                                    style = MaterialTheme.typography.labelMedium
+                                    style = MaterialTheme.typography.labelLarge
                                 )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = 80.a1 withNight 50.a1,
-                                selectedLabelColor = 100.n1 withNight 0.n1,
-                                containerColor = 90.n1 withNight 20.n1,
-                                labelColor = 10.n1 withNight 90.n1
-                            ),
-                            shape = ContinuousCapsule
+                            }
                         )
                     }
                 }
@@ -243,22 +204,6 @@ fun Grade(
 
             // 改成学期下拉选择（替代原来的学年+学期双筛选）
             if (!searchExpanded) {
-                gradeViewModel.presetCandidates.firstOrNull()?.let { candidate ->
-                    LaunchedEffect(candidate.opportunityId, candidate.presetId) {
-                        gradeViewModel.onPresetCandidateVisible(candidate)
-                    }
-                    Text(
-                        text = "使用常用条件",
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .clip(ContinuousCapsule)
-                            .background(90.a1)
-                            .clickable { gradeViewModel.applyPresetCandidate(candidate) }
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        color = 0.n1,
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
                 val allTerms = gradeViewModel.grade?.termGradeList
                     ?.sortedWith(
                         compareByDescending<Grade.TermGradeListBean> {
@@ -269,69 +214,28 @@ fun Grade(
                         }
                     )
                     .orEmpty()
-                val selectedTermText =
-                    "${gradeViewModel.schoolYear} 第${gradeViewModel.schoolTerm}学期"
-
-                ExposedDropdownMenuBox(
-                    expanded = termMenuExpanded,
-                    onExpandedChange = {
-                        termMenuExpanded = !termMenuExpanded
+                AppSelectField(
+                    label = "选择学期",
+                    selected = gradeViewModel.schoolYear?.let { schoolYear ->
+                        gradeViewModel.schoolTerm?.let { schoolTerm -> schoolYear to schoolTerm }
                     },
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                ) {
-                    OutlinedTextField(
-                        value = selectedTermText,
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        shape = ContinuousCapsule,
-                        label = { Text("选择学期") },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = 10.n1 withNight 90.n1,
-                            unfocusedTextColor = 10.n1 withNight 90.n1,
-                            focusedLabelColor = 40.a1 withNight 80.a1,
-                            unfocusedLabelColor = 50.n1 withNight 70.n1,
-                            focusedBorderColor = 40.a1 withNight 80.a1,
-                            unfocusedBorderColor = 70.n1 withNight 50.n1,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            cursorColor = 40.a1 withNight 80.a1
-                        ),
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(
-                                expanded = termMenuExpanded
-                            )
-                        }
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = termMenuExpanded,
-                        onDismissRequest = {
-                            termMenuExpanded = false
-                        },
-                        modifier = Modifier.background(99.n1 withNight 10.n1)
-                    ) {
-                        allTerms.forEach { term ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "${term.schoolYear} 第${term.term}学期",
-                                        color = 10.n1 withNight 90.n1
-                                    )
-                                },
-                                colors = MenuDefaults.itemColors(
-                                    textColor = 10.n1 withNight 90.n1
-                                ),
-                                onClick = {
-                                    gradeViewModel.selectTerm(term.schoolYear, term.term)
-                                    termMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
-                }
+                    options = allTerms.map { term ->
+                        AppSelectOption(
+                            value = term.schoolYear.orEmpty() to term.term.orEmpty(),
+                            label = "${term.schoolYear} 第${term.term}学期"
+                        )
+                    },
+                    onSelected = { (schoolYear, schoolTerm) ->
+                        gradeViewModel.selectTerm(schoolYear, schoolTerm)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    valueTextAlign = if (LocalAppUiTheme.current == AppUiTheme.MATERIAL) {
+                        TextAlign.Start
+                    } else {
+                        TextAlign.End
+                    },
+                    miuixStandalone = true
+                )
             }
 
             if (!searchExpanded) {
@@ -425,7 +329,6 @@ fun Grade(
                     color = 50.n1 withNight 70.n1
                 )
             }
-        }
     }
 }
 
@@ -439,17 +342,16 @@ private fun GradeCard(
     val gradeText = item.grade.stripHtml()
     val gradeDetail = item.gradeDetail.stripHtml()
 
-    Column(
+    AppCard(
         modifier = Modifier
-            .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(4.dp))
-            .background(100.n1 withNight 20.n1)
-            .padding(24.dp, 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .fillMaxWidth(),
+        shape = SmoothRoundedCornerShape(20.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)
     ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = item.course ?: "",
-            color = 0.n1 withNight 100.n1,
+            color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleMedium
         )
@@ -469,30 +371,34 @@ private fun GradeCard(
                     }
                     append("    绩点: ${item.gradePoint}    学分: ${item.credit}")
                 },
-                modifier = Modifier.clickable(onClick = onNavigateToEvaluation),
-                color = 30.n1 withNight 90.n1,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+                    .clickable(onClick = onNavigateToEvaluation),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge
             )
         } else {
             Text(
                 text = "成绩: $gradeText    绩点: ${item.gradePoint}    学分: ${item.credit}",
-                color = 30.n1 withNight 90.n1,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyLarge
             )
         }
 
         Text(
             text = "${item.courseNature ?: ""} (${item.courseNum ?: ""})",
-            color = 50.n1 withNight 80.n1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
 
         if (!needsEvaluation && !gradeDetail.isNullOrBlank()) {
             Text(
                 text = gradeDetail,
-                color = 40.a1 withNight 80.a1,
+                color = MaterialTheme.colorScheme.primary,
                 style = MaterialTheme.typography.bodySmall
             )
+        }
         }
     }
 }

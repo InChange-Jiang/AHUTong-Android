@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen
 
+import com.ahu.ahutong.BuildConfig
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.widget.Toast
@@ -37,10 +38,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -53,6 +56,7 @@ import com.ahu.ahutong.AHUApplication
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.PreferencesManager
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.server.AhuTong
 import com.ahu.ahutong.notification.CourseReminderScheduler
@@ -64,13 +68,24 @@ import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsInfoRow
 import com.ahu.ahutong.ui.components.SettingsHeroCard
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
-import com.ahu.ahutong.ui.components.SettingsPageHeader
+import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
+import com.ahu.ahutong.ui.state.ScheduleViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.capsule.ContinuousCapsule
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Delete
+import top.yukonga.miuix.kmp.icon.icons.useful.Edit
+import top.yukonga.miuix.kmp.icon.icons.useful.Info
+import top.yukonga.miuix.kmp.icon.icons.useful.Personal
+import top.yukonga.miuix.kmp.icon.icons.useful.Settings
+import top.yukonga.miuix.kmp.icon.icons.useful.Update
 
 @SuppressLint("ContextCastToActivity")
 @Composable
@@ -78,6 +93,7 @@ fun Settings(
     navController: NavHostController,
     mainViewModel: MainViewModel = viewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
+    scheduleViewModel: ScheduleViewModel = viewModel(),
     behaviorRuntime: BehaviorPredictionRuntime
 ) {
     val context = LocalContext.current as ComponentActivity
@@ -91,6 +107,8 @@ fun Settings(
     val tip by remember { aboutViewModel.tipState }
     var appCardTapCount by remember { mutableIntStateOf(0) }
     var lastAppCardTap by remember { mutableLongStateOf(0L) }
+    val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
+    val useMiuixIcons = LocalAppUiTheme.current == AppUiTheme.MIUIX
 
     LaunchedEffect(tip) {
         tip?.let {
@@ -102,27 +120,25 @@ fun Settings(
             .onFailure { updateLog = "获取失败" }
     }
 
-    val onAppCardClick = {
-        val now = System.currentTimeMillis()
-        appCardTapCount = if (now - lastAppCardTap > 1_000L) 1 else appCardTapCount + 1
-        lastAppCardTap = now
-        if (appCardTapCount >= 8) {
-            appCardTapCount = 0
-            navController.navigate("debug")
+    val onAppCardClick: () -> Unit = if (BuildConfig.DEBUG) {
+        {
+            val now = System.currentTimeMillis()
+            appCardTapCount = if (now - lastAppCardTap > 1_000L) 1 else appCardTapCount + 1
+            lastAppCardTap = now
+            if (appCardTapCount >= 8) {
+                appCardTapCount = 0
+                navController.navigate("debug")
+            }
         }
+    } else {
+        {}
     }
 
     SettingsBackdropContainer(modifier = Modifier.fillMaxSize()) { backdrop ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .systemBarsPadding()
-                .padding(bottom = 112.dp),
-            verticalArrangement = Arrangement.spacedBy(26.dp)
+        SettingsPageLayout(
+            title = stringResource(id = R.string.setting),
+            backdrop = backdrop
         ) {
-            SettingsPageHeader(title = stringResource(id = R.string.setting))
-
         val isLiquid = LocalIsLiquidGlassEnabled.current
         val heroContentColor = if (isLiquid) {
             MaterialTheme.colorScheme.onSurface
@@ -141,7 +157,7 @@ fun Settings(
                 modifier = Modifier
                     .size(64.dp)
                     .clip(ContinuousCapsule)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(Color.White)
                     .scale(1.65f)
             )
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -160,9 +176,9 @@ fun Settings(
         }
 
         AHUCache.getCurrentUser()?.let { user ->
-            val schoolTerm = AHUCache.getSchoolTerm()?.split('-')
-                ?.takeIf { it.size == 3 }
-                ?.let { "${it[0]}-${it[1]} 学年 · 第 ${it[2]} 学期" }
+            val schoolTerm = remember(scheduleConfig) {
+                "${scheduleViewModel.schoolYear} 学年 · 第 ${scheduleViewModel.schoolTerm} 学期"
+            }
             SettingsSection(
                 title = "账户",
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -174,7 +190,11 @@ fun Settings(
                 )
                 SettingsActionRow(
                     title = "重新登录",
-                    leadingIcon = Icons.AutoMirrored.Outlined.Login,
+                    leadingIcon = if (useMiuixIcons) {
+                        MiuixIcons.Useful.Personal
+                    } else {
+                        Icons.AutoMirrored.Outlined.Login
+                    },
                     showDivider = false,
                     onClick = { navController.navigate("login") }
                 )
@@ -188,13 +208,12 @@ fun Settings(
         ) {
             SettingsActionRow(
                 title = stringResource(id = R.string.preferences),
-                subtitle = "通知、外观、主页与智能体验",
-                leadingIcon = Icons.Outlined.Tune,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Settings else Icons.Outlined.Tune,
                 onClick = { navController.navigate("preferences") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.check_update),
-                leadingIcon = Icons.Outlined.Update,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Update else Icons.Outlined.Update,
                 showDivider = false,
                 onClick = {
                     mainViewModel.checkApkUpdateManually(context) { message ->
@@ -211,17 +230,17 @@ fun Settings(
         ) {
             SettingsActionRow(
                 title = stringResource(id = R.string.license),
-                leadingIcon = Icons.AutoMirrored.Outlined.Article,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Info else Icons.AutoMirrored.Outlined.Article,
                 onClick = { navController.navigate("settings__license") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.contributors),
-                leadingIcon = Icons.Outlined.PeopleOutline,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Personal else Icons.Outlined.PeopleOutline,
                 onClick = { navController.navigate("settings__contributors") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.mine_tv_feedback),
-                leadingIcon = Icons.Outlined.Feedback,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Edit else Icons.Outlined.Feedback,
                 onClick = {
                     runCatching {
                         context.startActivity(
@@ -237,13 +256,12 @@ fun Settings(
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.update_intro),
-                leadingIcon = Icons.AutoMirrored.Outlined.Article,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Info else Icons.AutoMirrored.Outlined.Article,
                 onClick = { isUpdateLogDialogShown = true }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.setting_clear),
-                subtitle = "清除登录状态、课表和本地数据",
-                leadingIcon = Icons.Outlined.ClearAll,
+                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Delete else Icons.Outlined.ClearAll,
                 destructive = true,
                 showDivider = false,
                 onClick = { isClearDataDialogShown = true }
@@ -279,8 +297,18 @@ fun Settings(
     }
 
     if (isUpdateLogDialogShown) {
+        val dialogShape = SmoothRoundedCornerShape(28.dp)
         AlertDialog(
+            modifier = Modifier.appLiquidGlassSurface(
+                shape = dialogShape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                level = LiquidGlassSurfaceLevel.Floating,
+                backdropSamplingEnabled = false
+            ),
             onDismissRequest = { isUpdateLogDialogShown = false },
+            shape = dialogShape,
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp,
             title = { Text(stringResource(id = R.string.update_intro)) },
             text = {
                 Text(

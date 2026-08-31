@@ -13,6 +13,7 @@ import androidx.glance.appwidget.updateAll
 import com.ahu.ahutong.data.debug.DebugClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -27,11 +28,14 @@ class WidgetUpdateScheduler : BroadcastReceiver() {
             Log.e(TAG, "onReceive: Triggering widget update (Test Mode)")
             
             // 1. Update Glance Widget
-            CoroutineScope(Dispatchers.IO).launch {
+            val pendingResult = goAsync()
+            receiverScope.launch {
                 try {
                     ScheduleAppWidget().updateAll(context)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to update Glance widget", e)
+                } finally {
+                    pendingResult.finish()
                 }
             }
 
@@ -57,6 +61,7 @@ class WidgetUpdateScheduler : BroadcastReceiver() {
         private const val TAG = "WidgetUpdateScheduler"
         const val ACTION_UPDATE_WIDGETS = "com.ahu.ahutong.appwidget.ACTION_UPDATE_WIDGETS"
         private const val REQUEST_CODE = 3001
+        private val receiverScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
         fun scheduleNext(context: Context) {
             val now = LocalDateTime.now()
@@ -97,7 +102,7 @@ class WidgetUpdateScheduler : BroadcastReceiver() {
                     pendingIntent
                 )
             } else {
-                 alarmManager.setExactAndAllowWhileIdle(
+                 alarmManager.setAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
                     triggerMillis,
                     pendingIntent

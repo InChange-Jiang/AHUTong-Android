@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material3.CircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +63,7 @@ import com.ahu.ahutong.personalization.prefetch.PaymentQrCommandEntryPoint
 import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
@@ -160,12 +161,13 @@ private fun CardView(
     enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-
-
+    val shape = SmoothRoundedCornerShape(24.dp)
     Row(
         modifier = modifier
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1),
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = 100.n1 withNight 20.n1
+            ),
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -232,12 +234,7 @@ private fun CardView(
 //                        Toast.makeText(context, "请安装支付宝", Toast.LENGTH_SHORT).show()
 //                    }
 
-                            val route = if (AHUCache.isCmbCardRechargePreferred()) {
-                                "cmb_card_recharge"
-                            } else {
-                                "card_balance_deposit"
-                            }
-                            navController.navigate(route)
+                            navController.navigate("card_balance_deposit")
                         }
                     } else {
                         Modifier
@@ -334,10 +331,13 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
         }
     }
 
+    val panelShape = SmoothRoundedCornerShape(24.dp)
     Column(
         modifier = Modifier
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = panelShape,
+                fallbackColor = 100.n1 withNight 20.n1
+            )
             .padding(
                 start = 20.dp,
                 top = 12.dp,
@@ -409,7 +409,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                     text = "加载失败"
                 )
             } else {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
             }
         }
 

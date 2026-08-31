@@ -18,9 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
@@ -29,6 +27,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,19 +46,23 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.model.AppThemeMode
+import com.ahu.ahutong.data.model.AppUiTheme
+import com.ahu.ahutong.data.dao.DEFAULT_THEME_COLOR
 import com.ahu.ahutong.notification.CourseReminderCapability
 import com.ahu.ahutong.notification.CourseReminderNotifier
 import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.ui.components.SettingsActionRow
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsChoice
-import com.ahu.ahutong.ui.components.SettingsDialogSelectRow
 import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
-import com.ahu.ahutong.ui.components.SettingsPageHeader
+import com.ahu.ahutong.ui.components.SettingsSelectRow
+import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
 import com.ahu.ahutong.ui.components.SettingsToggleRow
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 
 @Composable
 fun Preferences(onBack: () -> Unit = {}) {
@@ -78,12 +81,13 @@ fun Preferences(onBack: () -> Unit = {}) {
 
     val appThemeMode by viewModel.appThemeMode.collectAsState()
     val showQRCode by viewModel.showQRCode.collectAsState()
-    val useCmbCardRecharge by viewModel.useCmbCardRecharge.collectAsState()
     val personalizationEnabled by viewModel.personalizationEnabled.collectAsState()
     val predictivePrefetchEnabled by viewModel.predictivePrefetchEnabled.collectAsState()
     val wifiOnlyPrefetch by viewModel.wifiOnlyPrefetch.collectAsState()
     val behaviorRetentionDays by viewModel.behaviorRetentionDays.collectAsState()
-    val useLiquidGlass by viewModel.useLiquidGlass.collectAsState()
+    val appUiTheme by viewModel.appUiTheme.collectAsState()
+    val useBuiltInSecurePasswordKeyboard by
+        viewModel.useBuiltInSecurePasswordKeyboard.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
     val courseReminderEnabled by viewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by
@@ -125,19 +129,13 @@ fun Preferences(onBack: () -> Unit = {}) {
     }
 
     SettingsBackdropContainer(modifier = Modifier.fillMaxSize()) { backdrop ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(
-                    state = pageScrollState,
-                    enabled = !isToggleHorizontalDragActive
-                )
-                .systemBarsPadding()
-                .padding(bottom = 112.dp),
-            verticalArrangement = Arrangement.spacedBy(26.dp)
+        SettingsPageLayout(
+            title = "偏好设置",
+            onBack = onBack,
+            backdrop = backdrop,
+            scrollState = pageScrollState,
+            scrollEnabled = !isToggleHorizontalDragActive
         ) {
-            SettingsPageHeader(title = "偏好设置", onBack = onBack, backdrop = backdrop)
-
             SettingsSection(
                 title = "智能体验",
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -173,9 +171,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                         onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
                     )
                 }
-                SettingsDialogSelectRow(
+                SettingsSelectRow(
                     title = "本地记录保留期",
-                    dialogTitle = "选择本地记录保留期",
                     selected = behaviorRetentionDays,
                     choices = listOf(
                         SettingsChoice(7, "7 天"),
@@ -216,7 +213,6 @@ fun Preferences(onBack: () -> Unit = {}) {
                 }
                 SettingsActionRow(
                     title = "清除本地学习记录",
-                    subtitle = "删除行为统计、训练样本和本地模型",
                     destructive = true,
                     showChevron = false,
                     showDivider = false,
@@ -237,10 +233,10 @@ fun Preferences(onBack: () -> Unit = {}) {
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
             SettingsToggleRow(
-                title = "总是使用招商银行充值",
-                subtitle = "校园卡充值将直接进入招商银行页面",
-                selected = useCmbCardRecharge,
-                onSelectedChange = viewModel::setUseCmbCardRecharge,
+                title = "使用内置安全密码键盘",
+                subtitle = "关闭后使用系统密码键盘",
+                selected = useBuiltInSecurePasswordKeyboard,
+                onSelectedChange = viewModel::setUseBuiltInSecurePasswordKeyboard,
                 backdrop = backdrop,
                 showDivider = false,
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
@@ -310,9 +306,8 @@ fun Preferences(onBack: () -> Unit = {}) {
                 modifier = Modifier.padding(horizontal = 16.dp),
                 backdrop = backdrop
             ) {
-                SettingsDialogSelectRow(
+                SettingsSelectRow(
                     title = "深色模式",
-                    dialogTitle = "选择深色模式",
                     selected = appThemeMode,
                     choices = listOf(
                         SettingsChoice(AppThemeMode.FOLLOW_SYSTEM, "跟随系统"),
@@ -321,16 +316,16 @@ fun Preferences(onBack: () -> Unit = {}) {
                     ),
                     onSelected = viewModel::setAppThemeMode
                 )
-                SettingsToggleRow(
-                    title = "液态玻璃",
-                    subtitle = "使用 Apple 风格的玻璃控件和浮动导航",
-                    selected = useLiquidGlass,
-                    onSelectedChange = viewModel::setUseLiquidGlass,
-                    backdrop = backdrop,
-                    onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
+                SettingsSelectRow(
+                    title = "主题",
+                    subtitle = "切换整套界面的组件与交互风格",
+                    selected = appUiTheme,
+                    choices = AppUiTheme.entries.map { SettingsChoice(it, it.displayName) },
+                    onSelected = viewModel::setAppUiTheme
                 )
                 ThemeColorPicker(
                     selectedColor = themeColor,
+                    showMiuixDefault = appUiTheme == AppUiTheme.MIUIX,
                     onColorSelected = viewModel::setThemeColor,
                     onCustomColorClick = { showCustomColorDialog = true }
                 )
@@ -354,8 +349,18 @@ fun Preferences(onBack: () -> Unit = {}) {
 
     if (showEnableTrainingContribution) {
         var includeHistorical by remember { mutableStateOf(false) }
+        val dialogShape = SmoothRoundedCornerShape(28.dp)
         AlertDialog(
+            modifier = Modifier.appLiquidGlassSurface(
+                shape = dialogShape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                level = LiquidGlassSurfaceLevel.Floating,
+                backdropSamplingEnabled = false
+            ),
             onDismissRequest = { showEnableTrainingContribution = false },
+            shape = dialogShape,
+            containerColor = Color.Transparent,
+            tonalElevation = 0.dp,
             title = { Text("贡献通用模型训练数据") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -418,20 +423,26 @@ private data class ThemeColorChoice(
 @Composable
 private fun ThemeColorPicker(
     selectedColor: String?,
+    showMiuixDefault: Boolean,
     onColorSelected: (String?) -> Unit,
     onCustomColorClick: () -> Unit
 ) {
-    val choices = listOf(
-        ThemeColorChoice(null, "系统", MaterialTheme.colorScheme.primary),
-        ThemeColorChoice("#FF4A90E2", "极光蓝", Color(0xFF4A90E2)),
-        ThemeColorChoice("#FFE07A9F", "樱花粉", Color(0xFFE07A9F)),
-        ThemeColorChoice("#FFF4A261", "落日橙", Color(0xFFF4A261)),
-        ThemeColorChoice("#FF6A994E", "苔藓绿", Color(0xFF6A994E)),
-        ThemeColorChoice("#FF9B7EDE", "薰衣草", Color(0xFF9B7EDE)),
-        ThemeColorChoice("#FF2E8B57", "翡翠", Color(0xFF2E8B57))
-    )
+    val choices = buildList {
+        if (showMiuixDefault) {
+            add(ThemeColorChoice(DEFAULT_THEME_COLOR, "默认", Color(0xFF3482FF)))
+        }
+        add(ThemeColorChoice(null, "系统", MaterialTheme.colorScheme.primary))
+        add(ThemeColorChoice("#FF4A90E2", "极光蓝", Color(0xFF4A90E2)))
+        add(ThemeColorChoice("#FFE07A9F", "樱花粉", Color(0xFFE07A9F)))
+        add(ThemeColorChoice("#FFF4A261", "落日橙", Color(0xFFF4A261)))
+        add(ThemeColorChoice("#FF6A994E", "苔藓绿", Color(0xFF6A994E)))
+        add(ThemeColorChoice("#FF9B7EDE", "薰衣草", Color(0xFF9B7EDE)))
+        add(ThemeColorChoice("#FF2E8B57", "翡翠", Color(0xFF2E8B57)))
+    }
     val presetValues = choices.map { it.value }.toSet()
-    val customSelected = selectedColor != null && selectedColor !in presetValues
+    val customSelected = selectedColor != null &&
+        selectedColor != DEFAULT_THEME_COLOR &&
+        selectedColor !in presetValues
 
     Column(
         modifier = Modifier.fillMaxWidth()
@@ -531,8 +542,18 @@ private fun CustomThemeColorDialog(
     val valid = remember(value) {
         runCatching { android.graphics.Color.parseColor(value) }.isSuccess
     }
+    val dialogShape = SmoothRoundedCornerShape(28.dp)
     AlertDialog(
+        modifier = Modifier.appLiquidGlassSurface(
+            shape = dialogShape,
+            fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            level = LiquidGlassSurfaceLevel.Floating,
+            backdropSamplingEnabled = false
+        ),
         onDismissRequest = onDismiss,
+        shape = dialogShape,
+        containerColor = Color.Transparent,
+        tonalElevation = 0.dp,
         title = { Text("自定义主题色") },
         text = {
             OutlinedTextField(
@@ -544,6 +565,12 @@ private fun CustomThemeColorDialog(
                 supportingText = {
                     if (value.isNotBlank() && !valid) Text("请输入有效的颜色代码")
                 },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surface,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface,
+                    errorContainerColor = MaterialTheme.colorScheme.surface
+                ),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )

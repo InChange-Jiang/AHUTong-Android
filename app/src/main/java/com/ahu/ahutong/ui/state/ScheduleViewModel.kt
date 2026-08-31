@@ -52,32 +52,27 @@ class ScheduleViewModel () : ViewModel() {
      */
     fun refreshSchedule(isRefresh:Boolean = false) {
         viewModelScope.launchSafe {
-            withContext(Dispatchers.Main){
-                if (!AHUCache.isLogin() && !AHUCache.getMockData()) {
-                    schedule.value = Result.failure(Throwable("请先登录！"))
-                    return@withContext
-                }
-
-                val result = AHURepository.getSchedule(isRefresh = isRefresh)
-                schedule.value = result
-                if (result.isSuccess) {
-                    CourseReminderScheduler.reschedule(AHUApplication.getApp())
-                }
+            if (!AHUCache.isLogin() && !AHUCache.getMockData()) {
+                schedule.value = Result.failure(Throwable("请先登录！"))
+                return@launchSafe
             }
 
+            val result = AHURepository.getSchedule(isRefresh = isRefresh)
+            schedule.value = result
+            if (result.isSuccess) {
+                CourseReminderScheduler.reschedule(AHUApplication.getApp())
+            }
         }
     }
 
     fun refreshNextSchedule(isRefresh: Boolean = false) {
         viewModelScope.launchSafe {
-            withContext(Dispatchers.Main) {
-                if (!AHUCache.isLogin() && !AHUCache.getMockData()) {
-                    nextSchedule.value = Result.failure(Throwable("请先登录"))
-                    return@withContext
-                }
-
-                nextSchedule.value = AHURepository.getNextSchedule(isRefresh = isRefresh)
+            if (!AHUCache.isLogin() && !AHUCache.getMockData()) {
+                nextSchedule.value = Result.failure(Throwable("请先登录"))
+                return@launchSafe
             }
+
+            nextSchedule.value = AHURepository.getNextSchedule(isRefresh = isRefresh)
         }
     }
 
@@ -158,33 +153,25 @@ class ScheduleViewModel () : ViewModel() {
             )
         }
 
-        /**
-         * @param from "HH:mm-HH:mm"
-         * @param to "HH:mm-HH:mm"
-         */
-        private fun getTimeRangeInMinutes(
-            from: String,
-            to: String = from
-        ): IntRange {
-            val format = SimpleDateFormat("HH:mm", Locale.CHINA)
-            val start = format.parse(from.take(5)).let {
-                val calendar = Calendar.getInstance(Locale.CHINA)
-                calendar.time = it!!
-                calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        /** Pre-parsed once because the home timeline reads these ranges during composition. */
+        private val timetableMinuteRanges by lazy {
+            timetable.mapValues { (_, range) ->
+                parseClockMinutes(range.substringBefore('-'))..
+                    parseClockMinutes(range.substringAfter('-'))
             }
-            val end = format.parse(to.takeLast(5)).let {
-                val calendar = Calendar.getInstance(Locale.CHINA)
-                calendar.time = it!!
-                calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
-            }
-            return start..end
+        }
+
+        private fun parseClockMinutes(clock: String): Int {
+            val separator = clock.indexOf(':')
+            require(separator > 0 && separator < clock.lastIndex) { "Invalid clock: $clock" }
+            return clock.substring(0, separator).toInt() * 60 +
+                clock.substring(separator + 1).toInt()
         }
 
         fun getCourseTimeRangeInMinutes(course: Course): IntRange {
-            return getTimeRangeInMinutes(
-                from = timetable.getValue(course.startTime),
-                to = timetable.getValue(course.startTime + course.length - 1)
-            )
+            val firstSection = timetableMinuteRanges.getValue(course.startTime)
+            val lastSection = timetableMinuteRanges.getValue(course.startTime + course.length - 1)
+            return firstSection.first..lastSection.last
         }
     }
 

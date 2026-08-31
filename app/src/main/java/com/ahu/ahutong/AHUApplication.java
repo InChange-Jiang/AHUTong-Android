@@ -48,8 +48,11 @@ public class AHUApplication extends Application {
         CourseReminderScheduler.INSTANCE.createNotificationChannel(this);
         CourseReminderScheduler.INSTANCE.reschedule(this);
 
-        // 初始化数据源（根据 Mock 开关）
-        if(AHUCache.INSTANCE.getMockData()){
+        // Release builds always start on the real data source and erase legacy mock state.
+        if (!BuildConfig.DEBUG) {
+            AHUCache.INSTANCE.setMockData(false);
+            AHURepository.INSTANCE.initializeDataSource(false);
+        } else if(AHUCache.INSTANCE.getMockData()){
             AHURepository.INSTANCE.initializeDataSource(true);
             Toast.makeText(this,"正在使用mock数据",Toast.LENGTH_SHORT).show();
         }

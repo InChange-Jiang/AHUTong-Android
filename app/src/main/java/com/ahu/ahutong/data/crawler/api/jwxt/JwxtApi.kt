@@ -1,5 +1,6 @@
 package com.ahu.ahutong.data.crawler.api.jwxt
 
+import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.model.jwxt.CourseTable
 import com.ahu.ahutong.data.crawler.model.jwxt.CurrentTeachWeek
@@ -11,6 +12,7 @@ import com.ahu.ahutong.data.crawler.model.jwxt.GradeResponse
 import com.ahu.ahutong.data.crawler.net.AutoLoginInterceptor
 import com.ahu.ahutong.data.crawler.net.TokenAuthenticator
 import okhttp3.OkHttpClient
+import okhttp3.Authenticator
 import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
@@ -29,6 +31,9 @@ interface JwxtApi {
 
     @GET("/student/sso/login")
     suspend fun fetchLoginInfo(): Response<ResponseBody>
+
+    @GET
+    suspend fun fetchUrl(@Url url: String): Response<ResponseBody>
 
     @GET("/student/for-std/course-table/semester/{id}/print-data")
     suspend fun getCourse(
@@ -74,6 +79,14 @@ interface JwxtApi {
 
     @FormUrlEncoded
     @POST
+    suspend fun confirmDeviceForSession(
+        @Url url: String,
+        @Field("saveDevice") saveDevice: Int = 0,
+        @Field("method") method: String = "bind2"
+    ): Response<ResponseBody>
+
+    @FormUrlEncoded
+    @POST
     suspend fun login(
         @Url url: String,
         @Field("rsa") rsa: String,
@@ -105,6 +118,10 @@ interface JwxtApi {
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
         val loggingInterceptor = HttpLoggingInterceptor().apply {
+            redactHeader("Authorization")
+            redactHeader("Synjones-Auth")
+            redactHeader("Cookie")
+            redactHeader("Set-Cookie")
             level = HttpLoggingInterceptor.Level.HEADERS
         }
 
@@ -124,16 +141,31 @@ interface JwxtApi {
             .authenticator(TokenAuthenticator())
             .followRedirects(true)
             .followSslRedirects(true)
-            .addNetworkInterceptor(loggingInterceptor)
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
             .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .apply {
+                if (BuildConfig.DEBUG) addNetworkInterceptor(loggingInterceptor)
+            }
+            .build()
+
+        private val loginOkHttpClient = okHttpClient.newBuilder()
+            .authenticator(Authenticator.NONE)
+            .apply {
+                networkInterceptors().removeAll { it is AutoLoginInterceptor }
+            }
             .build()
 
 
         val API = Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build().create(JwxtApi::class.java)
+
+        val LOGIN_API = Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(loginOkHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build().create(JwxtApi::class.java)
     }

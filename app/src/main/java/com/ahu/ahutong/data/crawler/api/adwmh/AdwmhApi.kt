@@ -1,18 +1,19 @@
 package com.ahu.ahutong.data.crawler.api.adwmh
 
+import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.AHUResponse
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
 import com.ahu.ahutong.data.crawler.model.adwnh.Balance
 import com.ahu.ahutong.data.crawler.model.adwnh.Captcha
-import com.ahu.ahutong.data.crawler.model.adwnh.Info
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.crawler.model.adwnh.QRcode
 import com.ahu.ahutong.data.crawler.net.AutoLoginInterceptor
 import com.ahu.ahutong.data.crawler.net.TokenAuthenticator
 import okhttp3.MultipartBody
+import okhttp3.Authenticator
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import okhttp3.logging.HttpLoggingInterceptor
@@ -39,7 +40,7 @@ interface AdwmhApi {
         @Field("pwd") password: String,
         @Field("flag") flag: Int,
         @Field("imgcode") imgcode: String
-    ): Info
+    ): ResponseBody
 
 
     @GET("/xzxcard/yue")
@@ -82,6 +83,7 @@ interface AdwmhApi {
     companion object {
         val loggingInterceptor = HttpLoggingInterceptor().apply {
             redactHeader("Authorization")
+            redactHeader("Synjones-Auth")
             redactHeader("Cookie")
             redactHeader("Set-Cookie")
             level = HttpLoggingInterceptor.Level.HEADERS
@@ -111,12 +113,27 @@ interface AdwmhApi {
             .followRedirects(true)
             .followSslRedirects(true)
             .cookieJar(cookieJar)
-            .addNetworkInterceptor(loggingInterceptor)
+            .apply {
+                if (BuildConfig.DEBUG) addNetworkInterceptor(loggingInterceptor)
+            }
+            .build()
+
+        private val loginOkHttpClient = okHttpClient.newBuilder()
+            .authenticator(Authenticator.NONE)
+            .apply {
+                networkInterceptors().removeAll { it is AutoLoginInterceptor }
+            }
             .build()
 
         val API = Retrofit.Builder()
             .addConverterFactory(GsonConverterFactory.create())
             .client(okHttpClient)
+            .baseUrl(BASE_URL)
+            .build().create(AdwmhApi::class.java)
+
+        val LOGIN_API = Retrofit.Builder()
+            .addConverterFactory(GsonConverterFactory.create())
+            .client(loginOkHttpClient)
             .baseUrl(BASE_URL)
             .build().create(AdwmhApi::class.java)
 

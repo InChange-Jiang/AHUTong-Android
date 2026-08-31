@@ -1,6 +1,10 @@
 package com.ahu.ahutong.ui.screen.main.home
 
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.LocationManager
 import androidx.compose.foundation.clickable
@@ -9,13 +13,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.ahu.ahutong.data.weather.WeatherApi
 import com.ahu.ahutong.data.weather.WeatherResponse
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.WeatherHomeConfig
 import com.ahu.ahutong.ui.state.WeatherHomeMode
@@ -81,10 +88,16 @@ private fun DetailedHomeWeatherCard(
     config: WeatherHomeConfig,
     onClick: () -> Unit
 ) {
+    val shape = SmoothRoundedCornerShape(32.dp)
     Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = SmoothRoundedCornerShape(32.dp),
-        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+        modifier = modifier
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = 100.n1 withNight 20.n1
+            )
+            .clickable(onClick = onClick),
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier
@@ -104,8 +117,8 @@ private fun DetailedHomeWeatherCard(
                     )
                 }
                 else -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
+                    AppCircularProgressIndicator(
+                        size = 24.dp,
                         strokeWidth = 2.dp,
                         color = 70.a1 withNight 85.a1
                     )
@@ -263,13 +276,18 @@ private fun CompactHomeWeatherCard(
     hasError: Boolean,
     onClick: () -> Unit
 ) {
+    val shape = SmoothRoundedCornerShape(18.dp)
     Card(
         modifier = modifier
             .widthIn(min = 154.dp, max = 178.dp)
-            .height(44.dp)
+            .height(48.dp)
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = 100.n1 withNight 20.n1
+            )
             .clickable(onClick = onClick),
-        shape = SmoothRoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = 100.n1 withNight 20.n1)
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
     ) {
         Box(
             modifier = Modifier
@@ -286,8 +304,8 @@ private fun CompactHomeWeatherCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
+                        AppCircularProgressIndicator(
+                            size = 16.dp,
                             strokeWidth = 2.dp,
                             color = 70.a1 withNight 85.a1
                         )
@@ -455,6 +473,16 @@ private fun String.hasAnyWeatherKeyword(vararg keywords: String): Boolean {
 }
 
 private fun getCityFromLocation(context: Context): String? {
+    val hasFineLocation = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val hasCoarseLocation = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    if (!hasFineLocation && !hasCoarseLocation) return null
+
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
 
     val location = runCatching {

@@ -23,6 +23,8 @@ import com.google.gson.Gson
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -54,6 +56,7 @@ class LostFoundViewModel @Inject constructor(
     var presetCandidates by mutableStateOf<List<PresetCandidate>>(emptyList())
         private set
     private var filterCommitJob: Job? = null
+    private var listRequestJob: Job? = null
     private var activePresetInteraction: PresetInteractionToken? = null
     private var candidatesAtOpportunity: List<PresetCandidate> = emptyList()
 
@@ -75,6 +78,17 @@ class LostFoundViewModel @Inject constructor(
         get() = AHUCache.getCurrentUser()?.xh ?: "null"
 
     var errorMessage by mutableStateOf<String?>(null)
+
+    var myPosts by mutableStateOf<List<LostFoundItem>>(emptyList())
+        private set
+    var myPostsLoading by mutableStateOf(false)
+        private set
+    var myPostsError by mutableStateOf<String?>(null)
+        private set
+    var isPublishing by mutableStateOf(false)
+        private set
+    var deletingPostIds by mutableStateOf<Set<String>>(emptySet())
+        private set
 
     /**
      * 是否还有更多数据
@@ -197,58 +211,57 @@ class LostFoundViewModel @Inject constructor(
             AHUCache.getLostFoundList(state)
         }
 
-        scheduleFilterQuery()
+        fetchFirstPage(commitPresetOnDispatch = true)
     }
 
     fun selectCampusFilter(campusId: String?) {
         if (selectedCampus == campusId) return
         selectedCampus = campusId
-        scheduleFilterQuery()
+        scheduleFilterCommit()
     }
 
     fun selectTypeFilter(typeId: String?) {
         if (selectedType == typeId) return
         selectedType = typeId
-        scheduleFilterQuery()
+        scheduleFilterCommit()
     }
 
     /**
      * 获取第一页（覆盖）
      */
-    fun fetchFirstPage(commitPresetOnDispatch: Boolean = false) = viewModelScope.launch {
-        listLoading = true
-        try {
-            if (commitPresetOnDispatch) recordCurrentPresetDispatch()
-            val result = AHURepository.getLostFoundList(
-                pageNo = 1,
-                pageSize = pageSize,
-                state = currentState
-            )
-            if (result.code == 0) {
-                val pageData = result.data.data
-
-                currentPage = pageData.pageNum
-                totalPages = pageData.pages
-
-                lostFoundList = pageData.list
-
-                // 覆盖缓存
-                AHUCache.saveLostFoundList(
-                    currentState,
-                    pageData.list
+    fun fetchFirstPage(commitPresetOnDispatch: Boolean = false) {
+        listRequestJob?.cancel()
+        val requestedState = currentState
+        listRequestJob = viewModelScope.launch {
+            listLoading = true
+            try {
+                if (commitPresetOnDispatch) recordCurrentPresetDispatch()
+                val result = AHURepository.getLostFoundList(
+                    pageNo = 1,
+                    pageSize = pageSize,
+                    state = requestedState
                 )
-
-                errorMessage = null
-                reportListContent(pageData.list.size, fresh = true)
-            } else {
-                errorMessage = result.msg
-                reportListError()
+                if (currentState != requestedState) return@launch
+                if (result.code == 0) {
+                    val pageData = result.data.data
+                    currentPage = pageData.pageNum
+                    totalPages = pageData.pages
+                    lostFoundList = pageData.list
+                    AHUCache.saveLostFoundList(requestedState, pageData.list)
+                    errorMessage = null
+                    reportListContent(pageData.list.size, fresh = true)
+                } else {
+                    errorMessage = result.msg
+                    reportListError()
+                }
+            } catch (t: Throwable) {
+                if (currentState == requestedState) {
+                    errorMessage = t.message ?: "获取列表失败"
+                    reportListError()
+                }
+            } finally {
+                if (currentState == requestedState) listLoading = false
             }
-        } catch (t: Throwable) {
-            errorMessage = t.message ?: "获取列表失败"
-            reportListError()
-        } finally {
-            listLoading = false
         }
     }
 
@@ -256,6 +269,8 @@ class LostFoundViewModel @Inject constructor(
      * 刷新
      */
     fun refreshList() {
+        listRequestJob?.cancel()
+        val requestedState = currentState
         viewModelScope.launch {
             isRefreshing = true
 
@@ -267,9 +282,10 @@ class LostFoundViewModel @Inject constructor(
                     AHURepository.getLostFoundList(
                         pageNo = 1,
                         pageSize = pageSize,
-                        state = currentState
+                        state = requestedState
                     )
 
+                if (currentState != requestedState) return@launch
                 if (result.code == 0) {
                     val pageData =
                         result.data.data
@@ -284,11 +300,11 @@ class LostFoundViewModel @Inject constructor(
                         pageData.list
 
                     AHUCache.clearLostFoundList(
-                        currentState
+                        requestedState
                     )
 
                     AHUCache.saveLostFoundList(
-                        currentState,
+                        requestedState,
                         pageData.list
                     )
 
@@ -316,15 +332,17 @@ class LostFoundViewModel @Inject constructor(
 
         viewModelScope.launch {
             isLoadingMore = true
+            val requestedState = currentState
             try {
                 val nextPage = currentPage + 1
 
                 val result = AHURepository.getLostFoundList(
                     pageNo = nextPage,
                     pageSize = pageSize,
-                    state = currentState
+                    state = requestedState
                 )
 
+                if (currentState != requestedState) return@launch
                 if (result.code == 0) {
                     val pageData = result.data.data
 
@@ -336,7 +354,7 @@ class LostFoundViewModel @Inject constructor(
                     lostFoundList = lostFoundList + newList
 
                     AHUCache.appendLostFoundList(
-                        currentState,
+                        requestedState,
                         newList
                     )
 
@@ -362,45 +380,98 @@ class LostFoundViewModel @Inject constructor(
         num1: String,
         campusId: String,
         typeId: String,
-        state: String
+        state: String,
+        onResult: (Result<Unit>) -> Unit = {}
     ) {
+        if (isPublishing) return
         viewModelScope.launch {
-            AHURepository.publishLostFound(
-                LostFoundPublishRequest(
-                    imgs = emptyList(),
-                    linkman = linkman,
-                    phone = phone,
-                    typeid = typeId,
-                    num1 = num1,
-                    campusid = campusId,
-                    title = title,
-                    state = state,
-                    auditresult = 1
+            isPublishing = true
+            val result = runCatching {
+                val response = AHURepository.publishLostFound(
+                    LostFoundPublishRequest(
+                        imgs = emptyList(),
+                        linkman = linkman,
+                        phone = phone,
+                        typeid = typeId,
+                        num1 = num1,
+                        campusid = campusId,
+                        title = title,
+                        state = state,
+                        auditresult = 1
+                    )
                 )
-            )
-
-            refreshList()
+                check(response.isSuccessful) { response.msg ?: "发布失败" }
+            }
+            if (result.isSuccess) {
+                refreshList()
+                loadMyPosts()
+            }
+            isPublishing = false
+            onResult(result)
         }
     }
 
     fun deleteLostFound(
-        id: String
+        id: String,
+        onResult: (Result<Unit>) -> Unit = {}
     ) {
+        if (id in deletingPostIds) return
         viewModelScope.launch {
-            try {
-                val result =
-                    AHURepository.deleteLostFound(id)
-
-                if (result.isSuccessful) {
-                    lostFoundList =
-                        lostFoundList.filterNot {
-                            it.id == id
-                        }
-
-                    refreshList()
-                }
-            } catch (_: Exception) { }
+            deletingPostIds = deletingPostIds + id
+            val result = runCatching {
+                val response = AHURepository.deleteLostFound(id)
+                check(response.isSuccessful) { response.msg ?: "删除失败" }
+            }
+            if (result.isSuccess) {
+                lostFoundList = lostFoundList.filterNot { it.id == id }
+                myPosts = myPosts.filterNot { it.id == id }
+                refreshList()
+            }
+            deletingPostIds = deletingPostIds - id
+            onResult(result)
         }
+    }
+
+    fun loadMyPosts() {
+        if (myPostsLoading) return
+        viewModelScope.launch {
+            myPostsLoading = true
+            myPostsError = null
+            val result = runCatching {
+                coroutineScope {
+                    val found = async { loadAllPostsForState(1) }
+                    val wanted = async { loadAllPostsForState(2) }
+                    (found.await() + wanted.await())
+                        .filter { item ->
+                            item.createuser == currentUserName ||
+                                item.pubuser?.idNumber == currentUserName
+                        }
+                        .distinctBy(LostFoundItem::id)
+                        .sortedByDescending(LostFoundItem::createtime)
+                }
+            }
+            result.onSuccess { myPosts = it }
+                .onFailure { myPostsError = it.message ?: "加载我的帖子失败" }
+            myPostsLoading = false
+        }
+    }
+
+    private suspend fun loadAllPostsForState(state: Int): List<LostFoundItem> {
+        val posts = mutableListOf<LostFoundItem>()
+        var page = 1
+        var pages = 1
+        do {
+            val response = AHURepository.getLostFoundList(
+                pageNo = page,
+                pageSize = MY_POST_PAGE_SIZE,
+                state = state
+            )
+            check(response.isSuccessful) { response.msg ?: "加载帖子失败" }
+            posts += response.data.data.list
+            pages = response.data.data.pages.coerceAtLeast(1)
+            page++
+        } while (page <= pages)
+        return posts
     }
 
     fun applyPresetCandidate(candidate: PresetCandidate) = viewModelScope.launch {
@@ -424,11 +495,11 @@ class LostFoundViewModel @Inject constructor(
         fetchFirstPage(commitPresetOnDispatch = true)
     }
 
-    private fun scheduleFilterQuery() {
+    private fun scheduleFilterCommit() {
         filterCommitJob?.cancel()
         filterCommitJob = viewModelScope.launch {
             delay(FILTER_SETTLE_MS)
-            fetchFirstPage(commitPresetOnDispatch = true)
+            recordCurrentPresetDispatch()
         }
     }
 
@@ -508,10 +579,14 @@ class LostFoundViewModel @Inject constructor(
         }
     }
 
-    private companion object { const val FILTER_SETTLE_MS = 800L }
+    private companion object {
+        const val FILTER_SETTLE_MS = 800L
+        const val MY_POST_PAGE_SIZE = 100
+    }
 
     override fun onCleared() {
         filterCommitJob?.cancel()
+        listRequestJob?.cancel()
         onPresetSurfaceDisposed()
         super.onCleared()
     }

@@ -1,7 +1,9 @@
 package com.ahu.ahutong.ui.screen
 
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -20,14 +22,19 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.SplashViewModel
 import com.ahu.ahutong.ui.state.BootstrapTrainingOnboardingState
 import com.ahu.ahutong.ui.state.TelemetryOnboardingState
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -69,7 +76,14 @@ fun Splash(
         bootstrapTrainingState is BootstrapTrainingOnboardingState.Ready
     val requiresAcceptance = !agreementAccepted || !privacyAccepted || !businessAccepted ||
         telemetryChoice == null || bootstrapTrainingChoice == null
-    if (onboardingReady && requiresAcceptance) {
+    if (!onboardingReady || !requiresAcceptance) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            AppCircularProgressIndicator()
+        }
+    } else if (requiresAcceptance) {
         UnifiedPrivacyPolicyDialog(
             onAgree = {
                 AHUCache.setAgreementAccepted()
@@ -147,7 +161,14 @@ private fun OnboardingDialogTemplate(
     onDismissRequest: () -> Unit = {},
     buttonWidth: androidx.compose.ui.unit.Dp = 88.dp
 ) {
+    val dialogShape = SmoothRoundedCornerShape(32.dp)
     AlertDialog(
+        modifier = Modifier.appLiquidGlassSurface(
+            shape = dialogShape,
+            fallbackColor = 100.n1 withNight 20.n1,
+            level = LiquidGlassSurfaceLevel.Floating,
+            backdropSamplingEnabled = false
+        ),
         onDismissRequest = onDismissRequest,
         title = {
             Text(
@@ -169,7 +190,7 @@ private fun OnboardingDialogTemplate(
                 )
             }
         },
-        shape = SmoothRoundedCornerShape(32.dp),
+        shape = dialogShape,
         confirmButton = {
             FilledTonalButton(
                 onClick = onConfirm,
@@ -196,6 +217,6 @@ private fun OnboardingDialogTemplate(
                 Text(dismissText)
             }
         },
-        containerColor = 100.n1 withNight 20.n1
+        containerColor = Color.Transparent
     )
 }

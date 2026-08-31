@@ -33,7 +33,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material3.CircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,9 +62,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ExamViewModel
 import com.ahu.ahutong.ui.state.RefreshState
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -76,11 +82,14 @@ import java.time.format.DateTimeFormatter
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Exam(
-    examViewModel: ExamViewModel = viewModel()
+    examViewModel: ExamViewModel = viewModel(),
+    onBack: (() -> Unit)? = null
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
     LaunchedEffect(Unit) {
@@ -131,88 +140,24 @@ fun Exam(
         exam.orEmpty()
     }
 
-    Column(
+    AppScrollablePageLayout(
+        title = stringResource(id = R.string.exam),
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .systemBarsPadding()
-            .padding(bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp,
+        actions = { RefreshButton(examViewModel) }
     ) {
-        // 标题栏 / 搜索栏
-        if (isSearchActive) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = {
-                    isSearchActive = false
-                    searchQuery = ""
-                }) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = 0.n1 withNight 100.n1
-                    )
-                }
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    placeholder = {
-                        Text("搜索课程名称…", color = 50.n1 withNight 70.n1)
-                    },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
-                        disabledContainerColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = 0.n1 withNight 100.n1,
-                        unfocusedTextColor = 0.n1 withNight 100.n1,
-                        cursorColor = 90.a1 withNight 90.a1,
-                    ),
-                    trailingIcon = if (searchQuery.isNotEmpty()) {
-                        {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    tint = 50.n1 withNight 80.n1
-                                )
-                            }
-                        }
-                    } else null
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 24.dp, end = 16.dp, top = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = stringResource(id = R.string.exam),
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = 0.n1 withNight 100.n1
-                )
-                Row {
-                    IconButton(onClick = { isSearchActive = true }) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = "搜索",
-                            tint = 0.n1 withNight 100.n1
-                        )
-                    }
-                    RefreshButton(examViewModel)
-                }
-            }
-        }
+        AppSearchField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+                isSearchActive = it.isNotBlank()
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            placeholder = "搜索课程名称…"
+        )
 
         if (isLoading != true) {
             if (!filteredExams.isNullOrEmpty()) {
@@ -241,8 +186,11 @@ fun Exam(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(SmoothRoundedCornerShape(12.dp))
-                                .background(100.n1 withNight 20.n1)
+                                .appLiquidGlassSurface(
+                                    shape = SmoothRoundedCornerShape(12.dp),
+                                    fallbackColor = 100.n1 withNight 20.n1,
+                                    level = LiquidGlassSurfaceLevel.Control
+                                )
                                 .clickable { showFinished = !showFinished }
                                 .padding(horizontal = 20.dp, vertical = 14.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -302,8 +250,8 @@ fun Exam(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(32.dp),
+                    AppCircularProgressIndicator(
+                        size = 32.dp,
                         strokeWidth = 3.dp,
                         color = 90.a1 withNight 90.a1
                     )
@@ -345,8 +293,11 @@ private fun ExamCard(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(16.dp))
-            .background(100.n1 withNight 20.n1)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(20.dp),
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                level = LiquidGlassSurfaceLevel.Panel
+            )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -416,8 +367,8 @@ private fun RefreshButton(examViewModel: ExamViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
+                AppCircularProgressIndicator(
+                    size = 16.dp,
                     strokeWidth = 2.dp,
                     color = 90.a1 withNight 90.a1
                 )
@@ -436,12 +387,15 @@ private fun RefreshButton(examViewModel: ExamViewModel) {
             }
         }
         RefreshState.IDLE -> {
-            IconButton(onClick = {
-                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
-                examViewModel.loadExam(isRefresh = true)
-            }) {
-                Icon(Icons.Default.Refresh, "刷新", tint = 0.n1 withNight 100.n1)
-            }
+            AppHeaderIconButton(
+                imageVector = Icons.Default.Refresh,
+                miuixImageVector = MiuixIcons.Useful.Refresh,
+                contentDescription = "刷新考试",
+                onClick = {
+                    behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
+                    examViewModel.loadExam(isRefresh = true)
+                }
+            )
         }
     }
 }

@@ -2,7 +2,6 @@ package com.ahu.ahutong.ui.screen
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -11,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.screen.setup.Info
 import com.ahu.ahutong.ui.screen.setup.Splash
 import com.ahu.ahutong.ui.state.AboutViewModel
@@ -42,7 +42,7 @@ fun Setup(
         startDestination = "splash",
         modifier = Modifier
             .fillMaxSize()
-            .background(96.n1 withNight 10.n1)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
     ) {
         animatedComposable("splash") {
             Splash()

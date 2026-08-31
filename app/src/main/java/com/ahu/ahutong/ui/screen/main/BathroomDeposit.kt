@@ -1,542 +1,334 @@
 package com.ahu.ahutong.ui.screen.main
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.data.crawler.PayState
 import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
+import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppComponentTokens
+import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppSelectField
+import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.state.BathroomDepositViewModel
-import com.kyant.monet.a1
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
-import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
-import com.ahu.ahutong.personalization.action.AppActionId
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BathroomDeposit(
-
+    onBack: () -> Unit,
     viewmodel: BathroomDepositViewModel = viewModel()
-
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
-    val payState = viewmodel.payState.collectAsState()
-    LaunchedEffect(payState.value) {
-        when (payState.value) {
-            is PayState.Succeeded, is PayState.Failed -> {
-                delay(1000)
-                viewmodel.resetPaymentState()
-            }
-
-            else -> {
-
-            }
-        }
-
-    }
-    val options = listOf("竹园/龙河", "桔园/蕙园")
-    var expanded by remember { mutableStateOf(false) }
-    var bathroom by remember { mutableStateOf(options[0]) }
-
-    var amount by remember { mutableStateOf("") }
-    var tel by remember { mutableStateOf("") }
-
-    var hasFocus by remember { mutableStateOf(false) }
+    val payState by viewmodel.payState.collectAsState()
+    val info by viewmodel.info.collectAsState()
+    val isQuerying by viewmodel.isQuerying.collectAsState()
     val focusManager = LocalFocusManager.current
 
-    val info = viewmodel.info.collectAsState()
-
-    var lastTel by remember { mutableStateOf<String?>(null) }
+    val bathrooms = remember { listOf("竹园/龙河", "桔园/蕙园") }
+    val bathroomOptions = remember(bathrooms) {
+        bathrooms.map { AppSelectOption(it, it) }
+    }
+    var bathroom by rememberSaveable { mutableStateOf(bathrooms.first()) }
+    var amount by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+    var phoneHasFocus by rememberSaveable { mutableStateOf(false) }
+    var previousPhone by rememberSaveable { mutableStateOf<String?>(null) }
+    var showPasswordDialog by rememberSaveable { mutableStateOf(false) }
+    var password by rememberSaveable { mutableStateOf("") }
+    var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        lastTel = AHUCache.getPhone()
+        previousPhone = AHUCache.getPhone()?.takeIf(String::isNotBlank)
+    }
+    LaunchedEffect(bathroom, phone) {
+        if (phone.length == 11) {
+            delay(250)
+            viewmodel.getBathroomInfo(bathroom, phone)
+        }
+    }
+    LaunchedEffect(payState) {
+        if (payState is PayState.Succeeded || payState is PayState.Failed) {
+            delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
+            viewmodel.resetPaymentState()
+        }
     }
 
-    val textFieldColors = TextFieldDefaults.colors(
-        unfocusedContainerColor = Color.Transparent,
-        focusedContainerColor = Color.Transparent,
-        focusedIndicatorColor = Color.Transparent,
-        unfocusedIndicatorColor = Color.Transparent,
-    )
+    val accountSummary = info?.let { response ->
+        when {
+            response.data.map == null -> response.data.message ?: "未查询到浴室账户"
+            response.data.map!!.showData != null -> response.data.map!!.showData!!.let { data ->
+                "${data.phone}  ·  现金 ${data.cashAmount} 元  ·  赠送 ${data.giftAmount} 元"
+            }
+            response.data.map!!.data?.message != null -> response.data.map!!.data!!.message!!
+            else -> "未查询到浴室账户"
+        }
+    }
+    val accountData = info?.data?.map?.data
+    val balanceData = info?.data?.map?.showData
+    val canSubmit = amount.toDoubleOrNull()?.let { it > 0.0 } == true && accountData != null &&
+        payState !is PayState.InProgress
 
-    Column(
+    AppScrollablePageLayout(
+        title = "浴室缴费",
+        onBack = onBack,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .systemBarsPadding()
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) {
-                focusManager.clearFocus()
-            },
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        bottomPadding = 48.dp
     ) {
-        Text(
-            text = "浴室缴费",
-            modifier = Modifier.padding(24.dp, 32.dp),
-            style = MaterialTheme.typography.headlineMedium
+        AppSelectField(
+            label = "浴室",
+            selected = bathroom,
+            options = bathroomOptions,
+            onSelected = { selected ->
+                bathroom = selected
+                viewmodel.clearBathroomInfo()
+            },
+            modifier = Modifier.padding(horizontal = 16.dp),
+            miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
+                start = 12.dp,
+                top = 16.dp,
+                end = 20.dp,
+                bottom = 16.dp
+            ),
+            miuixStandalone = true,
+            liquidLabelWeight = 0.85f,
+            liquidValueWeight = 1.15f
         )
 
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(100.n1 withNight 20.n1)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-            ) {
-                Text(
-                    text = "选择浴室",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    TextField(
-                        value = bathroom,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier
-                            .menuAnchor()
-                            .width(150.dp),
-                        colors = textFieldColors,
-                        textStyle = TextStyle(
-                            textAlign = TextAlign.End,
-                            fontSize = 16.sp,
-                            color = 10.n1 withNight 90.n1
-                        ),
-                        singleLine = true,
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier.background(99.n1 withNight 10.n1),
-                    ) {
-                        options.forEach { selectionOption ->
-                            DropdownMenuItem(
-                                text = { Text(selectionOption, color = 10.n1 withNight 90.n1) },
-                                onClick = {
-                                    bathroom = selectionOption
-                                    expanded = false
-                                }
-                            )
-                        }
+            AppTextField(
+                value = phone,
+                onValueChange = { input ->
+                    val nextPhone = input.filter(Char::isDigit).take(11)
+                    if (nextPhone != phone) {
+                        phone = nextPhone
+                        viewmodel.clearBathroomInfo()
                     }
-                }
-            }
-            Row(
+                },
+                label = "手机号",
                 modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState -> phoneHasFocus = focusState.isFocused },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        focusManager.clearFocus()
+                        viewmodel.getBathroomInfo(bathroom, phone)
+                    }
+                )
+            )
+            AppButton(
+                onClick = {
+                    focusManager.clearFocus()
+                    viewmodel.getBathroomInfo(bathroom, phone)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = phone.length == 11 && !isQuerying
             ) {
-                Text(text = "手机号", style = MaterialTheme.typography.titleMedium)
-                TextField(
-                    value = tel,
-                    onValueChange = { value ->
-                        tel = value
+                Text("查询")
+            }
+
+            AnimatedVisibility(visible = previousPhone != null && !phoneHasFocus) {
+                AppButton(
+                    onClick = {
+                        val cachedPhone = previousPhone ?: return@AppButton
+                        phone = cachedPhone
+                        previousPhone = null
+                        viewmodel.clearBathroomInfo()
                     },
-                    modifier = Modifier
-                        .width(150.dp)
-                        .onFocusChanged {
-                            if (!it.isFocused && hasFocus && !tel.isEmpty()) {
-                                viewmodel.getBathroomInfo(bathroom, tel)
-                            }
-                            hasFocus = it.isFocused
-                        },
-                    colors = textFieldColors,
-                    textStyle = TextStyle(
-                        textAlign = TextAlign.Center,
-                        fontSize = 16.sp,
-                        color = 10.n1 withNight 90.n1
-                    ),
-
-                    singleLine = true,
-                )
-            }
-
-
-            lastTel?.let {
-                Row(horizontalArrangement = Arrangement.End) {
-                    AnimatedVisibility(
-                        visible = (lastTel != null && !hasFocus),
-                        enter = fadeIn() + slideInVertically(),
-                        exit = fadeOut() + slideOutVertically()
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            Text(
-                                text = "上次充值：$it",
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(90.a1 withNight 30.n1)
-                                    .padding(8.dp)
-                                    .clickable {
-                                        tel = it
-                                        viewmodel.getBathroomInfo(bathroom, tel)
-                                        lastTel = null
-                                    }
-
-
-                            )
-                        }
-                    }
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppButtonVariant.Secondary
+                ) {
+                    Text("使用上次充值手机号 · ${previousPhone.orEmpty()}")
                 }
             }
+        }
 
-
-            Row(
+        AnimatedVisibility(visible = isQuerying || info != null) {
+            Column(
                 modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 16.dp)
+                    .fillMaxWidth()
+                    .appLiquidGlassSurface(
+                        shape = AppComponentTokens.CardShape,
+                        fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        level = LiquidGlassSurfaceLevel.Control
+                    )
+                    .padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(text = "信息", style = MaterialTheme.typography.titleMedium)
-
-                val displayText = info.value?.let { it ->
-                    when {
-                        it.data.map == null -> it.data.message ?: "未知错误"
-                        it.data.map!!.showData != null -> {
-                            val showData = it.data.map!!.showData!!
-                            "${showData.phone}\n现金金额：${showData.cashAmount}元\n赠送金额：${showData.giftAmount}元"
-                        }
-
-                        it.data.map!!.data?.message != null -> it.data.map!!.data!!.message!!
-                        else -> "未知错误"
+                Text("浴室账户", style = MaterialTheme.typography.titleMedium)
+                if (isQuerying) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        AppCircularProgressIndicator(size = 22.dp, strokeWidth = 3.dp)
+                        Text("正在查询账户与余额", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } ?: ""
-
-                Text(text = displayText)
+                } else if (balanceData != null) {
+                    Text(
+                        text = accountData?.name?.takeIf(String::isNotBlank)
+                            ?: accountData?.identifier?.takeIf(String::isNotBlank)
+                            ?: balanceData.phone,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "现金 ${balanceData.cashAmount} 元  ·  赠送 ${balanceData.giftAmount} 元",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    Text(
+                        text = accountSummary ?: "未查询到浴室账户",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
-
-
         }
 
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(100.n1 withNight 20.n1),
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-
             Text(
                 text = "缴费金额",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.titleMedium
-
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
             )
-            TextField(
+            AppTextField(
                 value = amount,
-                onValueChange = { newText ->
-                    if (newText.isEmpty()) {
-                        amount = newText
-                        return@TextField
-                    }
-
-                    val regex = Regex("^\\d*\\.?\\d{0,2}$")
-                    if (regex.matches(newText)) {
-                        amount = newText
+                onValueChange = { input ->
+                    if (input.isEmpty() || Regex("^\\d*\\.?\\d{0,2}$").matches(input)) {
+                        amount = input
                     }
                 },
+                label = "金额（元）",
                 modifier = Modifier.fillMaxWidth(),
-                colors = textFieldColors,
-                placeholder = { Text("请输入金额", color = 30.n1 withNight 70.n1) },
-                textStyle = TextStyle(fontSize = 16.sp, color = 10.n1 withNight 90.n1),
-
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Decimal,
                     imeAction = ImeAction.Done
                 ),
-                keyboardActions = KeyboardActions(
-                    onDone = { focusManager.clearFocus() }
-                ),
-                singleLine = true
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
-
-
         }
 
-        var showDialog by remember { mutableStateOf(false) }
-        var password by remember { mutableStateOf("") }
-        var errorMsg by remember { mutableStateOf<String?>(null) }
-
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .padding(16.dp)
-                    .clip(SmoothRoundedCornerShape(32.dp))
-                    .background(
-                        animateColorAsState(
-                            targetValue = when (payState.value) {
-                                is PayState.Idle -> 90.a1 withNight 85.a1
-                                is PayState.InProgress -> 70.a1 withNight 60.a1
-                                is PayState.Failed -> Color.Red
-                                is PayState.Succeeded -> 70.a1 withNight 60.a1
-                            }
-                        ).value
-                    )
-                    .animateContentSize(spring(stiffness = Spring.StiffnessLow))
-            ) {
-                when (val state = payState.value) {
-                    PayState.Idle -> {
-                        CompositionLocalProvider(LocalIndication provides ripple(color = 0.n1)) {
-                            Text(
-                                text = "确认",
-                                modifier = Modifier
-                                    .clickable(
-                                        role = Role.Button,
-                                        onClick = {
-                                            if (!amount.isEmpty() && info.value != null) {
-                                                showDialog = true
-                                            } else {
-
-                                            }
-                                        }
-                                    )
-                                    .padding(24.dp, 16.dp),
-                                color = 0.n1,
-                                style = MaterialTheme.typography.titleMedium
-                            )
-                        }
-                    }
-
-                    PayState.InProgress -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(56.dp),
-                                color = 100.n1,
-                                strokeWidth = 6.dp
-                            )
-                            Text(
-                                text = "支付中",
-                                modifier = Modifier.padding(4.dp),
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                        }
-                    }
-
-                    is PayState.Failed -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp),
-                                tint = 100.n1
-                            )
-                            Text(
-                                text = "支付失败！ ${state.message}",
-                                modifier = Modifier.padding(4.dp),
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                        }
-                    }
-
-                    is PayState.Succeeded -> {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = null,
-                                modifier = Modifier.size(56.dp),
-                                tint = 100.n1
-                            )
-                            Text(
-                                text = "支付成功！ 订单号：${state.message}",
-                                modifier = Modifier
-                                    .padding(4.dp)
-                                    .clickable {
-
-                                    },
-                                color = 100.n1,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.headlineSmall
-                            )
-                        }
-                    }
-
+            when (val state = payState) {
+                PayState.Idle -> Unit
+                PayState.InProgress -> Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppCircularProgressIndicator(size = 24.dp, strokeWidth = 3.dp)
+                    Text("  正在提交缴费", style = MaterialTheme.typography.bodyLarge)
                 }
+                is PayState.Failed -> Text(
+                    text = "缴费失败：${state.message}",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                is PayState.Succeeded -> Text(
+                    text = "缴费成功，订单号：${state.message}",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
 
-
-            if (showDialog) {
-                AlertDialog(
-                    containerColor = 100.n1 withNight 20.n1,
-                    titleContentColor = 10.n1 withNight 90.n1,
-                    textContentColor = 10.n1 withNight 90.n1,
-                    onDismissRequest = { showDialog = false },
-                    title = { Text("请输入校园卡密码") },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = password,
-                                onValueChange = { input ->
-                                    if (input.length <= 6 && input.all { it.isDigit() }) {
-                                        password = input
-                                        errorMsg = null
-                                    }
-                                },
-                                label = { Text("密码 (6位数字)", color = 40.n1 withNight 60.n1) },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                                visualTransformation = PasswordVisualTransformation(),
-                                isError = errorMsg != null,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedTextColor = 10.n1 withNight 90.n1,
-                                    unfocusedTextColor = 10.n1 withNight 90.n1,
-                                    focusedBorderColor = 20.n1 withNight 80.n1
-                                )
-                            )
-                            if (errorMsg != null) {
-                                Text(
-                                    text = errorMsg!!,
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            if (password.length == 6) {
-                                showDialog = false
-                                behaviorReporter.organic(AppActionId.CONFIRM_BATHROOM_PAYMENT)
-                                viewmodel.pay(
-                                    bathroom = bathroom,
-                                    amount = amount,
-                                    password = password
-                                )
-                            } else {
-                                errorMsg = "密码必须是6位数字"
-                            }
-                        }) {
-                            Text("确认", color = 10.n1 withNight 90.n1)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = {
-                            showDialog = false
-                            password = ""
-                            errorMsg = null
-                        }) {
-                            Text("取消", color = 10.n1 withNight 90.n1)
-                        }
-                    }
-                )
-
-
+            AppButton(
+                onClick = { showPasswordDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = canSubmit
+            ) {
+                Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
             }
         }
     }
+
+    if (showPasswordDialog) {
+        SecurePaymentPasswordDialog(
+            password = password,
+            onPasswordChange = {
+                password = it
+                passwordError = null
+            },
+            title = "请输入校园卡密码",
+            errorMessage = passwordError,
+            onDismissRequest = {
+                showPasswordDialog = false
+                password = ""
+                passwordError = null
+            },
+            onConfirm = { confirmedPassword ->
+                if (confirmedPassword.length == 6) {
+                    showPasswordDialog = false
+                    behaviorReporter.organic(AppActionId.CONFIRM_BATHROOM_PAYMENT)
+                    viewmodel.pay(
+                        bathroom = bathroom,
+                        amount = amount,
+                        password = confirmedPassword
+                    )
+                } else {
+                    passwordError = "密码必须是 6 位数字"
+                }
+            }
+        )
+    }
 }
 
+private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L

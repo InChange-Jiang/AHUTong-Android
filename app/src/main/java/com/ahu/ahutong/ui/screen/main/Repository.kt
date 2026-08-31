@@ -15,11 +15,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Download
@@ -35,7 +34,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.CircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,13 +58,21 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.LocalActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.repository.GitHubContentItem
 import com.ahu.ahutong.data.repository.RepositoryDirectorySummary
 import com.ahu.ahutong.data.repository.RepositoryManager
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppDialogSurface
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppPageLayout
 import com.ahu.ahutong.ui.state.RepositoryMarkdownUiState
 import com.ahu.ahutong.ui.state.RepositoryViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -78,6 +85,10 @@ import com.ahu.ahutong.personalization.semantic.ContentStateBucket
 import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
 import com.ahu.ahutong.personalization.semantic.ResultCountBucket
 import com.ahu.ahutong.personalization.semantic.SemanticDomain
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
+import top.yukonga.miuix.kmp.icon.icons.useful.Save
+import top.yukonga.miuix.kmp.icon.icons.useful.Settings
 
 @Composable
 fun Repository(
@@ -86,7 +97,7 @@ fun Repository(
     behaviorRuntime: BehaviorPredictionRuntime
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
-    val activity = LocalContext.current as androidx.activity.ComponentActivity
+    val activity = LocalActivity.current as? ComponentActivity ?: return
     val viewModel: RepositoryViewModel = viewModel(viewModelStoreOwner = activity)
     val directoryStates by viewModel.directoryStates.collectAsState()
     val sharedState by viewModel.sharedState.collectAsState()
@@ -127,53 +138,39 @@ fun Repository(
         }
     }
 
-    Column(
+    AppPageLayout(
+        title = "学习资料",
+        onBack = { navController.popBackStack() },
         modifier = Modifier
             .fillMaxSize()
-            .systemBarsPadding()
-            .background(96.n1 withNight 10.n1)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController.popBackStack() }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回"
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        actions = {
+                RepositoryRefreshButton(
+                    loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
+                    onRefresh = {
+                        behaviorReporter.organic(
+                            if (state.error == null) AppActionId.MANUAL_REFRESH_REPOSITORY
+                            else AppActionId.RETRY_REPOSITORY
+                        )
+                        viewModel.refreshDirectory(path)
+                    }
                 )
-            }
-            Text(
-                text = "学习资料",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
-            RepositoryRefreshButton(
-                loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
-                onRefresh = {
-                    behaviorReporter.organic(
-                        if (state.error == null) AppActionId.MANUAL_REFRESH_REPOSITORY
-                        else AppActionId.RETRY_REPOSITORY
-                    )
-                    viewModel.refreshDirectory(path)
-                }
-            )
-            IconButton(onClick = { navController.navigate("repository_downloads") }) {
-                Icon(
+                AppHeaderIconButton(
                     imageVector = Icons.Outlined.Download,
+                    miuixImageVector = MiuixIcons.Useful.Save,
                     contentDescription = "已下载",
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = { navController.navigate("repository_downloads") }
                 )
-            }
-            IconButton(onClick = { navController.navigate("repository_settings") }) {
-                Icon(
+                AppHeaderIconButton(
                     imageVector = Icons.Outlined.Tune,
-                    contentDescription = "学习资料设置"
+                    miuixImageVector = MiuixIcons.Useful.Settings,
+                    contentDescription = "学习资料设置",
+                    onClick = { navController.navigate("repository_settings") }
                 )
-            }
         }
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
 
         RepositoryBreadcrumb(
             currentPath = path,
@@ -192,20 +189,20 @@ fun Repository(
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 8.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0x33FF5252))
+                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.48f))
                     .clickable { viewModel.clearError(path) }
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     text = error,
-                    color = Color(0xFFFF5252),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = "关闭",
-                    color = Color(0xFFFF5252),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     style = MaterialTheme.typography.labelMedium
                 )
             }
@@ -225,7 +222,7 @@ fun Repository(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                        AppCircularProgressIndicator(size = 28.dp)
                         Text(
                             text = "已获取 ${sharedState.cacheWarmUpCount} 个文件",
                             style = MaterialTheme.typography.titleMedium,
@@ -290,6 +287,7 @@ fun Repository(
             }
         }
     }
+    }
 
     RepositoryMarkdownReader(
         markdownState = markdownState,
@@ -317,16 +315,14 @@ internal fun RepositoryMarkdownReader(
     val markwon = remember(context) { Markwon.create(context) }
     val markdownTextColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val markdownLinkColor = MaterialTheme.colorScheme.primary.toArgb()
-
-    Dialog(
+    AppDialogSurface(
         onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxHeight(0.8f),
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Column(
             modifier = Modifier
-                .fillMaxSize(0.8f)
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surface)
+                .fillMaxSize()
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -357,13 +353,13 @@ internal fun RepositoryMarkdownReader(
                             .height(160.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                        AppCircularProgressIndicator(size = 28.dp)
                     }
                 }
                 markdownState.error != null -> {
                     Text(
                         text = markdownState.error,
-                        color = Color(0xFFFF5252),
+                        color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -401,22 +397,23 @@ private fun RepositoryRefreshButton(
     loading: Boolean,
     onRefresh: () -> Unit
 ) {
-    IconButton(
-        onClick = onRefresh,
-        enabled = !loading,
-        modifier = Modifier.size(40.dp)
-    ) {
-        if (loading) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
+    if (loading) {
+        Box(
+            modifier = Modifier.size(48.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            AppCircularProgressIndicator(
+                size = 16.dp,
                 strokeWidth = 2.dp
             )
-        } else {
-            Icon(
-                imageVector = Icons.Outlined.Refresh,
-                contentDescription = "刷新"
-            )
         }
+    } else {
+        AppHeaderIconButton(
+            imageVector = Icons.Outlined.Refresh,
+            miuixImageVector = MiuixIcons.Useful.Refresh,
+            contentDescription = "刷新",
+            onClick = onRefresh
+        )
     }
 }
 
@@ -648,9 +645,9 @@ private fun RepositoryItemRow(
                     )
                 }
                 isDownloading -> {
-                    CircularProgressIndicator(
+                    AppCircularProgressIndicator(
                         progress = { progress },
-                        modifier = Modifier.size(24.dp),
+                        size = 24.dp,
                         strokeWidth = 2.5.dp
                     )
                 }

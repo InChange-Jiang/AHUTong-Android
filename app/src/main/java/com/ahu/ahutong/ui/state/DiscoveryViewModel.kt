@@ -3,7 +3,6 @@ package com.ahu.ahutong.ui.state
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -21,6 +20,8 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -44,9 +45,6 @@ class DiscoveryViewModel @Inject constructor(
     var balance by mutableStateOf(0.0)
     var transitionBalance by mutableStateOf(0.0)
 
-    val visibilities = mutableStateListOf<Int>()
-
-
     var qrcode = MutableStateFlow<Bitmap?>(null)
     var state = MutableStateFlow<Boolean>(false);
 
@@ -59,19 +57,20 @@ class DiscoveryViewModel @Inject constructor(
         }
 
         viewModelScope.launchSafe {
-
-            AHURepository.getCardMoney().onSuccess {
+            val (cardResult, bathroomResult) = coroutineScope {
+                val card = async { AHURepository.getCardMoney() }
+                val bathrooms = async { AHURepository.getBathRooms() }
+                card.await() to bathrooms.await()
+            }
+            cardResult.onSuccess {
                 applyCardBalance(it.balance, it.transitionBalance)
             }
-
-            AHURepository.getBathRooms().onSuccess {
+            bathroomResult.onSuccess {
                 bathroom.clear()
                 it.forEach { room ->
                     bathroom += room.bathroom to room.openStatus
                 }
             }
-
-
         }
     }
 

@@ -32,7 +32,6 @@ import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.component.ApkMirrorSourceDialog
 import com.ahu.ahutong.ui.component.ApkUpdateDialog
 import com.ahu.ahutong.ui.screen.Main
-import com.ahu.ahutong.ui.screen.main.CmbRechargeAutomationController
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.LoginViewModel
@@ -206,11 +205,6 @@ class MainActivity : ComponentActivity() {
         paymentQrCommands.clear()
         discoveryViewModel.clearQrCode()
         super.onStop()
-    }
-
-    override fun onDestroy() {
-        CmbRechargeAutomationController.discard()
-        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

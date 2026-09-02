@@ -23,6 +23,7 @@ import com.ahu.ahutong.data.crawler.utils.generateNonce
 import com.ahu.ahutong.data.crawler.utils.getTimestamp
 import com.ahu.ahutong.data.crawler.utils.sha256
 import com.ahu.ahutong.data.model.ElectricityChargeInfo
+import com.ahu.ahutong.data.model.ElectricityController
 import com.ahu.ahutong.data.model.ElectricityDepositHistoryItem
 import com.ahu.ahutong.data.model.RoomSelectionInfo
 import com.ahu.ahutong.personalization.preset.PresetCandidate
@@ -149,6 +150,9 @@ class ElectricityDepositViewModel @Inject constructor(
         _payState.value = PayState.Idle
     }
 
+    private val _selectedController = MutableStateFlow(AHUCache.getElectricityController())
+    val selectedController: StateFlow<ElectricityController> = _selectedController
+
     private val _campusList = MutableStateFlow<List<CampusDataItem>>(emptyList())
     val campusList: StateFlow<List<CampusDataItem>> = _campusList
 
@@ -200,13 +204,19 @@ class ElectricityDepositViewModel @Inject constructor(
             .take(MAX_ROOM_HISTORY)
         _historyOptions.value = history
         val lastSelection = AHUCache.getRoomSelection()
-            ?.takeIf(::isCompleteSelection)
-            ?: history.firstOrNull { isCompleteSelection(it.selection) }?.selection
+            ?.takeIf {
+                isCompleteSelection(it) &&
+                    (it.controller ?: ElectricityController.C) == _selectedController.value
+            }
+            ?: history.firstOrNull {
+                isCompleteSelection(it.selection) &&
+                    (it.selection.controller ?: ElectricityController.C) == _selectedController.value
+            }?.selection
         if (lastSelection != null) {
             Log.d("ElectricityDepositViewModel", "选择从缓存恢复")
             loadAndRestoreSelection(lastSelection)
         } else {
-            fetchCampuses()
+            fetchInitialOptions()
         }
         viewModelScope.launch {
             _presetCandidates.value = behaviorRuntime.rankLocalPresets(SemanticDomain.ELECTRICITY)
@@ -219,6 +229,9 @@ class ElectricityDepositViewModel @Inject constructor(
             _isLoading.value = true
             _errorMessage.value = null
             try {
+                val controller = selection.controller ?: ElectricityController.C
+                _selectedController.value = controller
+                AHUCache.setElectricityController(controller)
                 _selectedCampus.value = selection.campus
                 _selectedBuilding.value = selection.building
                 _selectedFloor.value = selection.floor
@@ -244,26 +257,27 @@ class ElectricityDepositViewModel @Inject constructor(
                 } ?: throw Exception(roomDetails.msg ?: "加载房间信息失败")
                 _isLoading.value = false
 
-                val (campuses, buildings, floors, rooms) = coroutineScope {
-                    val campusesRequest = async { getCampus() }
-                    val buildingsRequest = async { getBuildings() }
+                coroutineScope {
+                    val initialOptionsRequest = async { getInitialOptions() }
+                    val buildingsRequest = if (controller.requiresCampus) {
+                        async { getBuildings() }
+                    } else {
+                        null
+                    }
                     val floorsRequest = async { getFloor() }
                     val roomsRequest = async { getRoom() }
-                    listOf(
-                        campusesRequest.await(),
-                        buildingsRequest.await(),
-                        floorsRequest.await(),
-                        roomsRequest.await()
-                    )
+
+                    initialOptionsRequest.await().data?.let {
+                        if (controller.requiresCampus) {
+                            _campusList.value = it
+                        } else {
+                            _buildingsList.value = it
+                        }
+                    }
+                    buildingsRequest?.await()?.data?.let { _buildingsList.value = it }
+                    floorsRequest.await().data?.let { _floorsList.value = it }
+                    roomsRequest.await().data?.let { _roomsList.value = it }
                 }
-                @Suppress("UNCHECKED_CAST")
-                (campuses.data as? List<CampusDataItem>)?.let { _campusList.value = it }
-                @Suppress("UNCHECKED_CAST")
-                (buildings.data as? List<CampusDataItem>)?.let { _buildingsList.value = it }
-                @Suppress("UNCHECKED_CAST")
-                (floors.data as? List<CampusDataItem>)?.let { _floorsList.value = it }
-                @Suppress("UNCHECKED_CAST")
-                (rooms.data as? List<CampusDataItem>)?.let { _roomsList.value = it }
                 if (commitPresetOnRoomRequest) recordRoomPreset()
                 Log.d("ElectricityDepositViewModel", "从缓存恢复选择成功")
             } catch (e: CancellationException) {
@@ -290,6 +304,23 @@ class ElectricityDepositViewModel @Inject constructor(
         AHUCache.saveElectricityDepositHistory(updatedHistory)
     }
 
+    fun onControllerSelected(controller: ElectricityController) {
+        selectionLoadJob?.cancel()
+        _selectedController.value = controller
+        AHUCache.setElectricityController(controller)
+        _campusList.value = emptyList()
+        _selectedCampus.value = null
+        _buildingsList.value = emptyList()
+        _selectedBuilding.value = null
+        _floorsList.value = emptyList()
+        _selectedFloor.value = null
+        _roomsList.value = emptyList()
+        _selectedRoom.value = null
+        _fullRoomDetails.value = null
+        _roomInfo.value = null
+        fetchInitialOptions()
+    }
+
     fun onCampusSelected(campus: CampusDataItem) {
         selectionLoadJob?.cancel()
         _selectedCampus.value = campus
@@ -299,6 +330,7 @@ class ElectricityDepositViewModel @Inject constructor(
         _selectedFloor.value = null
         _roomsList.value = emptyList()
         _selectedRoom.value = null
+        _fullRoomDetails.value = null
         _roomInfo.value = null
         fetchBuildings()
     }
@@ -310,6 +342,7 @@ class ElectricityDepositViewModel @Inject constructor(
         _selectedFloor.value = null
         _roomsList.value = emptyList()
         _selectedRoom.value = null
+        _fullRoomDetails.value = null
         _roomInfo.value = null
         fetchFloor()
     }
@@ -319,6 +352,7 @@ class ElectricityDepositViewModel @Inject constructor(
         _selectedFloor.value = floor
         _roomsList.value = emptyList()
         _selectedRoom.value = null
+        _fullRoomDetails.value = null
         _roomInfo.value = null
         fetchRoom()
     }
@@ -326,37 +360,43 @@ class ElectricityDepositViewModel @Inject constructor(
     fun onRoomSelected(room: CampusDataItem) {
         selectionLoadJob?.cancel()
         _selectedRoom.value = room
+        _fullRoomDetails.value = null
         _roomInfo.value = null
         fetchRoomInfo()
     }
 
     fun retry() {
         when {
-            _selectedCampus.value == null -> fetchCampuses()
-            _selectedBuilding.value == null -> fetchBuildings()
+            _selectedController.value.requiresCampus && _selectedCampus.value == null -> fetchInitialOptions()
+            _selectedBuilding.value == null && _selectedController.value.requiresCampus -> fetchBuildings()
+            _selectedBuilding.value == null -> fetchInitialOptions()
             _selectedFloor.value == null -> fetchFloor()
             _selectedRoom.value == null -> fetchRoom()
             else -> fetchRoomInfo()
         }
     }
 
-    private fun fetchCampuses() {
+    private fun fetchInitialOptions() {
         selectionLoadJob = viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             try {
-                val response = getCampus()
+                val response = getInitialOptions()
                 if (response.code == 0 && response.data != null) {
                     val items = response.data!!
-                    _campusList.value = items
-                    if (_selectedCampus.value == null) {
-                        items.firstOrNull()?.let { first ->
-                            _selectedCampus.value = first
-                            fetchBuildings()
+                    if (_selectedController.value.requiresCampus) {
+                        _campusList.value = items
+                        if (_selectedCampus.value == null) {
+                            items.firstOrNull()?.let { first ->
+                                _selectedCampus.value = first
+                                fetchBuildings()
+                            }
                         }
+                    } else {
+                        _buildingsList.value = items
                     }
                 } else {
-                    _errorMessage.value = response.msg ?: "加载校区失败"
+                    _errorMessage.value = response.msg ?: "加载电控选项失败"
                 }
             } catch (e: Exception) {
                 _errorMessage.value = "网络错误: ${e.message}"
@@ -368,22 +408,22 @@ class ElectricityDepositViewModel @Inject constructor(
         }
     }
 
-    private suspend fun getCampus(): AHUResponse<List<CampusDataItem>> {
+    private suspend fun getInitialOptions(): AHUResponse<List<CampusDataItem>> {
         val responseWrapper = AHUResponse<List<CampusDataItem>>()
         val formBody = FormBody.Builder()
-            .add("feeitemid", "488")
+            .add("feeitemid", _selectedController.value.feeItemId)
             .add("type", "select")
             .add("level", "0")
             .build()
         try {
             val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
-            Log.d("ElectricityDepositViewModel", "getCampus响应码: ${res.code()}")
+            Log.d("ElectricityDepositViewModel", "getInitialOptions响应码: ${res.code()}")
             val responseBody = res.body()?.string()
             if (res.isSuccessful) {
                 if (responseBody.isNullOrEmpty()) {
                     responseWrapper.code = -1
                     responseWrapper.msg = "服务器返回内容为空"
-                    Log.e("ElectricityDepositViewModel", "getCampus Error: Server returned empty body")
+                    Log.e("ElectricityDepositViewModel", "getInitialOptions Error: Server returned empty body")
                     return responseWrapper
                 }
                 val parsedResponse = Gson().fromJson(responseBody, CampusApiResponse::class.java)
@@ -391,21 +431,21 @@ class ElectricityDepositViewModel @Inject constructor(
                     responseWrapper.code = 0
                     responseWrapper.msg = "success"
                     responseWrapper.data = parsedResponse.map.data
-                    Log.d("ElectricityDepositViewModel", "getCampus Success: Loaded ${parsedResponse.map.data.size} items")
+                    Log.d("ElectricityDepositViewModel", "getInitialOptions Success: Loaded ${parsedResponse.map.data.size} items")
                 } else {
                     responseWrapper.code = -1
-                    responseWrapper.msg = "解析数据失败，未找到校区列表"
-                    Log.e("ElectricityDepositViewModel", "getCampus Parse Error: map.data is null")
+                    responseWrapper.msg = "解析数据失败，未找到电控选项"
+                    Log.e("ElectricityDepositViewModel", "getInitialOptions Parse Error: map.data is null")
                 }
             } else {
                 responseWrapper.code = res.code()
                 responseWrapper.msg = "请求接口失败: ${res.message()}"
-                Log.e("ElectricityDepositViewModel", "getCampus Network Error: ${res.code()} ${res.message()}")
+                Log.e("ElectricityDepositViewModel", "getInitialOptions Network Error: ${res.code()} ${res.message()}")
             }
         } catch (e: Exception) {
             responseWrapper.code = -1
             responseWrapper.msg = "发生未知错误: ${e.message}"
-            Log.e("ElectricityDepositViewModel", "getCampus Exception", e)
+            Log.e("ElectricityDepositViewModel", "getInitialOptions Exception", e)
         }
         return responseWrapper
     }
@@ -446,7 +486,7 @@ class ElectricityDepositViewModel @Inject constructor(
         }
 
         val formBody = FormBody.Builder()
-            .add("feeitemid", "488")
+            .add("feeitemid", _selectedController.value.feeItemId)
             .add("type", "select")
             .add("level", "1")
             .add("campus", selectedCampusValue)
@@ -511,7 +551,9 @@ class ElectricityDepositViewModel @Inject constructor(
 
     private suspend fun getFloor(): AHUResponse<List<CampusDataItem>> {
         val responseWrapper = AHUResponse<List<CampusDataItem>>()
-        val selectedCampusValue = _selectedCampus.value?.value ?: run {
+        val controller = _selectedController.value
+        val selectedCampusValue = _selectedCampus.value?.value
+        if (controller.requiresCampus && selectedCampusValue == null) {
             responseWrapper.code = -1
             responseWrapper.msg = "selectedCampusValue内容为空"
             return responseWrapper
@@ -522,11 +564,12 @@ class ElectricityDepositViewModel @Inject constructor(
             return responseWrapper
         }
 
-        val formBody = FormBody.Builder()
-            .add("feeitemid", "488")
+        val formBuilder = FormBody.Builder()
+            .add("feeitemid", controller.feeItemId)
             .add("type", "select")
-            .add("level", "2")
-            .add("campus", selectedCampusValue)
+            .add("level", controller.floorLevel)
+        if (selectedCampusValue != null) formBuilder.add("campus", selectedCampusValue)
+        val formBody = formBuilder
             .add("building", selectedBuildingValue)
             .build()
 
@@ -589,12 +632,14 @@ class ElectricityDepositViewModel @Inject constructor(
 
     private suspend fun getRoom(): AHUResponse<List<CampusDataItem>> {
         val responseWrapper = AHUResponse<List<CampusDataItem>>()
+        val controller = _selectedController.value
         val selectedFloorValue = _selectedFloor.value?.value ?: run {
             responseWrapper.code = -1
             responseWrapper.msg = "selectedFloorValue内容为空"
             return responseWrapper
         }
-        val selectedCampusValue = _selectedCampus.value?.value ?: run {
+        val selectedCampusValue = _selectedCampus.value?.value
+        if (controller.requiresCampus && selectedCampusValue == null) {
             responseWrapper.code = -1
             responseWrapper.msg = "_selectedCampus内容为空"
             return responseWrapper
@@ -605,11 +650,12 @@ class ElectricityDepositViewModel @Inject constructor(
             return responseWrapper
         }
 
-        val formBody = FormBody.Builder()
-            .add("feeitemid", "488")
+        val formBuilder = FormBody.Builder()
+            .add("feeitemid", controller.feeItemId)
             .add("type", "select")
-            .add("level", "3")
-            .add("campus", selectedCampusValue)
+            .add("level", controller.roomLevel)
+        if (selectedCampusValue != null) formBuilder.add("campus", selectedCampusValue)
+        val formBody = formBuilder
             .add("building", selectedBuildingValue)
             .add("floor", selectedFloorValue)
             .build()
@@ -685,7 +731,13 @@ class ElectricityDepositViewModel @Inject constructor(
         candidatesAtOpportunity = _presetCandidates.value
         val selection = runCatching { Gson().fromJson(applied.localPayloadJson, RoomSelectionInfo::class.java) }.getOrNull()
             ?: return@launch
-        if (selection.campus == null || selection.building == null || selection.floor == null || selection.room == null) {
+        val controller = selection.controller ?: ElectricityController.C
+        if (
+            selection.building == null ||
+            selection.floor == null ||
+            selection.room == null ||
+            controller.requiresCampus && selection.campus == null
+        ) {
             return@launch
         }
         _presetCandidates.value = emptyList()
@@ -697,18 +749,27 @@ class ElectricityDepositViewModel @Inject constructor(
             campus = _selectedCampus.value,
             building = _selectedBuilding.value,
             floor = _selectedFloor.value,
-            room = _selectedRoom.value
+            room = _selectedRoom.value,
+            controller = _selectedController.value
         )
-        val campus = selection.campus ?: return
+        val controller = selection.controller ?: ElectricityController.C
+        val campus = selection.campus
         val building = selection.building ?: return
         val floor = selection.floor ?: return
         val room = selection.room ?: return
+        if (controller.requiresCampus && campus == null) return
         behaviorRuntime.recordNaturalPresetSubmission(
             PresetSubmission(
                 SemanticDomain.ELECTRICITY,
                 Gson().toJson(selection),
                 "{\"roomCategory\":\"RECENT_LOCAL_ROOM\"}",
-                "${campus.value}|${building.value}|${floor.value}|${room.value}"
+                listOf(
+                    controller.name,
+                    campus?.value.orEmpty(),
+                    building.value,
+                    floor.value,
+                    room.value
+                ).joinToString("|")
             ),
             interactionToken = activePresetInteraction,
             candidatesAtOpportunity = candidatesAtOpportunity.ifEmpty { _presetCandidates.value }
@@ -747,6 +808,7 @@ class ElectricityDepositViewModel @Inject constructor(
 
     private suspend fun getRoomInfo(): AHUResponse<RoomInfoMap> {
         val responseWrapper = AHUResponse<RoomInfoMap>()
+        val controller = _selectedController.value
 
         val selectedRoomValue = _selectedRoom.value?.value ?: run {
             responseWrapper.code = -1
@@ -763,17 +825,19 @@ class ElectricityDepositViewModel @Inject constructor(
             responseWrapper.msg = "selectedBuildingValue内容为空"
             return responseWrapper
         }
-        val selectedCampusValue = _selectedCampus.value?.value ?: run {
+        val selectedCampusValue = _selectedCampus.value?.value
+        if (controller.requiresCampus && selectedCampusValue == null) {
             responseWrapper.code = -1
             responseWrapper.msg = "selectedCampusValue内容为空"
             return responseWrapper
         }
 
-        val formBody = FormBody.Builder()
-            .add("feeitemid", "488")
+        val formBuilder = FormBody.Builder()
+            .add("feeitemid", controller.feeItemId)
             .add("type", "IEC")
-            .add("level", "4")
-            .add("campus", selectedCampusValue)
+            .add("level", controller.roomInfoLevel)
+        if (selectedCampusValue != null) formBuilder.add("campus", selectedCampusValue)
+        val formBody = formBuilder
             .add("building", selectedBuildingValue)
             .add("floor", selectedFloorValue)
             .add("room", selectedRoomValue)
@@ -833,7 +897,7 @@ class ElectricityDepositViewModel @Inject constructor(
         val thirdPartyJson = Gson().toJson(paymentData)
         val formBody = buildSignedFormBody(
             linkedMapOf(
-                "feeitemid" to "488",
+                "feeitemid" to _selectedController.value.feeItemId,
                 "tranamt" to amount,
                 "flag" to "choose",
                 "source" to "app",
@@ -1011,7 +1075,8 @@ class ElectricityDepositViewModel @Inject constructor(
                             campus = _selectedCampus.value,
                             building = _selectedBuilding.value,
                             floor = _selectedFloor.value,
-                            room = _selectedRoom.value
+                            room = _selectedRoom.value,
+                            controller = _selectedController.value
                         )
                         persistCurrentSelection(
                             selection = roomSelectionInfo,
@@ -1078,7 +1143,8 @@ class ElectricityDepositViewModel @Inject constructor(
     }
 
     private fun isCompleteSelection(selection: RoomSelectionInfo): Boolean {
-        return selection.campus != null &&
+        val controller = selection.controller ?: ElectricityController.C
+        return (!controller.requiresCampus || selection.campus != null) &&
             selection.building != null &&
             selection.floor != null &&
             selection.room != null
@@ -1089,7 +1155,8 @@ class ElectricityDepositViewModel @Inject constructor(
             campus = _selectedCampus.value,
             building = _selectedBuilding.value,
             floor = _selectedFloor.value,
-            room = _selectedRoom.value
+            room = _selectedRoom.value,
+            controller = _selectedController.value
         ),
         confirmedByPayment: Boolean = false
     ) {
@@ -1097,10 +1164,12 @@ class ElectricityDepositViewModel @Inject constructor(
 
         saveRoomSelection(selection)
         if (!confirmedByPayment) return
-        val label = normalizeLabel(
+        val roomLabel = normalizeLabel(
             _fullRoomDetails.value?.data?.roomName ?: selection.room?.name.orEmpty()
         )
-        if (label.isBlank()) return
+        if (roomLabel.isBlank()) return
+        val controller = selection.controller ?: ElectricityController.C
+        val label = "${controller.displayName} · $roomLabel"
 
         val item = ElectricityDepositHistoryItem(
             selection = selection,
@@ -1118,6 +1187,7 @@ class ElectricityDepositViewModel @Inject constructor(
 
     private fun selectionKey(selection: RoomSelectionInfo): String {
         return listOf(
+            (selection.controller ?: ElectricityController.C).name,
             selection.campus?.value,
             selection.building?.value,
             selection.floor?.value,

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.PayState
+import com.ahu.ahutong.data.model.ElectricityController
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
@@ -56,6 +57,7 @@ fun ElectricityDeposit(
 ) {
     val behaviorReporter = rememberBehaviorActionReporter()
     val payState by viewModel.payState.collectAsState()
+    val selectedController by viewModel.selectedController.collectAsState()
     val campusList by viewModel.campusList.collectAsState()
     val selectedCampus by viewModel.selectedCampus.collectAsState()
     val buildingsList by viewModel.buildingsList.collectAsState()
@@ -74,6 +76,9 @@ fun ElectricityDeposit(
     var showPasswordDialog by rememberSaveable { mutableStateOf(false) }
     var password by rememberSaveable { mutableStateOf("") }
     var passwordError by rememberSaveable { mutableStateOf<String?>(null) }
+    val controllerOptions = remember {
+        ElectricityController.entries.map { AppSelectOption(it, it.displayName) }
+    }
     val campusOptions = remember(campusList) {
         campusList.map { AppSelectOption(it, it.name) }
     }
@@ -94,8 +99,9 @@ fun ElectricityDeposit(
         }
     }
 
-    val canPay = selectedCampus != null && selectedBuilding != null && selectedFloor != null &&
-        selectedRoom != null && amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
+    val canPay = (!selectedController.requiresCampus || selectedCampus != null) &&
+        selectedBuilding != null && selectedFloor != null && selectedRoom != null &&
+        amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
         !isLoading && payState is PayState.Idle
 
     AppScrollablePageLayout(
@@ -150,7 +156,7 @@ fun ElectricityDeposit(
 
         val loadingSelector = when {
             !isLoading -> null
-            selectedCampus == null -> ElectricitySelectorLevel.Campus
+            selectedController.requiresCampus && selectedCampus == null -> ElectricitySelectorLevel.Campus
             selectedBuilding == null -> ElectricitySelectorLevel.Building
             selectedFloor == null -> ElectricitySelectorLevel.Floor
             selectedRoom == null -> ElectricitySelectorLevel.Room
@@ -160,24 +166,35 @@ fun ElectricityDeposit(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            ElectricitySelectorField(
-                label = "校区",
-                selected = selectedCampus,
-                options = campusOptions,
-                onSelected = viewModel::onCampusSelected,
-                modifier = Modifier,
-                placeholder = "请选择校区",
+            AppSelectField(
+                label = "电控入口",
+                selected = selectedController,
+                options = controllerOptions,
+                onSelected = viewModel::onControllerSelected,
+                modifier = Modifier.fillMaxWidth(),
                 enabled = !isLoading,
-                loading = loadingSelector == ElectricitySelectorLevel.Campus
+                miuixStandalone = true
             )
+            if (selectedController.requiresCampus) {
+                ElectricitySelectorField(
+                    label = "校区",
+                    selected = selectedCampus,
+                    options = campusOptions,
+                    onSelected = viewModel::onCampusSelected,
+                    modifier = Modifier,
+                    placeholder = "请选择校区",
+                    enabled = !isLoading,
+                    loading = loadingSelector == ElectricitySelectorLevel.Campus
+                )
+            }
             ElectricitySelectorField(
                 label = "楼栋",
                 selected = selectedBuilding,
                 options = buildingOptions,
                 onSelected = viewModel::onBuildingSelected,
                 modifier = Modifier,
-                placeholder = "请先选择校区",
-                enabled = selectedCampus != null && !isLoading,
+                placeholder = if (selectedController.requiresCampus) "请先选择校区" else "请选择楼栋",
+                enabled = (!selectedController.requiresCampus || selectedCampus != null) && !isLoading,
                 loading = loadingSelector == ElectricitySelectorLevel.Building
             )
             ElectricitySelectorField(
@@ -203,94 +220,94 @@ fun ElectricityDeposit(
         }
 
         roomInfo?.takeIf(String::isNotBlank)?.let { info ->
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .fillMaxWidth()
-                        .appLiquidGlassSurface(
-                            shape = AppComponentTokens.CardShape,
-                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                            level = LiquidGlassSurfaceLevel.Panel
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        text = "房间信息",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = info.replace("，", "\n"),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
-
-        Column(
+            Column(
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .fillMaxWidth()
+                    .appLiquidGlassSurface(
+                        shape = AppComponentTokens.CardShape,
+                        fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                        level = LiquidGlassSurfaceLevel.Panel
+                    )
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(
-                    text = "缴费金额",
+                    text = "房间信息",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                AppTextField(
-                    value = amount,
-                    onValueChange = { input ->
-                        if (input.isEmpty() || Regex("^\\d*\\.?\\d{0,2}$").matches(input)) {
-                            amount = input
-                        }
-                    },
-                    label = "金额（元）",
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isLoading,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+                Text(
+                    text = info.replace("，", "\n"),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyLarge
                 )
             }
+        }
 
         Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                when (val state = payState) {
-                    PayState.Idle -> Unit
-                    PayState.InProgress -> Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AppCircularProgressIndicator(size = 24.dp, strokeWidth = 3.dp)
-                        Text("  正在提交缴费", style = MaterialTheme.typography.bodyLarge)
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "缴费金额",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            AppTextField(
+                value = amount,
+                onValueChange = { input ->
+                    if (input.isEmpty() || Regex("^\\d*\\.?\\d{0,2}$").matches(input)) {
+                        amount = input
                     }
-                    is PayState.Succeeded -> Text(
-                        text = "缴费成功，订单号：${state.message}",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    is PayState.Failed -> Text(
-                        text = "缴费失败：${state.message}",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-                AppButton(
-                    onClick = { showPasswordDialog = true },
+                },
+                label = "金额（元）",
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Decimal,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            when (val state = payState) {
+                PayState.Idle -> Unit
+                PayState.InProgress -> Row(
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = canPay
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
+                    AppCircularProgressIndicator(size = 24.dp, strokeWidth = 3.dp)
+                    Text("  正在提交缴费", style = MaterialTheme.typography.bodyLarge)
                 }
+                is PayState.Succeeded -> Text(
+                    text = "缴费成功，订单号：${state.message}",
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                is PayState.Failed -> Text(
+                    text = "缴费失败：${state.message}",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            AppButton(
+                onClick = { showPasswordDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = canPay
+            ) {
+                Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
+            }
         }
     }
 

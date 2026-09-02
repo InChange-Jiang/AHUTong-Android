@@ -7,6 +7,7 @@ import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundTypeItem
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.model.ElectricityChargeInfo
+import com.ahu.ahutong.data.model.ElectricityController
 import com.ahu.ahutong.data.model.ElectricityDepositHistoryItem
 import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.data.model.EvalPreset
@@ -664,6 +665,19 @@ object AHUCache {
                 CardRechargeBank.AGRICULTURAL_BANK
             }
         )
+    }
+
+    fun getElectricityController(): ElectricityController {
+        val value = userGetStringOrMigrate("electricity_controller") {
+            kv.decodeString("electricity_controller")
+        }
+        return ElectricityController.entries.firstOrNull { it.name == value }
+            ?: ElectricityController.C
+    }
+
+    fun setElectricityController(controller: ElectricityController) {
+        userPutString("electricity_controller", controller.name)
+        kv.putString("electricity_controller", controller.name)
     }
 
     /**

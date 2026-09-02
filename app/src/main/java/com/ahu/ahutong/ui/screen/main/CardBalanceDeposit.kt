@@ -84,8 +84,7 @@ fun CardBalanceDeposit(
     val cardInfo = viewModel.cardInfo.collectAsState()
     val accountState by viewModel.accountState.collectAsState()
 
-    val agriculturalPaymentState by viewModel.paymentState.collectAsState()
-    val cmbRechargeState by CmbRechargeAutomationController.state.collectAsState()
+    val paymentState by viewModel.paymentState.collectAsState()
 
     var showAlipayConfirmDialog by remember { mutableStateOf(false) }
     var copyCampusCardInfo by remember { mutableStateOf(false) }
@@ -97,21 +96,12 @@ fun CardBalanceDeposit(
     val currentUser = remember { AHUCache.getCurrentUser() }
     val campusCardUserName = currentUser?.name.orEmpty()
     val campusCardStudentId = currentUser?.xh.orEmpty()
-    val paymentState = when (selectedRechargeBank) {
-        CardRechargeBank.CHINA_MERCHANTS_BANK -> cmbRechargeState.toPaymentState()
-        CardRechargeBank.AGRICULTURAL_BANK -> agriculturalPaymentState
-        CardRechargeBank.ALIPAY,
-        null -> PaymentState.Idle
-    }
-
     fun selectRechargeBank(bank: CardRechargeBank) {
         if (paymentState == PaymentState.Loading) return
         selectedRechargeBank = bank
         AHUCache.setCardRechargeBank(bank)
         if (bank == CardRechargeBank.ALIPAY) copyCampusCardInfo = false
         viewModel.resetPaymentState()
-        CmbRechargeAutomationController.resetPaymentState()
-        CmbRechargeAutomationController.onBankSelected(context, bank)
     }
 
     fun submitRecharge() {
@@ -119,11 +109,17 @@ fun CardBalanceDeposit(
             CardRechargeBank.ALIPAY -> showAlipayConfirmDialog = true
             CardRechargeBank.CHINA_MERCHANTS_BANK -> {
                 behaviorReporter.organic(AppActionId.SUBMIT_CMB_CARD_RECHARGE)
-                CmbRechargeAutomationController.submit(context = context, amount = amount)
+                viewModel.charge(
+                    value = amount,
+                    bank = CardRechargeBank.CHINA_MERCHANTS_BANK
+                )
             }
             CardRechargeBank.AGRICULTURAL_BANK -> {
                 behaviorReporter.organic(AppActionId.SUBMIT_CARD_RECHARGE)
-                viewModel.charge(amount)
+                viewModel.charge(
+                    value = amount,
+                    bank = CardRechargeBank.AGRICULTURAL_BANK
+                )
             }
             null -> Unit
         }
@@ -131,9 +127,6 @@ fun CardBalanceDeposit(
 
     LaunchedEffect(Unit) {
         viewModel.load()
-        if (selectedRechargeBank == CardRechargeBank.CHINA_MERCHANTS_BANK) {
-            (context as? android.app.Activity)?.let(CmbRechargeAutomationController::schedulePreload)
-        }
     }
 
     LaunchedEffect(mockRefreshRevision) {
@@ -147,18 +140,10 @@ fun CardBalanceDeposit(
             delay(1_000L)
             viewModel.load()
             delay(PAYMENT_RESULT_DISPLAY_DURATION_MS - 1_000L)
-            if (selectedRechargeBank == CardRechargeBank.CHINA_MERCHANTS_BANK) {
-                CmbRechargeAutomationController.resetPaymentState()
-            } else {
-                viewModel.resetPaymentState()
-            }
+            viewModel.resetPaymentState()
         } else if (paymentState is PaymentState.Error) {
             delay(PAYMENT_RESULT_DISPLAY_DURATION_MS)
-            if (selectedRechargeBank == CardRechargeBank.CHINA_MERCHANTS_BANK) {
-                CmbRechargeAutomationController.resetPaymentState()
-            } else {
-                viewModel.resetPaymentState()
-            }
+            viewModel.resetPaymentState()
         }
     }
     val canConfirm = paymentState == PaymentState.Idle && when (selectedRechargeBank) {
@@ -429,13 +414,6 @@ fun CardBalanceDeposit(
             }
         }
 
-        if (cmbRechargeState.phase == CmbRechargePaymentPhase.PASSWORD_REQUIRED) {
-            CmbRechargeQueryPasswordDialog(
-                onCancel = CmbRechargeAutomationController::cancelPassword,
-                onConfirm = CmbRechargeAutomationController::submitPassword
-            )
-        }
-
     }
 
 }
@@ -446,17 +424,6 @@ private val CardRechargeBank.displayName: String
         CardRechargeBank.CHINA_MERCHANTS_BANK -> "招商银行"
         CardRechargeBank.ALIPAY -> "支付宝"
     }
-
-private fun CmbRechargeAutomationState.toPaymentState(): PaymentState = when (phase) {
-    CmbRechargePaymentPhase.IDLE,
-    CmbRechargePaymentPhase.PASSWORD_REQUIRED -> PaymentState.Idle
-
-    CmbRechargePaymentPhase.LOADING -> PaymentState.Loading
-    CmbRechargePaymentPhase.SUCCESS -> PaymentState.Success("招商银行")
-    CmbRechargePaymentPhase.ERROR -> PaymentState.Error(
-        errorMessage ?: "招商银行充值失败，请重试"
-    )
-}
 
 private enum class CampusCardIdentityCopyState {
     Complete,

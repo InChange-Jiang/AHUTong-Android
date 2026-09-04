@@ -31,11 +31,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.weather.WeatherResponse
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
@@ -47,6 +50,10 @@ import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.AppFilterChip
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.SecondarySearchState
+import com.ahu.ahutong.ui.components.TrailingAction
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.WeatherHomeMode
 import com.ahu.ahutong.ui.state.WeatherViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -101,52 +108,7 @@ fun Weather(
         }
     }
 
-    AppScrollablePageLayout(
-        title = weatherViewModel.locationName.ifBlank { "天气" },
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp,
-        actions = {
-            AppHeaderIconButton(
-                imageVector = if (showSearch) Icons.Default.Close else Icons.Default.Search,
-                miuixImageVector = if (showSearch) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
-                contentDescription = if (showSearch) "关闭搜索" else "搜索城市",
-                onClick = {
-                    showSearch = !showSearch
-                    if (!showSearch) searchCity = ""
-                }
-            )
-            AppHeaderIconButton(
-                imageVector = Icons.Default.Settings,
-                miuixImageVector = MiuixIcons.Useful.Settings,
-                contentDescription = "设置",
-                onClick = { showSettings = true }
-            )
-            AppHeaderIconButton(
-                imageVector = Icons.Default.Refresh,
-                miuixImageVector = MiuixIcons.Useful.Refresh,
-                contentDescription = "刷新",
-                onClick = {
-                    weatherViewModel.refresh()
-                    Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
-                }
-            )
-        }
-    ) {
-        Column(modifier = Modifier.padding(horizontal = AppComponentTokens.HeaderHorizontalPadding)) {
-            if (showSearch) {
-                AppSearchField(
-                    value = searchCity,
-                    onValueChange = { searchCity = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    placeholder = "输入城市名，如 合肥",
-                    onSearch = { submitCitySearch() }
-                )
-                Spacer(Modifier.height(16.dp))
-            }
-
+    val weatherContent: @Composable () -> Unit = {
         if (weatherViewModel.isLoading) {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(48.dp),
@@ -216,6 +178,89 @@ fun Weather(
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = weatherViewModel.locationName.ifBlank { "天气" },
+            actions = listOf(
+                TrailingAction(
+                    ImageVector.vectorResource(R.drawable.ic_find),
+                    "搜索城市"
+                ) { showSearch = true },
+                TrailingAction(
+                    ImageVector.vectorResource(R.drawable.ic_config),
+                    "设置"
+                ) { showSettings = true },
+                TrailingAction(
+                    ImageVector.vectorResource(R.drawable.ic_refresh),
+                    "刷新"
+                ) {
+                    weatherViewModel.refresh()
+                    Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
+                }
+            ),
+            search = SecondarySearchState(
+                query = searchCity,
+                visible = showSearch,
+                onQueryChange = { searchCity = it },
+                onClose = {
+                    showSearch = false
+                    searchCity = ""
+                },
+                onSubmit = { submitCitySearch() }
+            )
+        ) {
+            weatherContent()
+        }
+    } else {
+        AppScrollablePageLayout(
+            title = weatherViewModel.locationName.ifBlank { "天气" },
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            actions = {
+                AppHeaderIconButton(
+                    imageVector = if (showSearch) Icons.Default.Close else Icons.Default.Search,
+                    miuixImageVector = if (showSearch) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
+                    contentDescription = if (showSearch) "关闭搜索" else "搜索城市",
+                    onClick = {
+                        showSearch = !showSearch
+                        if (!showSearch) searchCity = ""
+                    }
+                )
+                AppHeaderIconButton(
+                    imageVector = Icons.Default.Settings,
+                    miuixImageVector = MiuixIcons.Useful.Settings,
+                    contentDescription = "设置",
+                    onClick = { showSettings = true }
+                )
+                AppHeaderIconButton(
+                    imageVector = Icons.Default.Refresh,
+                    miuixImageVector = MiuixIcons.Useful.Refresh,
+                    contentDescription = "刷新",
+                    onClick = {
+                        weatherViewModel.refresh()
+                        Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        ) {
+            Column(modifier = Modifier.padding(horizontal = AppComponentTokens.HeaderHorizontalPadding)) {
+                if (showSearch) {
+                    AppSearchField(
+                        value = searchCity,
+                        onValueChange = { searchCity = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = "输入城市名，如 合肥",
+                        onSearch = { submitCitySearch() }
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+                weatherContent()
             }
         }
     }
@@ -235,14 +280,14 @@ fun Weather(
                 Text(
                     "选择首页天气样式和详细卡片信息：",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = 50.n1 withNight 80.n1
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(8.dp))
 
                 Text(
                     "首页样式",
                     style = MaterialTheme.typography.labelLarge,
-                    color = 0.n1 withNight 100.n1
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     WeatherModeChip(
@@ -290,7 +335,11 @@ fun Weather(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(item.label, modifier = Modifier.weight(1f), color = 0.n1 withNight 100.n1)
+                        Text(
+                            item.label,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
                         AppToggle(
                             checked = item.value,
                             onCheckedChange = item.onChange,

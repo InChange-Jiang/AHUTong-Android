@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
+import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
 import com.ahu.ahutong.ui.utils.DampedDragAnimation
 import com.ahu.ahutong.ui.utils.InteractiveHighlight
 import com.kyant.backdrop.Backdrop
@@ -55,7 +57,6 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
-import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.flow.collectLatest
@@ -74,26 +75,27 @@ fun LiquidBottomTabs(
     onCurrentTabTapped: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
-    val isLiquid = LocalIsLiquidGlassEnabled.current
-    val backdrop = if (isLiquid) backdrop else emptyBackdrop()
+    val tokens = LocalLiquidGlassTokens.current
+    val isLiquid = tokens.enabled
+    val canBlur = tokens.quality.supportsBlur
+    val canRefract = tokens.quality.supportsRefraction
+    val capturesBackdrop = tokens.quality.supportsBackdrop
+    val backdrop = if (capturesBackdrop) backdrop else emptyBackdrop()
 
     val isLightTheme = MaterialTheme.colorScheme.surface.luminance() > 0.5f
-    val accentColor =
-        if (isLiquid) {
-            if (isLightTheme) Color(0xFF0088FF)
-            else Color(0xFF0091FF)
-        } else {
-            50.a1 withNight 60.a1
-        }
+    val accentColor = MaterialTheme.colorScheme.primary
     val containerColor =
-        if (isLiquid) {
+        if (!isLiquid) {
+            100.n1 withNight 20.n1
+        } else if (!canBlur) {
+            tokens.floating.legacyTint
+        } else {
             if (isLightTheme) Color(0xFFFAFAFA).copy(0.4f)
             else Color(0xFF121212).copy(0.4f)
-        } else {
-            100.n1 withNight 20.n1
         }
 
     val tabsBackdrop = rememberLayerBackdrop()
+    val tabsSource: Backdrop = if (capturesBackdrop) tabsBackdrop else emptyBackdrop()
 
     BoxWithConstraints(
         modifier,
@@ -182,6 +184,7 @@ fun LiquidBottomTabs(
 
         Row(
             Modifier
+                .selectableGroup()
                 .graphicsLayer {
                     translationX = panelOffset
                 }
@@ -189,10 +192,15 @@ fun LiquidBottomTabs(
                     backdrop = backdrop,
                     shape = { ContinuousCapsule },
                     effects = {
-                        if (isLiquid) {
+                        if (canBlur) {
                             vibrancy()
-                            blur(8f.dp.toPx())
-                            lens(24f.dp.toPx(), 24f.dp.toPx())
+                            blur(tokens.floating.blurRadius.toPx())
+                        }
+                        if (canRefract) {
+                            lens(
+                                tokens.floating.refractionHeight.toPx(),
+                                tokens.floating.refractionAmount.toPx()
+                            )
                         }
                     },
                     layerBlock = {
@@ -223,7 +231,9 @@ fun LiquidBottomTabs(
                 Modifier
                     .clearAndSetSemantics {}
                     .alpha(0f)
-                    .layerBackdrop(tabsBackdrop)
+                    .then(
+                        if (capturesBackdrop) Modifier.layerBackdrop(tabsBackdrop) else Modifier
+                    )
                     .graphicsLayer {
                         translationX = panelOffset
                     }
@@ -231,13 +241,15 @@ fun LiquidBottomTabs(
                         backdrop = backdrop,
                         shape = { ContinuousCapsule },
                         effects = {
-                            if (isLiquid) {
-                                val progress = dampedDragAnimation.pressProgress
+                            val progress = dampedDragAnimation.pressProgress
+                            if (canBlur) {
                                 vibrancy()
-                                blur(8f.dp.toPx())
+                                blur(tokens.floating.blurRadius.toPx())
+                            }
+                            if (canRefract && progress > 0f) {
                                 lens(
-                                    24f.dp.toPx() * progress,
-                                    24f.dp.toPx() * progress
+                                    tokens.floating.refractionHeight.toPx() * progress,
+                                    tokens.floating.refractionAmount.toPx() * progress
                                 )
                             }
                         },
@@ -287,16 +299,17 @@ fun LiquidBottomTabs(
                     }
                 )
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                    backdrop = rememberCombinedBackdrop(backdrop, tabsSource),
                     shape = { ContinuousCapsule },
                     effects = {
-                        if (isLiquid) {
+                        if (canRefract) {
                             val progress = dampedDragAnimation.pressProgress
-                            lens(
-                                10f.dp.toPx() * progress,
-                                14f.dp.toPx() * progress,
-                                chromaticAberration = true
-                            )
+                            if (progress > 0f) {
+                                lens(
+                                    tokens.control.refractionHeight.toPx() * progress,
+                                    tokens.control.refractionAmount.toPx() * progress
+                                )
+                            }
                         }
                     },
                     highlight = {

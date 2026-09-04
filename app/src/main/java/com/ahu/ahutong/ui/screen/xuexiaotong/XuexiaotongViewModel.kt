@@ -12,7 +12,9 @@ import com.ahu.ahutong.data.xuexiaotong.RemindSetting
 import com.ahu.ahutong.data.xuexiaotong.Store
 import com.ahu.ahutong.data.xuexiaotong.Work
 import com.ahu.ahutong.reminder.ReminderScheduler
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +79,9 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
         _works.value = Store.getWorks()
         _courses.value = Store.getCourses()
         _progress.value = Store.getCourseProgress()
+        _lastSync.value = Store.getLastSync()
+        _remindSetting.value = Store.getRemindSetting()
+        _customEvents.value = Store.getCustomEvents()
         _showDone.value = Store.getShowDone()
         _doneGray.value = Store.getDoneGray()
         _showEmptyCourses.value = Store.getShowEmptyCourses()
@@ -107,18 +112,23 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
     }
 
     fun logout() {
+        _loggedIn.value = false
+        viewModelScope.coroutineContext.cancelChildren()
         ReminderScheduler.cancelAll(appContext)
         api.clearSession()
         Store.clearLoginData()
-        Store.clearCredential()
-        _loggedIn.value = false
         _works.value = emptyList()
         _courses.value = emptyList()
         _progress.value = emptyList()
+        _lastSync.value = 0L
+        _syncProgress.value = SyncProgress()
+        _courseSyncProgress.value = SyncProgress()
+        _syncing.value = false
+        _courseSyncing.value = false
     }
 
     fun syncWorks() {
-        if (_syncing.value) return
+        if (!_loggedIn.value || _syncing.value || _courseSyncing.value) return
         viewModelScope.launch {
             _syncing.value = true
             _syncProgress.value = SyncProgress(message = "正在同步作业...")
@@ -136,17 +146,23 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
                 _syncProgress.value = SyncProgress(message = "同步完成")
                 Store.saveLastSync(System.currentTimeMillis())
                 _lastSync.value = Store.getLastSync()
-            } catch (e: Exception) {
-                _syncProgress.value = SyncProgress(message = e.message ?: "同步失败")
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                _syncProgress.value = SyncProgress(message = exception.message ?: "同步失败")
             } finally {
                 _syncing.value = false
-                ReminderScheduler.scheduleAll(appContext)
+                if (_loggedIn.value) {
+                    ReminderScheduler.rescheduleAll(appContext)
+                } else {
+                    clearRemoteStateAfterLogout()
+                }
             }
         }
     }
 
     fun syncCourseProgress() {
-        if (_courseSyncing.value) return
+        if (!_loggedIn.value || _syncing.value || _courseSyncing.value) return
         viewModelScope.launch {
             _courseSyncing.value = true
             _courseSyncProgress.value = SyncProgress(message = "正在同步课程进度...")
@@ -163,10 +179,13 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
                 _courseSyncProgress.value = SyncProgress(message = "同步完成")
                 Store.saveLastSync(System.currentTimeMillis())
                 _lastSync.value = Store.getLastSync()
-            } catch (e: Exception) {
-                _courseSyncProgress.value = SyncProgress(message = e.message ?: "同步失败")
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                _courseSyncProgress.value = SyncProgress(message = exception.message ?: "同步失败")
             } finally {
                 _courseSyncing.value = false
+                if (!_loggedIn.value) clearRemoteStateAfterLogout()
             }
         }
     }
@@ -182,12 +201,9 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
     }
 
     fun saveCustomEvents(list: List<CustomEvent>) {
-        // 先取消旧列表的所有提醒（cancelAll 从 Store 读取，必须在保存新列表之前）
-        ReminderScheduler.cancelAll(appContext)
-        Store.saveRemindedMap(emptyMap())
         Store.saveCustomEvents(list)
         _customEvents.value = list
-        ReminderScheduler.scheduleAll(appContext)
+        ReminderScheduler.rescheduleAll(appContext)
     }
 
     fun addCustomEvent(ev: CustomEvent) {
@@ -210,6 +226,12 @@ class XuexiaotongViewModel(val api: ChaoxingApi, private val appContext: Context
 
     fun clearCustomEvents() {
         saveCustomEvents(emptyList())
+    }
+
+    private fun clearRemoteStateAfterLogout() {
+        ReminderScheduler.cancelAll(appContext)
+        api.clearSession()
+        Store.clearLoginData()
     }
 
     class Factory(private val api: ChaoxingApi, private val appContext: Context) : ViewModelProvider.Factory {

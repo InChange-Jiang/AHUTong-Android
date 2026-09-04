@@ -14,8 +14,12 @@ import java.util.Calendar
 object ReminderScheduler {
 
     const val CHANNEL_ID = "ahutong_cx_reminder"
+    const val ACTION_REMIND = "com.ahu.ahutong.reminder.ACTION_REMIND_XUEXIAOTONG"
     const val EXTRA_TITLE = "extra_title"
     const val EXTRA_CONTENT = "extra_content"
+    private const val EXTRA_REMINDER_KEY = "extra_reminder_key"
+    private const val REQUEST_CODE_NAMESPACE = 0x40000000
+    private const val REQUEST_CODE_MASK = 0x0fffffff
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -49,7 +53,10 @@ object ReminderScheduler {
     fun scheduleAll(context: Context) {
         ensureChannel(context)
         val setting = Store.getRemindSetting()
-        if (!setting.enabled) return
+        if (!setting.enabled || !Store.hasCookie()) {
+            cancelAll(context)
+            return
+        }
 
         val now = System.currentTimeMillis()
         val works = Store.getWorks()
@@ -98,22 +105,38 @@ object ReminderScheduler {
 
     fun cancelAll(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
-        allReminderKeys().forEach { key ->
-            val pi = PendingIntent.getBroadcast(
-                context, key.hashCode(),
-                Intent(context, AlarmReceiver::class.java),
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
-            )
-            pi?.let {
-                am.cancel(it)
-                it.cancel()
+        val keys = (Store.getRemindedMap().keys + allReminderKeys()).distinct()
+        keys.forEach { key ->
+            listOf(
+                requestCodeFor(key) to ACTION_REMIND,
+                key.hashCode() to null
+            ).forEach { (requestCode, action) ->
+                val intent = Intent(context, AlarmReceiver::class.java).apply {
+                    if (action != null) this.action = action
+                }
+                PendingIntent.getBroadcast(
+                    context,
+                    requestCode,
+                    intent,
+                    PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+                )?.let {
+                    am.cancel(it)
+                    it.cancel()
+                }
             }
+        }
+        Store.saveRemindedMap(emptyMap())
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            manager.activeNotifications
+                .filter { it.notification.channelId == CHANNEL_ID }
+                .forEach { manager.cancel(it.tag, it.id) }
         }
     }
 
     fun rescheduleAll(context: Context) {
         cancelAll(context)
-        Store.saveRemindedMap(emptyMap())
         scheduleAll(context)
     }
 
@@ -130,12 +153,14 @@ object ReminderScheduler {
         return try {
             val alarmManager = context.getSystemService(AlarmManager::class.java)
             val intent = Intent(context, AlarmReceiver::class.java).apply {
+                action = ACTION_REMIND
                 putExtra(EXTRA_TITLE, title)
                 putExtra(EXTRA_CONTENT, content)
+                putExtra(EXTRA_REMINDER_KEY, key)
             }
             val pending = PendingIntent.getBroadcast(
                 context,
-                key.hashCode(),
+                requestCodeFor(key),
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
@@ -165,7 +190,7 @@ object ReminderScheduler {
             ensureChannel(context)
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.notify(
-                System.currentTimeMillis().hashCode(),
+                notificationIdFor("test_${System.currentTimeMillis()}"),
                 buildReminderNotification(context, "学习通日历", "这是一条测试通知")
             )
             true
@@ -175,7 +200,7 @@ object ReminderScheduler {
     fun buildReminderNotification(context: Context, title: String, content: String): android.app.Notification {
         ensureChannel(context)
         val launch = PendingIntent.getActivity(
-            context, 0,
+            context, REQUEST_CODE_NAMESPACE,
             context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             } ?: Intent(),
@@ -191,4 +216,11 @@ object ReminderScheduler {
             .setContentIntent(launch)
             .build()
     }
+
+    fun reminderKey(intent: Intent): String = intent.getStringExtra(EXTRA_REMINDER_KEY).orEmpty()
+
+    fun notificationIdFor(key: String): Int =
+        REQUEST_CODE_NAMESPACE or (key.hashCode() and REQUEST_CODE_MASK)
+
+    private fun requestCodeFor(key: String): Int = notificationIdFor(key)
 }

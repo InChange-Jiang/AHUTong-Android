@@ -31,6 +31,7 @@ class ChaoxingApi(private val context: Context) {
     fun hasSession(): Boolean = Store.hasCookie()
 
     fun clearSession() {
+        client.dispatcher.cancelAll()
         Store.clearCookie()
         cookieJar.clear()
     }
@@ -397,24 +398,22 @@ class ChaoxingApi(private val context: Context) {
                     delay(600)
 
                     for (work in works) {
-                        var startTs: Long? = null
-                        var endTs: Long? = null
+                        val previous = existingByCourse[course.courseId]?.get(work.workId)
+                        var startTs = previous?.startTs
+                        var endTs = previous?.endTs
 
                         // 每次同步都重新抓取截止时间，确保延期后的时间更新
                         try {
                             val dl = fetchWorkDeadline(work)
-                            if (dl != null) { startTs = dl.first; endTs = dl.second }
+                            if (dl != null) {
+                                startTs = dl.first
+                                endTs = dl.second
+                            }
                             delay(800)
-                        } catch (e: Exception) {
-                            // 抓取失败时使用旧数据
-                            val prev = existingByCourse[course.courseId]?.get(work.workId)
-                            startTs = prev?.startTs
-                            endTs = prev?.endTs
-                        }
+                        } catch (_: Exception) { }
 
-                        val prev = existingByCourse[course.courseId]?.get(work.workId)
                         allWorks.add(work.copy(startTs = startTs, endTs = endTs,
-                            rawStart = prev?.rawStart ?: "", rawEnd = prev?.rawEnd ?: ""))
+                            rawStart = previous?.rawStart ?: "", rawEnd = previous?.rawEnd ?: ""))
                     }
                 } catch (e: Exception) {
                     // 单门课程失败时保留旧数据，避免该课程作业从日历消失

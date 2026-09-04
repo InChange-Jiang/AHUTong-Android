@@ -13,8 +13,8 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             "android.intent.action.TIME_SET",
             Intent.ACTION_TIMEZONE_CHANGED -> {
-                Store.saveRemindedMap(emptyMap())
-                ReminderScheduler.scheduleAll(context)
+                Store.init(context.applicationContext)
+                ReminderScheduler.rescheduleAll(context)
             }
         }
     }

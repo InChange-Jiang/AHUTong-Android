@@ -9,6 +9,7 @@ import android.widget.Toast
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -53,9 +54,12 @@ import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppToggle
+import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsSelectRow
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.CardAccountState
 import com.ahu.ahutong.ui.state.CardBalanceDepositViewModel
 import com.ahu.ahutong.ui.state.PaymentState
@@ -155,15 +159,9 @@ fun CardBalanceDeposit(
         }
         null -> false
     }
+    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
 
-    AppScrollablePageLayout(
-        title = "校园卡充值",
-        onBack = { navController.popBackStack() },
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp
-    ) {
+    val pageContent: @Composable ColumnScope.() -> Unit = {
         if (LocalAppUiTheme.current != AppUiTheme.MATERIAL) {
             AppSelectField(
                 label = "充值方式",
@@ -172,7 +170,7 @@ fun CardBalanceDeposit(
                     AppSelectOption(method, method.displayName)
                 },
                 onSelected = ::selectRechargeBank,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                modifier = Modifier.padding(horizontal = horizontalPadding),
                 enabled = paymentState != PaymentState.Loading,
                 valueTextAlign = TextAlign.End,
                 miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
@@ -185,16 +183,7 @@ fun CardBalanceDeposit(
             )
         }
 
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .appLiquidGlassSurface(
-                    shape = AppComponentTokens.CardShape,
-                    fallbackColor = 100.n1 withNight 20.n1,
-                    level = LiquidGlassSurfaceLevel.Panel
-                )
-        ) {
+        val accountContent: @Composable ColumnScope.() -> Unit = {
             if (LocalAppUiTheme.current == AppUiTheme.MATERIAL) {
                 SettingsSelectRow(
                     title = "充值方式",
@@ -260,16 +249,31 @@ fun CardBalanceDeposit(
                     style = MaterialTheme.typography.titleMedium
                 )
             }
+        }
 
+        if (isRadiantUi) {
+            GlassCard(
+                containerColor = 100.n1 withNight 20.n1,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(content = accountContent)
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = horizontalPadding)
+                    .fillMaxWidth()
+                    .appLiquidGlassSurface(
+                        shape = AppComponentTokens.CardShape,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Panel
+                    ),
+                content = accountContent
+            )
         }
 
         if (selectedRechargeBank != CardRechargeBank.ALIPAY) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            val amountContent: @Composable ColumnScope.() -> Unit = {
                 Text(
                     text = "充值金额",
                     style = MaterialTheme.typography.titleMedium,
@@ -299,12 +303,32 @@ fun CardBalanceDeposit(
                     )
                 )
             }
+            if (isRadiantUi) {
+                GlassCard(
+                    containerColor = 100.n1 withNight 20.n1,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        content = amountContent
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = horizontalPadding)
+                        .fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = amountContent
+                )
+            }
         }
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = horizontalPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (selectedRechargeBank == CardRechargeBank.ALIPAY) {
@@ -414,6 +438,28 @@ fun CardBalanceDeposit(
             }
         }
 
+    }
+
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = "校园卡充值",
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppScrollablePageLayout(
+            title = "校园卡充值",
+            onBack = { navController.popBackStack() },
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            content = pageContent
+        )
     }
 
 }

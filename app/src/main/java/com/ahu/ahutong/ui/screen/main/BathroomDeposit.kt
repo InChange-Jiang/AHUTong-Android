@@ -3,6 +3,7 @@ package com.ahu.ahutong.ui.screen.main
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,8 +42,11 @@ import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.GlassCard
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.BathroomDepositViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
@@ -103,15 +107,10 @@ fun BathroomDeposit(
     val balanceData = info?.data?.map?.showData
     val canSubmit = amount.toDoubleOrNull()?.let { it > 0.0 } == true && accountData != null &&
         payState !is PayState.InProgress
+    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
 
-    AppScrollablePageLayout(
-        title = "浴室缴费",
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp
-    ) {
+    val pageContent: @Composable ColumnScope.() -> Unit = {
+        val lookupContent: @Composable ColumnScope.() -> Unit = {
         AppSelectField(
             label = "浴室",
             selected = bathroom,
@@ -120,7 +119,7 @@ fun BathroomDeposit(
                 bathroom = selected
                 viewmodel.clearBathroomInfo()
             },
-            modifier = Modifier.padding(horizontal = 16.dp),
+            modifier = Modifier.padding(horizontal = horizontalPadding),
             miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp,
                 top = 16.dp,
@@ -134,7 +133,7 @@ fun BathroomDeposit(
 
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -189,19 +188,27 @@ fun BathroomDeposit(
             }
         }
 
-        AnimatedVisibility(visible = isQuerying || info != null) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .appLiquidGlassSurface(
-                        shape = AppComponentTokens.CardShape,
-                        fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        level = LiquidGlassSurfaceLevel.Control
-                    )
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+        }
+        if (isRadiantUi) {
+            GlassCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
             ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = lookupContent
+                )
+            }
+        } else {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = lookupContent
+            )
+        }
+
+        AnimatedVisibility(visible = isQuerying || info != null) {
+            val accountContent: @Composable ColumnScope.() -> Unit = {
                 Text("浴室账户", style = MaterialTheme.typography.titleMedium)
                 if (isQuerying) {
                     Row(
@@ -232,14 +239,35 @@ fun BathroomDeposit(
                     )
                 }
             }
+            if (isRadiantUi) {
+                GlassCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = accountContent
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = horizontalPadding)
+                        .fillMaxWidth()
+                        .appLiquidGlassSurface(
+                            shape = AppComponentTokens.CardShape,
+                            fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            level = LiquidGlassSurfaceLevel.Control
+                        )
+                        .padding(horizontal = 18.dp, vertical = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = accountContent
+                )
+            }
         }
 
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        val amountContent: @Composable ColumnScope.() -> Unit = {
             Text(
                 text = "缴费金额",
                 style = MaterialTheme.typography.titleMedium,
@@ -261,10 +289,30 @@ fun BathroomDeposit(
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
         }
+        if (isRadiantUi) {
+            GlassCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = amountContent
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = horizontalPadding)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = amountContent
+            )
+        }
 
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -298,6 +346,28 @@ fun BathroomDeposit(
                 Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
             }
         }
+    }
+
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = "浴室缴费",
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppScrollablePageLayout(
+            title = "浴室缴费",
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            content = pageContent
+        )
     }
 
     if (showPasswordDialog) {

@@ -3,6 +3,7 @@ package com.ahu.ahutong.ui.screen.main
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,8 +41,11 @@ import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.GlassCard
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.CampusDataItem
 import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -103,28 +107,11 @@ fun ElectricityDeposit(
         selectedBuilding != null && selectedFloor != null && selectedRoom != null &&
         amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
         !isLoading && payState is PayState.Idle
+    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
 
-    AppScrollablePageLayout(
-        title = "电控缴费",
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp
-    ) {
+    val pageContent: @Composable ColumnScope.() -> Unit = {
         if (errorMessage != null) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .appLiquidGlassSurface(
-                        shape = AppComponentTokens.CardShape,
-                        fallbackColor = MaterialTheme.colorScheme.errorContainer,
-                        level = LiquidGlassSurfaceLevel.Panel
-                    )
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+            val errorContent: @Composable ColumnScope.() -> Unit = {
                 Text("电控信息加载失败", style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = errorMessage.orEmpty(),
@@ -139,13 +126,40 @@ fun ElectricityDeposit(
                     Text("重新加载")
                 }
             }
+            if (isRadiantUi) {
+                GlassCard(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    overlayColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        content = errorContent
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = horizontalPadding)
+                        .fillMaxWidth()
+                        .appLiquidGlassSurface(
+                            shape = AppComponentTokens.CardShape,
+                            fallbackColor = MaterialTheme.colorScheme.errorContainer,
+                            level = LiquidGlassSurfaceLevel.Panel
+                        )
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = errorContent
+                )
+            }
         }
 
         if (historyOptions.isNotEmpty()) {
             AppButton(
                 onClick = onOpenRecentRooms,
                 modifier = Modifier
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = horizontalPadding)
                     .fillMaxWidth(),
                 enabled = !isLoading,
                 variant = AppButtonVariant.Secondary
@@ -162,10 +176,7 @@ fun ElectricityDeposit(
             selectedRoom == null -> ElectricitySelectorLevel.Room
             else -> ElectricitySelectorLevel.Room
         }
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        val selectorContent: @Composable ColumnScope.() -> Unit = {
             AppSelectField(
                 label = "电控入口",
                 selected = selectedController,
@@ -218,20 +229,27 @@ fun ElectricityDeposit(
                 loading = loadingSelector == ElectricitySelectorLevel.Room
             )
         }
+        if (isRadiantUi) {
+            GlassCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = selectorContent
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier.padding(horizontal = horizontalPadding),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = selectorContent
+            )
+        }
 
         roomInfo?.takeIf(String::isNotBlank)?.let { info ->
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .appLiquidGlassSurface(
-                        shape = AppComponentTokens.CardShape,
-                        fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                        level = LiquidGlassSurfaceLevel.Panel
-                    )
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            val roomContent: @Composable ColumnScope.() -> Unit = {
                 Text(
                     text = "房间信息",
                     style = MaterialTheme.typography.titleMedium,
@@ -243,14 +261,35 @@ fun ElectricityDeposit(
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
+            if (isRadiantUi) {
+                GlassCard(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        content = roomContent
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .padding(horizontal = horizontalPadding)
+                        .fillMaxWidth()
+                        .appLiquidGlassSurface(
+                            shape = AppComponentTokens.CardShape,
+                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                            level = LiquidGlassSurfaceLevel.Panel
+                        )
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = roomContent
+                )
+            }
         }
 
-        Column(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        val amountContent: @Composable ColumnScope.() -> Unit = {
             Text(
                 text = "缴费金额",
                 style = MaterialTheme.typography.titleMedium,
@@ -273,10 +312,30 @@ fun ElectricityDeposit(
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
         }
+        if (isRadiantUi) {
+            GlassCard(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = amountContent
+                )
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .padding(horizontal = horizontalPadding)
+                    .fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = amountContent
+            )
+        }
 
         Column(
             modifier = Modifier
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -309,6 +368,28 @@ fun ElectricityDeposit(
                 Text(if (payState is PayState.InProgress) "正在支付" else "确认缴费")
             }
         }
+    }
+
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = "电控缴费",
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppScrollablePageLayout(
+            title = "电控缴费",
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            content = pageContent
+        )
     }
 
     if (showPasswordDialog) {

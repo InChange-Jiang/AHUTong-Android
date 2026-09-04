@@ -54,7 +54,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -206,6 +205,10 @@ fun SettingsBackdropContainer(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.(Backdrop) -> Unit
 ) {
+    if (isRadiantUi) {
+        GlassBackdropContainer(modifier = modifier, content = content)
+        return
+    }
     val backdrop = LocalLiquidGlassAmbientBackdrop.current
     val background = settingsScreenBackground()
 
@@ -344,22 +347,19 @@ fun SettingsHeroCard(
             .fillMaxWidth()
             .then(
                 if (isRadiant) {
-                    Modifier.shadow(
-                        elevation = 14.dp,
+                    Modifier.liquidGlassSurface(
+                        backdrop = backdrop,
                         shape = shape,
-                        clip = false,
-                        ambientColor = Color.Black.copy(alpha = 0.12f),
-                        spotColor = Color.Black.copy(alpha = 0.12f)
+                        surfaceColor = liquidGlassTint()
                     )
                 } else {
-                    Modifier
+                    Modifier.appLiquidGlassSurface(
+                        shape = shape,
+                        fallbackColor = MaterialTheme.colorScheme.primaryContainer,
+                        level = LiquidGlassSurfaceLevel.Floating,
+                        backdrop = backdrop
+                    )
                 }
-            )
-            .appLiquidGlassSurface(
-                shape = shape,
-                fallbackColor = MaterialTheme.colorScheme.primaryContainer,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdrop = backdrop
             )
             .clickable(onClick = onClickWithFeedback)
             .padding(horizontal = 22.dp, vertical = 18.dp),
@@ -395,7 +395,7 @@ fun SettingsSection(
     val shape = SmoothRoundedCornerShape(if (isLiquid) 26.dp else 24.dp)
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(if (isRadiant) 8.dp else 6.dp)
     ) {
         Text(
             text = title,
@@ -413,22 +413,23 @@ fun SettingsSection(
                 .fillMaxWidth()
                 .then(
                     if (isRadiant) {
-                        Modifier.shadow(
-                            elevation = 14.dp,
-                            shape = shape,
-                            clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.12f),
-                            spotColor = Color.Black.copy(alpha = 0.12f)
-                        )
+                        backdrop?.let {
+                            Modifier.liquidGlassSurface(
+                                backdrop = it,
+                                shape = shape,
+                                surfaceColor = liquidGlassTint()
+                            )
+                        } ?: Modifier
+                            .clip(shape)
+                            .background(settingsGroupColor())
                     } else {
-                        Modifier
+                        Modifier.appLiquidGlassSurface(
+                            shape = shape,
+                            fallbackColor = settingsGroupColor(),
+                            level = LiquidGlassSurfaceLevel.Panel,
+                            backdrop = backdrop
+                        )
                     }
-                )
-                .appLiquidGlassSurface(
-                    shape = shape,
-                    fallbackColor = settingsGroupColor(),
-                    level = LiquidGlassSurfaceLevel.Panel,
-                    backdrop = backdrop
                 ),
             content = content
         )

@@ -708,7 +708,7 @@ private fun ScheduleSettingsDialog(
                     text = "课表设置",
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleLarge,
-                    color = 0.n1 withNight 100.n1
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             },
             text = {
@@ -731,7 +731,7 @@ private fun ScheduleSettingsDialog(
                 TextButton(onClick = onDismiss) {
                     Text(
                         text = "完成",
-                        color = 40.a1 withNight 80.a1
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -763,11 +763,11 @@ private fun ScheduleSettingsDialog(
                     text = title,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = 0.n1 withNight 100.n1
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
                     text = description,
-                    color = 50.n1 withNight 80.n1,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
             }

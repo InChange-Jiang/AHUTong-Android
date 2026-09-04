@@ -3,18 +3,23 @@ package com.ahu.ahutong.ui.screen
 import android.content.Context
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
@@ -39,24 +44,36 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.components.LiquidBottomTab
 import com.ahu.ahutong.ui.components.LiquidBottomTabs
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
-import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongDockState
 import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongSubTab
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
-import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import top.yukonga.miuix.kmp.basic.NavigationBar as MiuixNavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationItem as MiuixNavigationItem
 
@@ -103,16 +120,15 @@ private fun BoxScope.RadiantBottomNavBar(
     val guidePreferences = remember {
         context.getSharedPreferences("app_guide", Context.MODE_PRIVATE)
     }
-    var guideDismissed by remember {
+    var tabGuideShown by remember {
         mutableStateOf(guidePreferences.getBoolean("xxt_tab_guide_shown", false))
     }
-    var guideVisible by remember { mutableStateOf(false) }
+    var tabsBounds by remember { mutableStateOf<Rect?>(null) }
     fun dismissGuide() {
-        if (!guideDismissed) {
-            guideDismissed = true
+        if (!tabGuideShown) {
+            tabGuideShown = true
             guidePreferences.edit().putBoolean("xxt_tab_guide_shown", true).apply()
         }
-        guideVisible = false
     }
 
     val showingSchedule = XuexiaotongDockState.tab == XuexiaotongSubTab.SCHEDULE
@@ -137,14 +153,6 @@ private fun BoxScope.RadiantBottomNavBar(
         }
     }
 
-    LaunchedEffect(selectedRoute, guideDismissed) {
-        guideVisible = false
-        if (selectedRoute == "xuexiaotong" && !guideDismissed) {
-            delay(350)
-            guideVisible = true
-        }
-    }
-
     if (LocalIsLiquidGlassEnabled.current) {
         Row(
             modifier = Modifier
@@ -157,33 +165,25 @@ private fun BoxScope.RadiantBottomNavBar(
                 selectedTabIndex = {
                     destinations.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
                 },
-                onTabSelected = { select(destinations[it].route) },
+                onTabSelected = { onDestinationSelected(destinations[it].route) },
                 onCurrentTabTapped = { selectedRoute?.let(::select) },
                 backdrop = backdrop,
                 tabsCount = destinations.size,
-                modifier = Modifier.padding(horizontal = 36.dp)
+                modifier = Modifier
+                    .padding(horizontal = 36.dp)
+                    .onGloballyPositioned { tabsBounds = it.boundsInWindow() }
             ) {
                 destinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
-                    val contentColor = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
                     LiquidBottomTab(
                         selected = selected,
                         onClick = { select(destination.route) }
                     ) {
                         Icon(
                             painter = painterResource(destination.iconId),
-                            contentDescription = destination.label,
-                            tint = contentColor
+                            contentDescription = destination.label
                         )
-                        Text(
-                            destination.label,
-                            color = contentColor,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        Text(destination.label, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -192,7 +192,8 @@ private fun BoxScope.RadiantBottomNavBar(
         MaterialNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
-                .align(Alignment.BottomCenter),
+                .align(Alignment.BottomCenter)
+                .onGloballyPositioned { tabsBounds = it.boundsInWindow() },
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 0.dp
         ) {
@@ -214,36 +215,117 @@ private fun BoxScope.RadiantBottomNavBar(
         }
     }
 
-    AnimatedVisibility(
-        visible = guideVisible,
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .navigationBarsPadding()
-            .padding(bottom = 104.dp),
-        enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { it / 3 },
-        exit = fadeOut(tween(120)) + slideOutVertically(tween(120)) { it / 3 }
-    ) {
-        Row(
-            modifier = Modifier
-                .appLiquidGlassSurface(
-                    shape = ContinuousCapsule,
-                    fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    level = LiquidGlassSurfaceLevel.Floating,
-                    backdrop = backdrop,
-                    backdropSamplingEnabled = true
-                )
-                .clickable(onClick = ::dismissGuide)
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Lightbulb,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Text("再次点击可切换日程 / 课程页")
+    if (!tabGuideShown && selectedRoute == "xuexiaotong") {
+        tabsBounds?.let { bounds ->
+            var overlayOrigin by remember { mutableStateOf(Offset.Zero) }
+            var guideVisible by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                delay(350)
+                guideVisible = true
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .align(Alignment.TopStart)
+                    .onGloballyPositioned { overlayOrigin = it.boundsInWindow().topLeft }
+            ) {
+                AnimatedVisibility(
+                    visible = guideVisible,
+                    enter = fadeIn(tween(150)) + slideInVertically(tween(150)) { it / 3 }
+                ) {
+                    AnchoredGuideBubble(
+                        anchorCenterX = { bounds.left + bounds.width * 0.625f - overlayOrigin.x },
+                        anchorTopY = { bounds.top - overlayOrigin.y },
+                        backdrop = backdrop,
+                        text = "再次点击可切换日程 / 课程页",
+                        onDismiss = ::dismissGuide
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun AnchoredGuideBubble(
+    anchorCenterX: () -> Float,
+    anchorTopY: () -> Float,
+    backdrop: Backdrop,
+    text: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Layout(
+        content = {
+            GuideBubbleCard(text = text, backdrop = backdrop, onDismiss = onDismiss)
+        },
+        modifier = modifier
+    ) { measurables, constraints ->
+        val placeable = measurables.first().measure(
+            constraints.copy(minWidth = 0, minHeight = 0)
+        )
+        val margin = 10.dp.roundToPx()
+        val parentWidth = constraints.maxWidth
+        val anchorX = anchorCenterX().roundToInt()
+        val x = (anchorX - placeable.width / 2)
+            .coerceIn(margin, (parentWidth - placeable.width - margin).coerceAtLeast(margin))
+        val y = anchorTopY().roundToInt() - placeable.height - 10.dp.roundToPx()
+        layout(parentWidth, constraints.maxHeight) {
+            placeable.placeRelative(x, y)
+        }
+    }
+}
+
+@Composable
+private fun GuideBubbleCard(
+    text: String,
+    backdrop: Backdrop,
+    onDismiss: () -> Unit
+) {
+    val glassContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.64f)
+    val infiniteTransition = rememberInfiniteTransition(label = "guideBubble")
+    val bubbleBob by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bubbleBob"
+    )
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .graphicsLayer { translationY = bubbleBob * 3.dp.toPx() }
+            .drawBackdrop(
+                backdrop = backdrop,
+                shape = { ContinuousCapsule },
+                effects = {
+                    vibrancy()
+                    blur(8f.dp.toPx())
+                    lens(24f.dp.toPx(), 24f.dp.toPx())
+                },
+                highlight = { Highlight.Default },
+                shadow = { Shadow() },
+                onDrawSurface = { drawRect(glassContainerColor) }
+            )
+            .clickable(onClick = onDismiss)
+            .padding(horizontal = 14.dp, vertical = 9.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Lightbulb,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = text,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
@@ -274,11 +356,6 @@ private fun BoxScope.ClassicBottomNavBar(
             ) {
                 classicDestinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
-                    val contentColor = if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
                     LiquidBottomTab(
                         selected = selected,
                         onClick = { onDestinationSelected(destination.route) }
@@ -289,14 +366,9 @@ private fun BoxScope.ClassicBottomNavBar(
                             } else {
                                 destination.unselectedIcon
                             },
-                            contentDescription = destination.label,
-                            tint = contentColor
+                            contentDescription = destination.label
                         )
-                        Text(
-                            destination.label,
-                            color = contentColor,
-                            style = MaterialTheme.typography.labelMedium
-                        )
+                        Text(destination.label, style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }

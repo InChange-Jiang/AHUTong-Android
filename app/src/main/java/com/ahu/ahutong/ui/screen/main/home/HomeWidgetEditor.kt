@@ -396,13 +396,9 @@ private fun RadiantTextHomeWidgetCard(
             .then(
                 if (isEditing || isHighlighted) {
                     Modifier.border(
-                        width = 1.5.dp,
-                        color = if (isHighlighted) {
-                            75.a1 withNight 80.a1
-                        } else {
-                            60.n1 withNight 50.n1
-                        },
-                        shape = shape
+                        1.5.dp,
+                        if (isHighlighted) 75.a1 withNight 80.a1 else 60.n1 withNight 50.n1,
+                        shape
                     )
                 } else {
                     Modifier
@@ -417,12 +413,12 @@ private fun RadiantTextHomeWidgetCard(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                painter = painterResource(iconId),
+                painter = painterResource(id = iconId),
                 contentDescription = null,
                 modifier = Modifier.size(24.dp),
                 tint = tint
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.padding(top = 6.dp))
             Text(
                 text = title,
                 fontWeight = FontWeight.Medium,
@@ -451,12 +447,12 @@ private fun HomeWidgetMoreItem(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                painter = painterResource(R.drawable.ic_more_all),
+                painter = painterResource(id = R.drawable.ic_more_all),
                 contentDescription = "更多",
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.padding(top = 6.dp))
             Text(
                 text = "更多",
                 fontWeight = FontWeight.Medium,
@@ -501,47 +497,54 @@ private fun RadiantHomeWidgetSlotLayout(
             modifier = Modifier.fillMaxWidth()
         )
 
-        listOf(listOf(1, 2, 3, 4), listOf(5, 6, 7)).forEach { rowSlots ->
-            val lastRow = rowSlots.last() == 7
-            val visibleSlots = if (isEditing) {
-                rowSlots
-            } else {
-                rowSlots.filter { slots.getOrNull(it - 1) != null }
-            }
-            if (isEditing || visibleSlots.isNotEmpty() || lastRow) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    visibleSlots.forEach { slotIndex ->
-                        val widgetId = slots.getOrNull(slotIndex - 1)
-                        HomeWidgetSlot(
-                            slotIndex = slotIndex,
-                            widgetId = widgetId,
-                            isEditing = isEditing,
-                            isHighlighted = highlightedSlot == slotIndex,
-                            isDragging = draggingWidgetId == widgetId,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(64.dp),
-                            onEnterEdit = onEnterEdit,
-                            onNavigate = { navController.navigate(it) },
-                            onClick = onHomeWidgetClick,
-                            onSlotPositioned = onSlotPositioned,
-                            onDragStarted = onHomeWidgetDragStarted,
-                            onDragged = onHomeWidgetDragged,
-                            onDragStopped = onHomeWidgetDragStopped
-                        )
-                    }
-                    if (lastRow) {
-                        HomeWidgetMoreItem(
-                            onClick = { navController.navigate("widgets") },
-                            modifier = if (visibleSlots.isEmpty()) {
-                                Modifier.width(68.dp).height(64.dp)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            listOf(listOf(1, 2, 3, 4), listOf(5, 6, 7)).forEach { rowSlots ->
+                val isLastRow = rowSlots.last() == 7
+                val visibleSlots = if (isEditing) {
+                    rowSlots
+                } else {
+                    rowSlots.filter { slots.getOrNull(it - 1) != null }
+                }
+                val rowHasWidgets = visibleSlots.isNotEmpty()
+                if (isEditing || rowHasWidgets || isLastRow) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        visibleSlots.forEach { slotIndex ->
+                            val widgetId = slots.getOrNull(slotIndex - 1)
+                            HomeWidgetSlot(
+                                slotIndex = slotIndex,
+                                widgetId = widgetId,
+                                isEditing = isEditing,
+                                isHighlighted = highlightedSlot == slotIndex,
+                                isDragging = draggingWidgetId == widgetId,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(64.dp),
+                                onEnterEdit = onEnterEdit,
+                                onNavigate = { navController.navigate(it) },
+                                onClick = onHomeWidgetClick,
+                                onSlotPositioned = onSlotPositioned,
+                                onDragStarted = onHomeWidgetDragStarted,
+                                onDragged = onHomeWidgetDragged,
+                                onDragStopped = onHomeWidgetDragStopped
+                            )
+                        }
+                        if (isLastRow) {
+                            val moreModifier = if (rowHasWidgets) {
+                                Modifier.weight(1f)
                             } else {
-                                Modifier.weight(1f).height(64.dp)
+                                Modifier.width(68.dp)
                             }
-                        )
+                            HomeWidgetMoreItem(
+                                onClick = { navController.navigate("widgets") },
+                                modifier = moreModifier.height(64.dp)
+                            )
+                        }
                     }
                 }
             }

@@ -69,8 +69,11 @@ import com.ahu.ahutong.personalization.prefetch.PaymentQrCommandEntryPoint
 import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
+import com.ahu.ahutong.ui.components.liquidGlassSurface
+import com.ahu.ahutong.ui.components.liquidGlassTint
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
@@ -128,13 +131,22 @@ fun CampusCard(
     }
 
 
+    val radiant = isRadiantUi
     val campusShape = SmoothRoundedCornerShape(24.dp)
-    Box(
-        modifier = modifier.appLiquidGlassSurface(
+    val campusSurface = if (radiant) {
+        Modifier.liquidGlassSurface(
+            backdrop = LocalLiquidGlassAmbientBackdrop.current,
             shape = campusShape,
-            fallbackColor = 100.n1 withNight 20.n1,
-            backdropSamplingEnabled = isRadiantUi
+            surfaceColor = liquidGlassTint()
         )
+    } else {
+        Modifier.appLiquidGlassSurface(
+            shape = campusShape,
+            fallbackColor = 100.n1 withNight 20.n1
+        )
+    }
+    Box(
+        modifier = modifier.then(campusSurface)
     ) {
         AnimatedContent(
             targetState = isQrcode,

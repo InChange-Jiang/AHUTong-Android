@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen.main.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -43,16 +45,22 @@ fun TodayCourseList(
     enabled: Boolean = true
 ) {
     val panelShape = SmoothRoundedCornerShape(32.dp)
+    val panelSurface = if (isRadiantUi) {
+        Modifier
+            .clip(panelShape)
+            .background(100.n1 withNight 20.n1)
+    } else {
+        Modifier.appLiquidGlassSurface(
+            shape = panelShape,
+            fallbackColor = 100.n1 withNight 20.n1
+        )
+    }
     if (todayCourses.isEmpty()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .appLiquidGlassSurface(
-                    shape = panelShape,
-                    fallbackColor = 100.n1 withNight 20.n1,
-                    backdropSamplingEnabled = isRadiantUi
-                )
+                .then(panelSurface)
                 .then(
                     if (enabled) {
                         Modifier.clickable(onClick = onOpenSchedule)
@@ -88,11 +96,7 @@ fun TodayCourseList(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .appLiquidGlassSurface(
-                shape = panelShape,
-                fallbackColor = 100.n1 withNight 20.n1,
-                backdropSamplingEnabled = isRadiantUi
-            )
+            .then(panelSurface)
             .then(
                 if (enabled) {
                     Modifier.clickable(onClick = onOpenSchedule)

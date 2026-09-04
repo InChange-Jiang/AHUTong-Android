@@ -57,6 +57,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.debug.DebugClock
@@ -148,6 +149,11 @@ fun Home(
         }
     }
     val radiant = isRadiantUi
+    val layoutFamily = if (radiant) {
+        HomeWidgetLayoutFamily.RADIANT
+    } else {
+        HomeWidgetLayoutFamily.CLASSIC
+    }
     val slotCount = if (radiant) {
         HomeWidgetRegistry.slotCountRadiant
     } else {
@@ -164,13 +170,14 @@ fun Home(
         )
     }
     var isEditingHome by remember { mutableStateOf(false) }
-    var homeWidgetSlots by remember(radiant) {
-        val initialSlots = if (radiant && !AHUCache.hasCustomHomeWidgetSlots()) {
-            HomeWidgetRegistry.defaultSlotsRadiant
-        } else {
-            listOf("bathroom", "electricity")
-        }
-        mutableStateOf(normalizeHomeWidgetSlots(initialSlots, slotCount, knownWidgetIds))
+    var homeWidgetSlots by remember(layoutFamily) {
+        mutableStateOf(
+            normalizeHomeWidgetSlots(
+                AHUCache.getHomeWidgetSlots(layoutFamily),
+                slotCount,
+                knownWidgetIds
+            )
+        )
     }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var libraryBounds by remember { mutableStateOf<Rect?>(null) }
@@ -196,7 +203,7 @@ fun Home(
     fun saveHomeWidgetSlots(slots: List<String?>) {
         val normalizedSlots = normalizeHomeWidgetSlots(slots, slotCount, knownWidgetIds)
         homeWidgetSlots = normalizedSlots
-        AHUCache.saveHomeWidgetSlots(normalizedSlots)
+        AHUCache.saveHomeWidgetSlots(layoutFamily, normalizedSlots)
     }
 
     fun enterHomeEditMode() {
@@ -310,16 +317,6 @@ fun Home(
         exitHomeEditMode()
     }
 
-    LaunchedEffect(radiant) {
-        homeWidgetSlots = withContext(Dispatchers.IO) {
-            val savedSlots = if (radiant && !AHUCache.hasCustomHomeWidgetSlots()) {
-                HomeWidgetRegistry.defaultSlotsRadiant
-            } else {
-                AHUCache.getHomeWidgetSlots()
-            }
-            normalizeHomeWidgetSlots(savedSlots, slotCount, knownWidgetIds)
-        }
-    }
     LaunchedEffect(Unit) {
         if (!enterEditModeRequest) {
             exitHomeEditMode()

@@ -152,9 +152,7 @@ fun Main(
     }
 
     LaunchedEffect(appUiTheme) {
-        if (appUiTheme == AppUiTheme.RADIANT && primaryRoute == "tools") {
-            selectPrimaryDestination("home")
-        } else if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
+        if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
             navController.navigate("home") {
                 popUpTo("home") { inclusive = false }
                 launchSingleTop = true

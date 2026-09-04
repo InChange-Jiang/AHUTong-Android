@@ -65,6 +65,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.utils.FileUtils
 import com.ahu.ahutong.R
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
@@ -72,6 +73,7 @@ import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.capsule.ContinuousCapsule
@@ -94,15 +96,21 @@ fun Tools(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var homeWidgetIds by remember {
-        mutableStateOf(AHUCache.getHomeWidgetSlots().filterNotNull().toSet())
+    val radiant = isRadiantUi
+    val layoutFamily = if (radiant) {
+        HomeWidgetLayoutFamily.RADIANT
+    } else {
+        HomeWidgetLayoutFamily.CLASSIC
+    }
+    var homeWidgetIds by remember(layoutFamily) {
+        mutableStateOf(AHUCache.getHomeWidgetSlots(layoutFamily).filterNotNull().toSet())
     }
 
     fun refreshHomeWidgetIds() {
-        homeWidgetIds = AHUCache.getHomeWidgetSlots().filterNotNull().toSet()
+        homeWidgetIds = AHUCache.getHomeWidgetSlots(layoutFamily).filterNotNull().toSet()
     }
 
-    LaunchedEffect(navController) {
+    LaunchedEffect(navController, layoutFamily) {
         refreshHomeWidgetIds()
         navController.currentBackStackEntryFlow.collect { backStackEntry ->
             if (backStackEntry.destination.route == "tools") {
@@ -154,7 +162,7 @@ fun Tools(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HomeWidgetRegistry.widgets
+            HomeWidgetRegistry.availableWidgets(radiant)
                 .filter { it.id !in homeWidgetIds }
                 .forEach { widget ->
                     ToolItem(

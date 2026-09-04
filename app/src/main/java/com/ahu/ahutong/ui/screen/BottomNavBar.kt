@@ -119,6 +119,7 @@ private fun BoxScope.RadiantBottomNavBar(
     val destinations = listOf(
         RadiantDestination("home", "主页", R.drawable.ic_nav_home),
         RadiantDestination("schedule", "课表", R.drawable.ic_nav_schedule),
+        RadiantDestination("tools", "小工具", R.drawable.ic_nav_tools),
         RadiantDestination(
             "xuexiaotong",
             if (showingSchedule) "日程" else "课程",

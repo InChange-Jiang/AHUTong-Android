@@ -85,8 +85,11 @@ jobs:
           # Keep every other Clippy check active until that SDK fix is merged.
           cargo clippy --manifest-path sdk/Cargo.toml --all-targets -- --allow clippy::invalid_regex
 
-      - name: Test, lint and build Android
-        run: ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleDebug :app:assembleRelease --stacktrace
+      - name: Test, lint and build debug Android
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintRelease :app:assembleDebug --stacktrace
+
+      - name: Build release Android
+        run: ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" :app:assembleRelease --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

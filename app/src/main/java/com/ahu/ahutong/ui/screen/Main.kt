@@ -267,10 +267,10 @@ fun Main(
                     onLoggedIn = {
                         scheduleViewModel.clear()
                         scope.launch {
-                            primaryPagerState.scrollToPage(0)
                             navController.navigate("home") {
-                                popUpTo("login") { inclusive = true }
+                                popUpTo(navController.graph.id) { inclusive = true }
                             }
+                            primaryPagerState.scrollToPage(0)
                             com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
                                 behaviorRuntime.startProfile(it)
                             }

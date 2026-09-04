@@ -42,6 +42,7 @@ import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppToggle
@@ -221,32 +222,16 @@ fun Weather(
 
     if (showSettings) {
         val config = weatherViewModel.homeConfig
-        val sheetShape = BottomSheetDefaults.ExpandedShape
-        ModalBottomSheet(
-            onDismissRequest = { showSettings = false },
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = sheetShape,
-                fallbackColor = 100.n1 withNight 15.n1,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
-            ),
-            shape = sheetShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp
+        AppModalBottomSheet(
+            title = "天气设置",
+            onDismissRequest = { showSettings = false }
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .navigationBarsPadding()
                     .padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text(
-                    "天气设置",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = 0.n1 withNight 100.n1
-                )
                 Text(
                     "选择首页天气样式和详细卡片信息：",
                     style = MaterialTheme.typography.bodyMedium,

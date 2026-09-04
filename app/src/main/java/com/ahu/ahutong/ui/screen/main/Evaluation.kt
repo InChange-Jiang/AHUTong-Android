@@ -1,6 +1,7 @@
 package com.ahu.ahutong.ui.screen.main
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -29,6 +31,8 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -53,13 +57,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.EvalQuestion
 import com.ahu.ahutong.data.model.EvalTask
 import com.ahu.ahutong.data.model.EvalTeacher
@@ -73,6 +80,8 @@ import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppLazyPageLayout
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.EvaluationViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -95,6 +104,10 @@ fun Evaluation(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val presetActionMessage by viewModel.presetActionMessage.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
+
+    BackHandler(enabled = isRadiantUi && currentTask != null) {
+        viewModel.backToList()
+    }
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -132,6 +145,7 @@ private fun EvaluationListScreen(
 
     var presetDialogShown by remember { mutableStateOf(false) }
     var confirmBulkSubmitShown by remember { mutableStateOf(false) }
+    var semesterExpanded by remember { mutableStateOf(false) }
     val presetTargetCount = remember(taskItems) {
         taskItems.sumOf { item ->
             item.taskList.sumOf { task ->
@@ -199,24 +213,9 @@ private fun EvaluationListScreen(
         )
     }
 
-    AppLazyPageLayout(
-        title = "评教",
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        actions = {
-            AppHeaderIconButton(
-                imageVector = Icons.Filled.Settings,
-                miuixImageVector = MiuixIcons.Useful.Settings,
-                contentDescription = "评教预设",
-                onClick = { presetDialogShown = true }
-            )
-        }
-    ) {
-        item(key = "semester") {
+    val radiant = isRadiantUi
+    val pageContent: LazyListScope.() -> Unit = {
+        if (!radiant) item(key = "semester") {
             AppSelectField(
                 label = "选择学期",
                 selected = selectedSemesterId,
@@ -348,6 +347,105 @@ private fun EvaluationListScreen(
             }
         }
     }
+
+    if (radiant) {
+        SecondaryPageScaffold(
+            title = "评教",
+            subtitle = semesters.firstOrNull { it.id == selectedSemesterId }?.nameZh,
+            contentEdgeToEdge = true,
+            trailingContent = {
+                Box {
+                    EvaluationRadiantTitleButton(
+                        icon = R.drawable.ic_filter,
+                        contentDescription = "选择学期",
+                        onClick = { semesterExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = semesterExpanded,
+                        onDismissRequest = { semesterExpanded = false },
+                        containerColor = 100.n1 withNight 20.n1
+                    ) {
+                        semesters.forEach { semester ->
+                            DropdownMenuItem(
+                                text = { Text(semester.nameZh) },
+                                onClick = {
+                                    viewModel.selectedSemesterId.value = semester.id
+                                    viewModel.loadEvaluationList()
+                                    semesterExpanded = false
+                                },
+                                leadingIcon = if (semester.id == selectedSemesterId) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = 40.a1 withNight 80.a1
+                                        )
+                                    }
+                                } else null
+                            )
+                        }
+                    }
+                }
+                EvaluationRadiantTitleButton(
+                    icon = R.drawable.ic_config,
+                    contentDescription = "评教预设",
+                    onClick = { presetDialogShown = true }
+                )
+            }
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding(),
+                contentPadding = PaddingValues(top = 76.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppLazyPageLayout(
+            title = "评教",
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            actions = {
+                AppHeaderIconButton(
+                    imageVector = Icons.Filled.Settings,
+                    miuixImageVector = MiuixIcons.Useful.Settings,
+                    contentDescription = "评教预设",
+                    onClick = { presetDialogShown = true }
+                )
+            },
+            content = pageContent
+        )
+    }
+}
+
+@Composable
+private fun EvaluationRadiantTitleButton(
+    icon: Int,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
 }
 
 @Composable
@@ -366,7 +464,7 @@ private fun EvaluationCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = SmoothRoundedCornerShape(20.dp),
+        shape = SmoothRoundedCornerShape(if (isRadiantUi) 16.dp else 20.dp),
         enabled = !reviewed && task.timeStatus,
         onClick = onClick
     ) {
@@ -472,24 +570,9 @@ private fun EvaluationFormScreen(viewModel: EvaluationViewModel) {
         }
     }
 
-    AppLazyPageLayout(
-        title = currentCourseName.ifBlank { "课程评教" },
-        onBack = { viewModel.backToList() },
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        actions = {
-            AppHeaderIconButton(
-                imageVector = Icons.Filled.Settings,
-                miuixImageVector = MiuixIcons.Useful.Settings,
-                contentDescription = "评教预设",
-                onClick = { presetDialogShown = true }
-            )
-        }
-    ) {
-        item(key = "teacher") {
+    val radiant = isRadiantUi
+    val pageContent: LazyListScope.() -> Unit = {
+        if (!radiant) item(key = "teacher") {
             Text(
                 text = "${currentTeacher?.teacherName.orEmpty()} · $currentLessonName",
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -581,6 +664,49 @@ private fun EvaluationFormScreen(viewModel: EvaluationViewModel) {
                 }
             }
         }
+    }
+
+    if (radiant) {
+        SecondaryPageScaffold(
+            title = currentCourseName.ifBlank { "课程评教" },
+            subtitle = "${currentTeacher?.teacherName.orEmpty()} · $currentLessonName",
+            contentEdgeToEdge = true,
+            trailingContent = {
+                EvaluationRadiantTitleButton(
+                    icon = R.drawable.ic_config,
+                    contentDescription = "评教预设",
+                    onClick = { presetDialogShown = true }
+                )
+            }
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding(),
+                contentPadding = PaddingValues(top = 76.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppLazyPageLayout(
+            title = currentCourseName.ifBlank { "课程评教" },
+            onBack = { viewModel.backToList() },
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            actions = {
+                AppHeaderIconButton(
+                    imageVector = Icons.Filled.Settings,
+                    miuixImageVector = MiuixIcons.Useful.Settings,
+                    contentDescription = "评教预设",
+                    onClick = { presetDialogShown = true }
+                )
+            },
+            content = pageContent
+        )
     }
 }
 
@@ -822,7 +948,7 @@ private fun QuestionCard(
 
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = SmoothRoundedCornerShape(20.dp)
+        shape = SmoothRoundedCornerShape(if (isRadiantUi) 16.dp else 20.dp)
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp)

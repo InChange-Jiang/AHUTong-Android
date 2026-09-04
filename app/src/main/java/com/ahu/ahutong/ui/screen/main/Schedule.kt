@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -58,6 +59,9 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -68,10 +72,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppToggle
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.schedule.CourseCard
 import com.ahu.ahutong.ui.screen.main.schedule.CourseCardSpec
 import com.ahu.ahutong.ui.screen.main.schedule.CourseDetailDialog
@@ -203,14 +209,34 @@ fun Schedule(
         pagerState.animateScrollToPage((targetWeek - 1).coerceAtLeast(0))
     }
 
+    val radiant = isRadiantUi
     val baseColor = 50.a1.toSrgb().toHct()
-    val courseColors = remember(schedule) {
+    val macaronPalette = remember {
+        listOf(
+            Color(0xFF82ADF7), Color(0xFF7AE3D2), Color(0xFF77B6EF),
+            Color(0xFFE19BB0), Color(0xFFE38874), Color(0xFF679ACD),
+            Color(0xFFE87897), Color(0xFFEBB877), Color(0xFFC8A2C8),
+            Color(0xFFA8E4A0), Color(0xFFFF8A80)
+        )
+    }
+    val courseColors = remember(schedule, radiant) {
         val courseNames = schedule.asSequence().map { it.name }.distinct().toList()
-        courseNames.mapIndexed { index, name ->
-            name to baseColor.copy(
-                h = 360.0 * index / courseNames.size.coerceAtLeast(1)
-            ).toSrgb().toColor()
-        }.toMap()
+        if (radiant) {
+            courseNames.mapIndexed { index, name ->
+                val paletteIndex = if (index < macaronPalette.size) {
+                    index
+                } else {
+                    (name?.hashCode() ?: 0).mod(macaronPalette.size)
+                }
+                name to macaronPalette[paletteIndex]
+            }.toMap()
+        } else {
+            courseNames.mapIndexed { index, name ->
+                name to baseColor.copy(
+                    h = 360.0 * index / courseNames.size.coerceAtLeast(1)
+                ).toSrgb().toColor()
+            }.toMap()
+        }
     }
     val coursesByWeek = remember(schedule) {
         List(20) { pageIndex ->
@@ -252,13 +278,21 @@ fun Schedule(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(
-            modifier = Modifier.padding(end = 8.dp),
+            modifier = if (radiant) {
+                Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 12.dp)
+            } else {
+                Modifier.padding(end = 8.dp)
+            },
         ) {
             // week selector
             LazyRow(
                 modifier = Modifier.weight(1f),
                 state = state,
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = if (radiant) {
+                    PaddingValues(0.dp)
+                } else {
+                    PaddingValues(horizontal = 16.dp)
+                },
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(20) {
@@ -299,7 +333,10 @@ fun Schedule(
                                         pagerState.animateScrollToPage(week - 1)
                                     }
                                 }
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(
+                                    horizontal = 16.dp,
+                                    vertical = if (radiant) 8.dp else 12.dp
+                                ),
                             color = animateColorAsState(
                                 targetValue = if (isSelected) {
                                     100.n1 withNight 0.n1
@@ -315,17 +352,21 @@ fun Schedule(
             }
             // actions
             Row(
-                modifier = Modifier
-                    .appLiquidGlassSurface(
+                modifier = (if (radiant) {
+                    Modifier
+                        .clip(ContinuousCapsule)
+                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
+                } else {
+                    Modifier.appLiquidGlassSurface(
                         shape = ContinuousCapsule,
                         fallbackColor = 100.n1 withNight 30.n1,
                         level = LiquidGlassSurfaceLevel.Floating
                     )
-                    .padding(horizontal = 2.dp, vertical = 2.dp)
+                }).padding(horizontal = 2.dp, vertical = 2.dp)
             ) {
 
                 IconButton(
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(if (radiant) 38.dp else 48.dp),
                     onClick = {
                         if (isPreviewNextSemester) {
                             behaviorRuntime.recordCommittedMutationAsync(
@@ -344,24 +385,40 @@ fun Schedule(
                         }
                     }
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.MyLocation,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (radiant) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_aiming),
+                            contentDescription = "回到本周",
+                            modifier = Modifier.size(17.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.MyLocation,
+                            contentDescription = "回到本周",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 IconButton(
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(if (radiant) 38.dp else 48.dp),
                     onClick = { isSettingsVisible = true }
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (radiant) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_config),
+                            contentDescription = "课表设置",
+                            modifier = Modifier.size(17.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "课表设置",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 IconButton(
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(if (radiant) 38.dp else 48.dp),
                     onClick = {
                         if (isPreviewNextSemester) {
                             scheduleViewModel.refreshNextSchedule(true)
@@ -371,17 +428,26 @@ fun Schedule(
                         }
                     }
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (radiant) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_refresh),
+                            contentDescription = "刷新课表",
+                            modifier = Modifier.size(17.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "刷新课表",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
         // schedule
         val cellWidth = (
                 LocalConfiguration.current.screenWidthDp.dp -
+                        (if (radiant) 12.dp else 0.dp) -
                         CourseCardSpec.mainColumnWidth -
                         CourseCardSpec.cellSpacing * 9
                 ) / 7
@@ -395,6 +461,9 @@ fun Schedule(
                 modifier = with(CourseCardSpec) {
                     Modifier
                         .fillMaxWidth()
+                        .then(
+                            if (radiant) Modifier.padding(horizontal = 6.dp) else Modifier
+                        )
                         .height(mainRowHeight + (cellHeight + cellSpacing) * 13 + 24.dp)
                         .appLiquidGlassSurface(
                             shape = SmoothRoundedCornerShape(32.dp),
@@ -505,6 +574,7 @@ private fun BoxScope.ScheduleGridLabels(
     isInSemester: Boolean,
     isPreviewNextSemester: Boolean
 ) {
+    val radiant = isRadiantUi
     val textMeasurer = rememberTextMeasurer()
     val contentColor = LocalContentColor.current
     val secondaryColor = 50.n1 withNight 80.n1
@@ -512,8 +582,12 @@ private fun BoxScope.ScheduleGridLabels(
     val selectedContent = 0.n1
     val dayStyle = MaterialTheme.typography.labelLarge
     val secondaryStyle = MaterialTheme.typography.labelSmall
-    val dayNames = remember {
-        listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+    val dayNames = remember(radiant) {
+        if (radiant) {
+            listOf("一", "二", "三", "四", "五", "六", "日")
+        } else {
+            listOf("周一", "周二", "周三", "周四", "周五", "周六", "周日")
+        }
     }
     val timeLabels = remember {
         ScheduleViewModel.timetable.map { (index, time) ->
@@ -540,6 +614,20 @@ private fun BoxScope.ScheduleGridLabels(
         val spacingPx = CourseCardSpec.cellSpacing.toPx()
         val cornerRadius = CornerRadius(8.dp.toPx())
 
+        if (radiant && weekDates.isNotEmpty()) {
+            val month = weekDates.first().substringBefore("-").trimStart('0')
+            drawCentered(
+                text = month,
+                style = dayStyle.copy(color = secondaryColor),
+                center = Offset(mainColumnWidthPx / 2f, mainRowHeightPx * 0.34f)
+            )
+            drawCentered(
+                text = "月",
+                style = secondaryStyle.copy(color = secondaryColor),
+                center = Offset(mainColumnWidthPx / 2f, mainRowHeightPx * 0.70f)
+            )
+        }
+
         weekDates.forEachIndexed { index, date ->
             val left = mainColumnWidthPx + (cellWidthPx + spacingPx) * index + spacingPx
             val isCurrentWeekday = !isPreviewNextSemester &&
@@ -563,7 +651,7 @@ private fun BoxScope.ScheduleGridLabels(
                 center = Offset(centerX, mainRowHeightPx * 0.34f)
             )
             drawCentered(
-                text = date,
+                text = if (radiant) date.substringAfter("-").trimStart('0') else date,
                 style = secondaryStyle.copy(color = dateColor),
                 center = Offset(centerX, mainRowHeightPx * 0.70f)
             )
@@ -579,7 +667,8 @@ private fun BoxScope.ScheduleGridLabels(
             )
             drawCentered(
                 text = time,
-                style = secondaryStyle.copy(color = secondaryColor),
+                style = (if (radiant) TextStyle(fontSize = 9.sp) else secondaryStyle)
+                    .copy(color = secondaryColor),
                 center = Offset(centerX, top + cellHeightPx * 0.70f)
             )
         }
@@ -748,7 +837,8 @@ private fun OverviewCourseGroupCard(
                     ) {
                         OverviewCourseContent(
                             course = item,
-                            stackedCount = sortedCourses.size
+                            stackedCount = sortedCourses.size,
+                            slotHeightDp = fullHeight / sortedCourses.size
                         )
                     }
                 }
@@ -768,8 +858,13 @@ private fun OverviewCourseGroupCard(
 @Composable
 private fun BoxScope.OverviewCourseContent(
     course: Course,
-    stackedCount: Int
+    stackedCount: Int,
+    slotHeightDp: Dp
 ) {
+    if (isRadiantUi) {
+        RadiantOverviewCourseContent(course, stackedCount, slotHeightDp)
+        return
+    }
     Text(
         text = course.name ?: "",
         modifier = Modifier.padding(bottom = 38.dp),
@@ -805,6 +900,80 @@ private fun BoxScope.OverviewCourseContent(
 }
 
 @Composable
+private fun BoxScope.RadiantOverviewCourseContent(
+    course: Course,
+    stackedCount: Int,
+    slotHeightDp: Dp
+) {
+    val locationText = course.location.shortScheduleLocation()
+    val weekText = course.weekRangeText()
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val maxLines = remember(
+        course.name,
+        locationText,
+        weekText,
+        stackedCount,
+        slotHeightDp,
+        density
+    ) {
+        val pillHeight = with(density) {
+            textMeasurer.measure(
+                text = AnnotatedString(locationText),
+                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            ).size.height.toDp() + 8.dp
+        }
+        val weekHeight = with(density) {
+            textMeasurer.measure(
+                text = AnnotatedString(weekText),
+                style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold)
+            ).size.height.toDp()
+        }
+        val nameLineHeight = with(density) {
+            textMeasurer.measure(
+                text = AnnotatedString("测试"),
+                style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            ).size.height.toDp()
+        }
+        val usableHeight = slotHeightDp - 8.dp - weekHeight - pillHeight - 4.dp
+        (usableHeight / nameLineHeight).toInt().coerceIn(1, 8)
+    }
+
+    Text(
+        text = course.name ?: "",
+        modifier = Modifier
+            .fillMaxSize()
+            .wrapContentHeight(Alignment.Top)
+            .padding(bottom = 42.dp),
+        color = 100.n1,
+        fontWeight = FontWeight.Bold,
+        maxLines = maxLines,
+        overflow = TextOverflow.Ellipsis,
+        style = TextStyle(fontSize = 12.sp)
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .align(Alignment.BottomCenter),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = weekText,
+            color = 100.n1,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold)
+        )
+        OverviewLocationPill(
+            text = locationText,
+            maxLines = if (stackedCount <= 1) 2 else 1
+        )
+    }
+}
+
+@Composable
 private fun OverviewLocationPill(
     text: String,
     maxLines: Int
@@ -820,7 +989,7 @@ private fun OverviewLocationPill(
         overflow = TextOverflow.Ellipsis,
         maxLines = maxLines,
         style = TextStyle(
-            fontSize = 11.sp,
+            fontSize = if (isRadiantUi) 9.sp else 11.sp,
             color = 10.n1 withNight 90.n1,
             fontWeight = FontWeight.Bold
         )

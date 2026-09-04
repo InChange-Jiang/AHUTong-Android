@@ -18,17 +18,21 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.data.model.Course
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.monet.LocalTonalPalettes
 import com.kyant.monet.PaletteStyle
@@ -63,6 +67,38 @@ fun CourseCard(
     CompositionLocalProvider(
         LocalTonalPalettes provides tonalPalettes
     ) {
+        val nameMaxLines = if (isRadiantUi) {
+            val density = LocalDensity.current
+            val textMeasurer = rememberTextMeasurer()
+            val capsuleText = if (isCurrentWeek) {
+                course.location.shortScheduleLocation()
+            } else {
+                "非本周"
+            }
+            remember(course.name, course.length, capsuleText, cellWidth, cellHeight, density) {
+                val capsuleLayout = textMeasurer.measure(
+                    text = capsuleText,
+                    style = TextStyle(fontSize = 9.sp, fontWeight = FontWeight.Bold),
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 2,
+                    constraints = Constraints(
+                        maxWidth = with(density) { (cellWidth - 12.dp).roundToPx() }
+                    )
+                )
+                val nameLineHeight = textMeasurer.measure(
+                    text = "口",
+                    style = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                ).size.height.coerceAtLeast(1)
+                val cardHeight = with(density) {
+                    (cellHeight * course.length +
+                        CourseCardSpec.cellSpacing * (course.length - 1)).roundToPx()
+                }
+                val reservedHeight = capsuleLayout.size.height + with(density) { 20.dp.roundToPx() }
+                ((cardHeight - reservedHeight) / nameLineHeight).coerceIn(1, 8)
+            }
+        } else {
+            3
+        }
         Box(
             modifier = with(CourseCardSpec) {
                 Modifier
@@ -103,8 +139,12 @@ fun CourseCard(
                 color = 100.n1,
                 fontWeight = FontWeight.Bold,
                 overflow = TextOverflow.Ellipsis,
-                maxLines = 3,
-                style = MaterialTheme.typography.labelMedium
+                maxLines = nameMaxLines,
+                style = if (isRadiantUi) {
+                    TextStyle(fontSize = 12.sp)
+                } else {
+                    MaterialTheme.typography.labelMedium
+                }
             )
 
 
@@ -132,7 +172,9 @@ fun CourseCard(
                 overflow = TextOverflow.Ellipsis,
                 maxLines = 2,
                 style = TextStyle(
-                    fontSize = 11.sp, color = 10.n1 withNight 90.n1, fontWeight = FontWeight.Bold
+                    fontSize = if (isRadiantUi) 9.sp else 11.sp,
+                    color = 10.n1 withNight 90.n1,
+                    fontWeight = FontWeight.Bold
                 )
             )
         }

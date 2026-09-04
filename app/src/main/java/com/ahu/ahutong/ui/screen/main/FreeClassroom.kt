@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ExpandLess
@@ -55,6 +57,8 @@ import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.FreeClassroomViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -120,16 +124,7 @@ fun FreeClassroom(
         )
     }
 
-    AppLazyPageLayout(
-        title = stringResource(id = R.string.free_classroom),
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
-            ,
-        bottomPadding = 112.dp,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val pageContent: LazyListScope.() -> Unit = {
         presetCandidates.firstOrNull()?.let { candidate ->
             item(key = "preset-${candidate.opportunityId}-${candidate.presetId}") {
                 LaunchedEffect(candidate.opportunityId, candidate.presetId) {
@@ -332,6 +327,33 @@ fun FreeClassroom(
                 FreeRoomCard(room)
             }
         }
+    }
+
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = stringResource(id = R.string.free_classroom),
+            contentEdgeToEdge = true
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding(),
+                contentPadding = PaddingValues(top = 72.dp, bottom = 112.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppLazyPageLayout(
+            title = stringResource(id = R.string.free_classroom),
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 112.dp,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            content = pageContent
+        )
     }
 }
 

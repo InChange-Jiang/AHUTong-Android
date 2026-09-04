@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -43,8 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -60,6 +63,9 @@ import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.SecondarySearchState
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.TelDirectoryViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -99,27 +105,14 @@ fun PhoneBook(onBack: (() -> Unit)? = null) {
         }
     }
 
-    AppLazyPageLayout(
-        title = stringResource(id = R.string.phone_book),
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp,
-        actions = {
-            AppHeaderIconButton(
-                imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                miuixImageVector = if (isSearchActive) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
-                contentDescription = if (isSearchActive) "关闭搜索" else "搜索",
-                onClick = {
-                    isSearchActive = !isSearchActive
-                    if (!isSearchActive) searchQuery = ""
-                }
-            )
-        }
-    ) {
+    val radiant = isRadiantUi
+    val toggleSearch = {
+        isSearchActive = !isSearchActive
+        if (!isSearchActive) searchQuery = ""
+    }
+    val pageContent: LazyListScope.() -> Unit = {
         if (isSearchActive) {
-            item(key = "search") {
+            if (!radiant) item(key = "search") {
                 AppSearchField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -174,10 +167,86 @@ fun PhoneBook(onBack: (() -> Unit)? = null) {
             }
         }
     }
+
+    if (radiant) {
+        SecondaryPageScaffold(
+            title = stringResource(id = R.string.phone_book),
+            search = SecondarySearchState(
+                query = searchQuery,
+                visible = isSearchActive,
+                placeholder = "搜索电话或部门",
+                onQueryChange = { searchQuery = it },
+                onClose = {
+                    isSearchActive = false
+                    searchQuery = ""
+                },
+                onSubmit = {}
+            ),
+            trailingContent = {
+                PhoneBookTitleButton(
+                    icon = R.drawable.ic_find,
+                    contentDescription = "搜索",
+                    onClick = { isSearchActive = true }
+                )
+            },
+            contentEdgeToEdge = true
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding(),
+                contentPadding = PaddingValues(top = 72.dp, bottom = 48.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppLazyPageLayout(
+            title = stringResource(id = R.string.phone_book),
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            actions = {
+                AppHeaderIconButton(
+                    imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
+                    miuixImageVector = if (isSearchActive) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
+                    contentDescription = if (isSearchActive) "关闭搜索" else "搜索",
+                    onClick = toggleSearch
+                )
+            },
+            content = pageContent
+        )
+    }
     DialDialog(
         onDismiss = { dialData = null },
         tel = dialData
     )
+}
+
+@Composable
+private fun PhoneBookTitleButton(
+    icon: Int,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
 }
 
 private fun openTelOrChooseCampus(

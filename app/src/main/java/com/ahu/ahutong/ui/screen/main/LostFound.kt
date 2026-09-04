@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -13,6 +14,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
@@ -24,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +38,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
@@ -50,6 +55,8 @@ import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.LostFoundViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -261,41 +268,7 @@ fun LostFound(
             }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
-    ) {
-
-        AppLazyPageLayout(
-            title = "失物招领",
-            onBack = onBack,
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-            bottomPadding = 96.dp,
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = Icons.Default.Refresh,
-                    miuixImageVector = MiuixIcons.Useful.Refresh,
-                    contentDescription = "刷新失物招领",
-                    onClick = lostFoundViewModel::refreshList
-                )
-                AppHeaderIconButton(
-                    imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
-                    miuixImageVector = if (searchExpanded) {
-                        MiuixIcons.Useful.Cancel
-                    } else {
-                        MiuixIcons.Useful.Search
-                    },
-                    contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
-                    onClick = {
-                        searchExpanded = !searchExpanded
-                        if (!searchExpanded) searchQuery = ""
-                    }
-                )
-            }
-        ) {
+    val pageContent: LazyListScope.() -> Unit = {
 
             item {
                 Column(
@@ -563,6 +536,75 @@ fun LostFound(
                     }
                 }
             }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
+    ) {
+        if (isRadiantUi) {
+            SecondaryPageScaffold(
+                title = "失物招领",
+                contentEdgeToEdge = true,
+                trailingContent = {
+                    LostFoundRadiantTitleButton(
+                        icon = R.drawable.ic_refresh,
+                        contentDescription = "刷新失物招领",
+                        onClick = lostFoundViewModel::refreshList
+                    )
+                    LostFoundRadiantTitleButton(
+                        icon = if (searchExpanded) null else R.drawable.ic_find,
+                        imageVector = if (searchExpanded) Icons.Default.Close else null,
+                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
+                        onClick = {
+                            searchExpanded = !searchExpanded
+                            if (!searchExpanded) searchQuery = ""
+                        }
+                    )
+                }
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding(),
+                    contentPadding = PaddingValues(top = 72.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    content = pageContent
+                )
+            }
+        } else {
+            AppLazyPageLayout(
+                title = "失物招领",
+                onBack = onBack,
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                bottomPadding = 96.dp,
+                actions = {
+                    AppHeaderIconButton(
+                        imageVector = Icons.Default.Refresh,
+                        miuixImageVector = MiuixIcons.Useful.Refresh,
+                        contentDescription = "刷新失物招领",
+                        onClick = lostFoundViewModel::refreshList
+                    )
+                    AppHeaderIconButton(
+                        imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
+                        miuixImageVector = if (searchExpanded) {
+                            MiuixIcons.Useful.Cancel
+                        } else {
+                            MiuixIcons.Useful.Search
+                        },
+                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
+                        onClick = {
+                            searchExpanded = !searchExpanded
+                            if (!searchExpanded) searchQuery = ""
+                        }
+                    )
+                },
+                content = pageContent
+            )
         }
         AppFloatingActionButton(
             onClick = {
@@ -1013,6 +1055,37 @@ fun LostFound(
 
                 Spacer(
                     modifier = Modifier.height(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LostFoundRadiantTitleButton(
+    icon: Int? = null,
+    imageVector: ImageVector? = null,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            when {
+                icon != null -> Icon(
+                    painter = painterResource(icon),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.size(18.dp)
+                )
+                imageVector != null -> Icon(
+                    imageVector = imageVector,
+                    contentDescription = contentDescription,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

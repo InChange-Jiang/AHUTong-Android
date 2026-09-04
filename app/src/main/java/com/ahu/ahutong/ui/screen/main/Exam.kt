@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -54,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -67,6 +70,10 @@ import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.SecondarySearchState
+import com.ahu.ahutong.ui.components.GlassCard
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ExamViewModel
 import com.ahu.ahutong.ui.state.RefreshState
@@ -140,24 +147,19 @@ fun Exam(
         exam.orEmpty()
     }
 
-    AppScrollablePageLayout(
-        title = stringResource(id = R.string.exam),
-        onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        bottomPadding = 48.dp,
-        actions = { RefreshButton(examViewModel) }
-    ) {
-        AppSearchField(
-            value = searchQuery,
-            onValueChange = {
-                searchQuery = it
-                isSearchActive = it.isNotBlank()
-            },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            placeholder = "搜索课程名称…"
-        )
+    val radiant = isRadiantUi
+    val pageContent: @Composable ColumnScope.() -> Unit = {
+        if (!radiant) {
+            AppSearchField(
+                value = searchQuery,
+                onValueChange = {
+                    searchQuery = it
+                    isSearchActive = it.isNotBlank()
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                placeholder = "搜索课程名称…"
+            )
+        }
 
         if (isLoading != true) {
             if (!filteredExams.isNullOrEmpty()) {
@@ -264,6 +266,112 @@ fun Exam(
             }
         }
     }
+
+    if (radiant) {
+        SecondaryPageScaffold(
+            title = stringResource(id = R.string.exam),
+            search = SecondarySearchState(
+                query = searchQuery,
+                visible = isSearchActive,
+                placeholder = "搜索课程名称…",
+                onQueryChange = { searchQuery = it },
+                onClose = {
+                    isSearchActive = false
+                    searchQuery = ""
+                },
+                onSubmit = {}
+            ),
+            trailingContent = {
+                ExamRadiantTitleButton(
+                    icon = R.drawable.ic_find,
+                    contentDescription = "搜索",
+                    onClick = { isSearchActive = true }
+                )
+                ExamRadiantRefreshButton(examViewModel)
+            }
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                content = pageContent
+            )
+        }
+    } else {
+        AppScrollablePageLayout(
+            title = stringResource(id = R.string.exam),
+            onBack = onBack,
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            bottomPadding = 48.dp,
+            actions = { RefreshButton(examViewModel) },
+            content = pageContent
+        )
+    }
+}
+
+@Composable
+private fun ExamRadiantTitleButton(
+    icon: Int,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            Icon(
+                painter = painterResource(icon),
+                contentDescription = contentDescription,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExamRadiantRefreshButton(examViewModel: ExamViewModel) {
+    val behaviorReporter = rememberBehaviorActionReporter()
+    val refreshState by examViewModel.refreshState.collectAsState()
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(
+            enabled = refreshState != RefreshState.LOADING,
+            onClick = {
+                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
+                examViewModel.loadExam(isRefresh = true)
+            }
+        ) {
+            when (refreshState) {
+                RefreshState.LOADING -> AppCircularProgressIndicator(
+                    size = 18.dp,
+                    strokeWidth = 2.dp
+                )
+                RefreshState.UPDATED -> Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = "已更新",
+                    tint = Color(0xFF2E7D32),
+                    modifier = Modifier.size(18.dp)
+                )
+                RefreshState.IDLE -> Icon(
+                    painter = painterResource(R.drawable.ic_refresh),
+                    contentDescription = "刷新考试",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
 }
 
 /** "磬苑校区-博学楼-博学楼A101" → "磬苑校区 博学楼A101" */
@@ -290,17 +398,7 @@ private fun ExamCard(
         else -> Color(0xFFC62828)
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(20.dp),
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
+    val cardContent: @Composable ColumnScope.() -> Unit = {
         // Course name + status badge
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -354,6 +452,33 @@ private fun ExamCard(
             Spacer(modifier = Modifier.width(6.dp))
             Text("座位号：${examItem.seatNum}", color = 50.n1 withNight 80.n1, style = MaterialTheme.typography.bodyMedium)
         }
+    }
+
+    if (isRadiantUi) {
+        GlassCard(
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            shape = SmoothRoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                content = cardContent
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .appLiquidGlassSurface(
+                    shape = SmoothRoundedCornerShape(20.dp),
+                    fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                    level = LiquidGlassSurfaceLevel.Panel
+                )
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            content = cardContent
+        )
     }
 }
 

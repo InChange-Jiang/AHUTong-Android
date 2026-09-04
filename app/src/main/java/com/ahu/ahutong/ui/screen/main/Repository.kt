@@ -12,12 +12,14 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
@@ -51,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -70,6 +74,8 @@ import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppDialogSurface
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppPageLayout
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.RepositoryMarkdownUiState
 import com.ahu.ahutong.ui.state.RepositoryViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -138,40 +144,7 @@ fun Repository(
         }
     }
 
-    AppPageLayout(
-        title = "学习资料",
-        onBack = { navController.popBackStack() },
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        actions = {
-                RepositoryRefreshButton(
-                    loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
-                    onRefresh = {
-                        behaviorReporter.organic(
-                            if (state.error == null) AppActionId.MANUAL_REFRESH_REPOSITORY
-                            else AppActionId.RETRY_REPOSITORY
-                        )
-                        viewModel.refreshDirectory(path)
-                    }
-                )
-                AppHeaderIconButton(
-                    imageVector = Icons.Outlined.Download,
-                    miuixImageVector = MiuixIcons.Useful.Save,
-                    contentDescription = "已下载",
-                    tint = MaterialTheme.colorScheme.primary,
-                    onClick = { navController.navigate("repository_downloads") }
-                )
-                AppHeaderIconButton(
-                    imageVector = Icons.Outlined.Tune,
-                    miuixImageVector = MiuixIcons.Useful.Settings,
-                    contentDescription = "学习资料设置",
-                    onClick = { navController.navigate("repository_settings") }
-                )
-        }
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-
+    val pageContent: @Composable ColumnScope.() -> Unit = {
         RepositoryBreadcrumb(
             currentPath = path,
             onPathClick = { targetPath ->
@@ -287,12 +260,118 @@ fun Repository(
             }
         }
     }
+
+    val refresh = {
+        behaviorReporter.organic(
+            if (state.error == null) AppActionId.MANUAL_REFRESH_REPOSITORY
+            else AppActionId.RETRY_REPOSITORY
+        )
+        viewModel.refreshDirectory(path)
+    }
+    if (isRadiantUi) {
+        SecondaryPageScaffold(
+            title = "学习资料",
+            contentEdgeToEdge = true,
+            trailingContent = {
+                RepositoryRadiantTitleButton(
+                    loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
+                    onClick = refresh
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_refresh),
+                        contentDescription = "刷新",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                RepositoryRadiantTitleButton(
+                    onClick = { navController.navigate("repository_downloads") }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_download),
+                        contentDescription = "已下载",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                RepositoryRadiantTitleButton(
+                    onClick = { navController.navigate("repository_settings") }
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_config),
+                        contentDescription = "学习资料设置",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+            ) {
+                Spacer(modifier = Modifier.height(72.dp))
+                pageContent()
+            }
+        }
+    } else {
+        AppPageLayout(
+            title = "学习资料",
+            onBack = { navController.popBackStack() },
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+            actions = {
+                RepositoryRefreshButton(
+                    loading = state.isLoading || state.isRefreshing || sharedState.isCacheWarming,
+                    onRefresh = refresh
+                )
+                AppHeaderIconButton(
+                    imageVector = Icons.Outlined.Download,
+                    miuixImageVector = MiuixIcons.Useful.Save,
+                    contentDescription = "已下载",
+                    tint = MaterialTheme.colorScheme.primary,
+                    onClick = { navController.navigate("repository_downloads") }
+                )
+                AppHeaderIconButton(
+                    imageVector = Icons.Outlined.Tune,
+                    miuixImageVector = MiuixIcons.Useful.Settings,
+                    contentDescription = "学习资料设置",
+                    onClick = { navController.navigate("repository_settings") }
+                )
+            }
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                pageContent()
+            }
+        }
     }
 
     RepositoryMarkdownReader(
         markdownState = markdownState,
         onDismiss = { viewModel.clearMarkdown() }
     )
+}
+
+@Composable
+private fun RepositoryRadiantTitleButton(
+    loading: Boolean = false,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick, enabled = !loading) {
+            if (loading) {
+                AppCircularProgressIndicator(size = 18.dp, strokeWidth = 2.dp)
+            } else {
+                content()
+            }
+        }
+    }
 }
 
 private fun repositoryResultBucket(count: Int): ResultCountBucket = when (count) {

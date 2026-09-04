@@ -19,6 +19,7 @@ object PreferencesKeys {
     val IS_SHOW_ALL_COURSE = booleanPreferencesKey("is_show_all_course")
     val USE_LIQUID_GLASS = booleanPreferencesKey("use_liquid_glass")
     val UI_THEME = stringPreferencesKey("ui_theme")
+    val UI_STYLE = stringPreferencesKey("ui_style")
     val USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD =
         booleanPreferencesKey("use_built_in_secure_password_keyboard")
     val COURSE_REMINDER_ENABLED = booleanPreferencesKey("course_reminder_enabled")
@@ -285,7 +286,8 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
     val appUiTheme: Flow<AppUiTheme> = context.dataStore.data.map { prefs ->
         AppUiTheme.fromStorage(
             value = prefs[PreferencesKeys.UI_THEME],
-            legacyUseLiquidGlass = prefs[PreferencesKeys.USE_LIQUID_GLASS]
+            legacyUseLiquidGlass = prefs[PreferencesKeys.USE_LIQUID_GLASS],
+            legacyUiStyle = prefs[PreferencesKeys.UI_STYLE]
         )
     }
 
@@ -299,6 +301,7 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
                 prefs.remove(PreferencesKeys.THEME_COLOR)
             }
             prefs.remove(PreferencesKeys.USE_LIQUID_GLASS)
+            prefs.remove(PreferencesKeys.UI_STYLE)
         }
     }
 

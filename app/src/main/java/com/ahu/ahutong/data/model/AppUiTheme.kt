@@ -10,8 +10,18 @@ enum class AppUiTheme(val storageValue: String, val displayName: String) {
         get() = this == LIQUID_GLASS || this == RADIANT
 
     companion object {
-        fun fromStorage(value: String?, legacyUseLiquidGlass: Boolean?): AppUiTheme =
+        fun fromStorage(
+            value: String?,
+            legacyUseLiquidGlass: Boolean?,
+            legacyUiStyle: String? = null
+        ): AppUiTheme =
             entries.firstOrNull { it.storageValue == value }
+                ?: when (legacyUiStyle) {
+                    "original" -> MATERIAL
+                    "liquid_glass" -> LIQUID_GLASS
+                    "radiant_ui" -> RADIANT
+                    else -> null
+                }
                 ?: if (legacyUseLiquidGlass == false) MATERIAL else LIQUID_GLASS
     }
 }

@@ -24,6 +24,11 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.tencent.mmkv.MMKV
 
+enum class HomeWidgetLayoutFamily {
+    CLASSIC,
+    RADIANT
+}
+
 /**
  * @Author SinkDev
  * @Date 2021/7/27-16:49
@@ -450,39 +455,73 @@ object AHUCache {
         userPutString("is_show_widget_dialog", false.toString())
     }
 
-    private const val HOME_WIDGET_SLOTS_KEY = "home_widget_slots"
-    private const val HOME_WIDGET_SLOT_COUNT = 8
+    // Keep the legacy key as Classic so existing layouts migrate without a copy or downgrade hazard.
+    private const val HOME_WIDGET_SLOTS_CLASSIC_KEY = "home_widget_slots"
+    private const val HOME_WIDGET_SLOTS_RADIANT_KEY = "home_widget_slots_radiant"
+    private const val HOME_WIDGET_SLOT_COUNT_CLASSIC = 8
+    private const val HOME_WIDGET_SLOT_COUNT_RADIANT = 7
 
     private data class HomeWidgetSlotsCache(
         val userId: String?,
+        val layoutFamily: HomeWidgetLayoutFamily,
         val slots: List<String?>
     )
 
     @Volatile
     private var homeWidgetSlotsCache: HomeWidgetSlotsCache? = null
 
-    private fun defaultHomeWidgetSlots(): List<String?> {
-        return listOf("bathroom", "electricity") + List(HOME_WIDGET_SLOT_COUNT - 2) { null }
-    }
+    private fun homeWidgetSlotsKey(layoutFamily: HomeWidgetLayoutFamily): String =
+        when (layoutFamily) {
+            HomeWidgetLayoutFamily.CLASSIC -> HOME_WIDGET_SLOTS_CLASSIC_KEY
+            HomeWidgetLayoutFamily.RADIANT -> HOME_WIDGET_SLOTS_RADIANT_KEY
+        }
 
-    private fun normalizeHomeWidgetSlots(slots: List<String?>): List<String?> {
+    private fun homeWidgetSlotCount(layoutFamily: HomeWidgetLayoutFamily): Int =
+        when (layoutFamily) {
+            HomeWidgetLayoutFamily.CLASSIC -> HOME_WIDGET_SLOT_COUNT_CLASSIC
+            HomeWidgetLayoutFamily.RADIANT -> HOME_WIDGET_SLOT_COUNT_RADIANT
+        }
+
+    private fun defaultHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): List<String?> =
+        when (layoutFamily) {
+            HomeWidgetLayoutFamily.CLASSIC ->
+                listOf("bathroom", "electricity") + List(HOME_WIDGET_SLOT_COUNT_CLASSIC - 2) { null }
+            HomeWidgetLayoutFamily.RADIANT -> listOf(
+                "electricity",
+                "bathroom",
+                "grade",
+                "exam",
+                "weather",
+                "network_recharge",
+                "free_classroom"
+            )
+        }
+
+    private fun normalizeHomeWidgetSlots(
+        layoutFamily: HomeWidgetLayoutFamily,
+        slots: List<String?>
+    ): List<String?> {
         val seen = mutableSetOf<String>()
-        return List(HOME_WIDGET_SLOT_COUNT) { index ->
+        return List(homeWidgetSlotCount(layoutFamily)) { index ->
             val id = slots.getOrNull(index)?.takeIf { it.isNotBlank() }
             if (id != null && seen.add(id)) id else null
         }
     }
 
-    fun getHomeWidgetSlots(): List<String?> {
+    fun getHomeWidgetSlots(): List<String?> =
+        getHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC)
+
+    fun getHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): List<String?> {
         val userId = getCurrentUser()?.xh
         homeWidgetSlotsCache
-            ?.takeIf { it.userId == userId }
+            ?.takeIf { it.userId == userId && it.layoutFamily == layoutFamily }
             ?.let { return it.slots }
-        val data = userGetStringOrMigrate(HOME_WIDGET_SLOTS_KEY) {
-            kv.decodeString(HOME_WIDGET_SLOTS_KEY)
+        val storageKey = homeWidgetSlotsKey(layoutFamily)
+        val data = userGetStringOrMigrate(storageKey) {
+            kv.decodeString(storageKey)
         } ?: ""
         val slots = if (data.isBlank()) {
-            defaultHomeWidgetSlots()
+            defaultHomeWidgetSlots(layoutFamily)
         } else {
             runCatching {
                 Gson().fromJson<List<String?>>(
@@ -490,26 +529,40 @@ object AHUCache {
                     object : TypeToken<List<String?>>() {}.type
                 )
             }.getOrNull()
-                ?.let(::normalizeHomeWidgetSlots)
-                ?: defaultHomeWidgetSlots()
+                ?.let { normalizeHomeWidgetSlots(layoutFamily, it) }
+                ?: defaultHomeWidgetSlots(layoutFamily)
         }
-        homeWidgetSlotsCache = HomeWidgetSlotsCache(userId, slots)
+        homeWidgetSlotsCache = HomeWidgetSlotsCache(userId, layoutFamily, slots)
         return slots
     }
 
     /** 用户是否曾自定义主页插槽（true=已保存过布局，false=从未设置）。 */
-    fun hasCustomHomeWidgetSlots(): Boolean {
-        val data = userGetStringOrMigrate(HOME_WIDGET_SLOTS_KEY) {
-            kv.decodeString(HOME_WIDGET_SLOTS_KEY)
+    fun hasCustomHomeWidgetSlots(): Boolean =
+        hasCustomHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC)
+
+    fun hasCustomHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): Boolean {
+        val storageKey = homeWidgetSlotsKey(layoutFamily)
+        val data = userGetStringOrMigrate(storageKey) {
+            kv.decodeString(storageKey)
         } ?: ""
         return data.isNotBlank()
     }
 
-    fun saveHomeWidgetSlots(slots: List<String?>) {
-        val normalizedSlots = normalizeHomeWidgetSlots(slots)
+    fun saveHomeWidgetSlots(slots: List<String?>) =
+        saveHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC, slots)
+
+    fun saveHomeWidgetSlots(
+        layoutFamily: HomeWidgetLayoutFamily,
+        slots: List<String?>
+    ) {
+        val normalizedSlots = normalizeHomeWidgetSlots(layoutFamily, slots)
         val data = Gson().toJson(normalizedSlots)
-        userPutString(HOME_WIDGET_SLOTS_KEY, data)
-        homeWidgetSlotsCache = HomeWidgetSlotsCache(getCurrentUser()?.xh, normalizedSlots)
+        userPutString(homeWidgetSlotsKey(layoutFamily), data)
+        homeWidgetSlotsCache = HomeWidgetSlotsCache(
+            getCurrentUser()?.xh,
+            layoutFamily,
+            normalizedSlots
+        )
     }
 
     fun logout() {

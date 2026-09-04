@@ -72,6 +72,7 @@ import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
@@ -109,6 +110,7 @@ fun Settings(
     var lastAppCardTap by remember { mutableLongStateOf(0L) }
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
     val useMiuixIcons = LocalAppUiTheme.current == AppUiTheme.MIUIX
+    val isRadiant = isRadiantUi
 
     LaunchedEffect(tip) {
         tip?.let {
@@ -192,9 +194,12 @@ fun Settings(
                     title = "重新登录",
                     leadingIcon = if (useMiuixIcons) {
                         MiuixIcons.Useful.Personal
+                    } else if (isRadiant) {
+                        null
                     } else {
                         Icons.AutoMirrored.Outlined.Login
                     },
+                    leadingPainter = if (isRadiant) painterResource(R.drawable.ic_logout) else null,
                     showDivider = false,
                     onClick = { navController.navigate("login") }
                 )
@@ -208,12 +213,26 @@ fun Settings(
         ) {
             SettingsActionRow(
                 title = stringResource(id = R.string.preferences),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Settings else Icons.Outlined.Tune,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Settings
+                    isRadiant -> null
+                    else -> Icons.Outlined.Tune
+                },
+                leadingPainter = if (isRadiant) {
+                    painterResource(R.drawable.ic_setting_config)
+                } else {
+                    null
+                },
                 onClick = { navController.navigate("preferences") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.check_update),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Update else Icons.Outlined.Update,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Update
+                    isRadiant -> null
+                    else -> Icons.Outlined.Update
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_update) else null,
                 showDivider = false,
                 onClick = {
                     mainViewModel.checkApkUpdateManually(context) { message ->
@@ -230,17 +249,36 @@ fun Settings(
         ) {
             SettingsActionRow(
                 title = stringResource(id = R.string.license),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Info else Icons.AutoMirrored.Outlined.Article,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Info
+                    isRadiant -> null
+                    else -> Icons.AutoMirrored.Outlined.Article
+                },
+                leadingPainter = if (isRadiant) {
+                    painterResource(R.drawable.ic_announcement)
+                } else {
+                    null
+                },
                 onClick = { navController.navigate("settings__license") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.contributors),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Personal else Icons.Outlined.PeopleOutline,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Personal
+                    isRadiant -> null
+                    else -> Icons.Outlined.PeopleOutline
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_peoples) else null,
                 onClick = { navController.navigate("settings__contributors") }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.mine_tv_feedback),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Edit else Icons.Outlined.Feedback,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Edit
+                    isRadiant -> null
+                    else -> Icons.Outlined.Feedback
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_topic) else null,
                 onClick = {
                     runCatching {
                         context.startActivity(
@@ -256,12 +294,22 @@ fun Settings(
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.update_intro),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Info else Icons.AutoMirrored.Outlined.Article,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Info
+                    isRadiant -> null
+                    else -> Icons.AutoMirrored.Outlined.Article
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_log) else null,
                 onClick = { isUpdateLogDialogShown = true }
             )
             SettingsActionRow(
                 title = stringResource(id = R.string.setting_clear),
-                leadingIcon = if (useMiuixIcons) MiuixIcons.Useful.Delete else Icons.Outlined.ClearAll,
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Delete
+                    isRadiant -> null
+                    else -> Icons.Outlined.ClearAll
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_clear) else null,
                 destructive = true,
                 showDivider = false,
                 onClick = { isClearDataDialogShown = true }

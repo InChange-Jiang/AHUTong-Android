@@ -54,7 +54,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -318,7 +320,9 @@ fun SettingsHeroCard(
     content: @Composable RowScope.() -> Unit
 ) {
     val onClickWithFeedback = rememberThemeHapticAction(onClick)
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
+    val uiTheme = LocalAppUiTheme.current
+    val isRadiant = uiTheme == AppUiTheme.RADIANT
+    if (uiTheme == AppUiTheme.MIUIX) {
         MiuixCard(
             modifier = modifier.fillMaxWidth(),
             cornerRadius = 16.dp,
@@ -338,6 +342,19 @@ fun SettingsHeroCard(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (isRadiant) {
+                    Modifier.shadow(
+                        elevation = 14.dp,
+                        shape = shape,
+                        clip = false,
+                        ambientColor = Color.Black.copy(alpha = 0.12f),
+                        spotColor = Color.Black.copy(alpha = 0.12f)
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .appLiquidGlassSurface(
                 shape = shape,
                 fallbackColor = MaterialTheme.colorScheme.primaryContainer,
@@ -359,7 +376,9 @@ fun SettingsSection(
     backdrop: Backdrop? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
+    val uiTheme = LocalAppUiTheme.current
+    val isRadiant = uiTheme == AppUiTheme.RADIANT
+    if (uiTheme == AppUiTheme.MIUIX) {
         Column(modifier = modifier.fillMaxWidth()) {
             MiuixSmallTitle(text = title)
             MiuixCard(
@@ -392,6 +411,19 @@ fun SettingsSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (isRadiant) {
+                        Modifier.shadow(
+                            elevation = 14.dp,
+                            shape = shape,
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.12f),
+                            spotColor = Color.Black.copy(alpha = 0.12f)
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
                 .appLiquidGlassSurface(
                     shape = shape,
                     fallbackColor = settingsGroupColor(),
@@ -410,6 +442,7 @@ fun SettingsActionRow(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     leadingIcon: ImageVector? = null,
+    leadingPainter: Painter? = null,
     value: String? = null,
     destructive: Boolean = false,
     showChevron: Boolean = true,
@@ -467,7 +500,22 @@ fun SettingsActionRow(
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            leadingIcon?.let {
+            if (leadingPainter != null) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(SmoothRoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = leadingPainter,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            } else leadingIcon?.let {
                 Box(
                     modifier = Modifier
                         .size(40.dp)
@@ -504,7 +552,10 @@ fun SettingsActionRow(
                 )
             }
         }
-        SettingsDivider(visible = showDivider, leadingInset = if (leadingIcon == null) 20.dp else 74.dp)
+        SettingsDivider(
+            visible = showDivider,
+            leadingInset = if (leadingIcon == null && leadingPainter == null) 20.dp else 74.dp
+        )
     }
 }
 

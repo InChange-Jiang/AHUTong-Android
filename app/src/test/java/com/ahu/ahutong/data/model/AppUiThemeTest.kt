@@ -7,6 +7,7 @@ class AppUiThemeTest {
     @Test
     fun `stored theme wins over legacy liquid glass preference`() {
         assertEquals(AppUiTheme.MIUIX, AppUiTheme.fromStorage("miuix", false))
+        assertEquals(AppUiTheme.RADIANT, AppUiTheme.fromStorage("radiant_ui", false))
     }
 
     @Test

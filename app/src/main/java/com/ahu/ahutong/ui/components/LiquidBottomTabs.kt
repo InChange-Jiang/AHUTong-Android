@@ -3,6 +3,8 @@ package com.ahu.ahutong.ui.components
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -30,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -69,6 +72,7 @@ fun LiquidBottomTabs(
     backdrop: Backdrop,
     tabsCount: Int,
     modifier: Modifier = Modifier,
+    onCurrentTabTapped: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit
 ) {
     val tokens = LocalLiquidGlassTokens.current
@@ -279,6 +283,21 @@ fun LiquidBottomTabs(
                 }
                 .then(interactiveHighlight.gestureModifier)
                 .then(dampedDragAnimation.modifier)
+                .then(
+                    if (onCurrentTabTapped != null) {
+                        Modifier.pointerInput(onCurrentTabTapped) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val up = waitForUpOrCancellation()
+                                    if (up != null && !down.isConsumed) onCurrentTabTapped()
+                                }
+                            }
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
                 .drawBackdrop(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsSource),
                     shape = { ContinuousCapsule },

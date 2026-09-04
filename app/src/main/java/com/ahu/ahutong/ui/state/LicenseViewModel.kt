@@ -105,6 +105,12 @@ class LicenseViewModel : ViewModel() {
                 "licenses/guixu/NOTICE"
             ),
             License(
+                "学小通",
+                "InChange-Jiang",
+                "https://github.com/InChange-Jiang/Xuexiaotong",
+                "Apache License 2.0"
+            ),
+            License(
                 "More...",
                 "Various Developers",
                 "https://github.com/",

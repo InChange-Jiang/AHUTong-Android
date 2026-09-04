@@ -62,7 +62,7 @@ fun LiquidGlassAppHost(
     val background = when (appTheme) {
         AppUiTheme.MIUIX -> MiuixTheme.colorScheme.surface
         AppUiTheme.MATERIAL -> MaterialTheme.colorScheme.background
-        AppUiTheme.LIQUID_GLASS -> tokens.screenBackground
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> tokens.screenBackground
     }
 
     Box(modifier = modifier.background(background)) {
@@ -202,7 +202,7 @@ fun Modifier.appLiquidGlassSceneBackground(fallbackColor: Color): Modifier {
         when (LocalAppUiTheme.current) {
             AppUiTheme.MIUIX -> MiuixTheme.colorScheme.surface
             AppUiTheme.MATERIAL -> fallbackColor
-            AppUiTheme.LIQUID_GLASS -> if (LocalLiquidGlassTokens.current.enabled) {
+            AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> if (LocalLiquidGlassTokens.current.enabled) {
                 Color.Transparent
             } else {
                 fallbackColor

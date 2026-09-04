@@ -497,6 +497,14 @@ object AHUCache {
         return slots
     }
 
+    /** 用户是否曾自定义主页插槽（true=已保存过布局，false=从未设置）。 */
+    fun hasCustomHomeWidgetSlots(): Boolean {
+        val data = userGetStringOrMigrate(HOME_WIDGET_SLOTS_KEY) {
+            kv.decodeString(HOME_WIDGET_SLOTS_KEY)
+        } ?: ""
+        return data.isNotBlank()
+    }
+
     fun saveHomeWidgetSlots(slots: List<String?>) {
         val normalizedSlots = normalizeHomeWidgetSlots(slots)
         val data = Gson().toJson(normalizedSlots)

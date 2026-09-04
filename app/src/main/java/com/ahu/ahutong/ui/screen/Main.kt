@@ -64,6 +64,7 @@ import com.ahu.ahutong.ui.screen.main.SchoolCalendar
 import com.ahu.ahutong.ui.screen.main.Tools
 import com.ahu.ahutong.ui.screen.main.RepositorySettings
 import com.ahu.ahutong.ui.screen.main.Weather
+import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen
 import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
 import com.ahu.ahutong.ui.screen.settings.License
@@ -398,6 +399,11 @@ fun Main(
 
             animatedComposable(appUiThemeState, "network_recharge") {
                 NetworkRecharge(onBack = { navController.popBackStack() })
+            }
+
+            animatedComposable(appUiThemeState, "xuexiaotong") {
+                val api = remember { com.ahu.ahutong.data.xuexiaotong.ChaoxingApi(context) }
+                XuexiaotongScreen(api = api)
             }
 
             if (BuildConfig.DEBUG) {

@@ -244,7 +244,7 @@ fun AppCard(
             }
         }
 
-        AppUiTheme.LIQUID_GLASS -> {
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> {
             Column(
                 modifier = modifier
                     .appLiquidGlassSurface(
@@ -318,7 +318,7 @@ fun AppHeaderIconButton(
             }
             return
         }
-        AppUiTheme.LIQUID_GLASS -> Unit
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> Unit
     }
     Box(
         modifier = modifier
@@ -697,7 +697,7 @@ fun AppCircularProgressIndicator(
                 strokeWidth = strokeWidth
             )
         }
-        AppUiTheme.LIQUID_GLASS -> LiquidGlassProgressIndicator(
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidGlassProgressIndicator(
             progress = progress?.invoke(),
             modifier = modifier,
             size = size,
@@ -781,7 +781,7 @@ fun AppFloatingActionButton(
             modifier = modifier,
             content = content
         )
-        AppUiTheme.LIQUID_GLASS -> Box(
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> Box(
             modifier = modifier
                 .size(60.dp)
                 .appLiquidGlassSurface(
@@ -909,7 +909,7 @@ fun AppSearchField(
         shape = AppComponentTokens.ControlShape,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch(value) }),
-        colors = if (LocalAppUiTheme.current == AppUiTheme.LIQUID_GLASS) {
+        colors = if (LocalAppUiTheme.current.usesLiquidGlass) {
             OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
@@ -949,7 +949,7 @@ fun AppTextField(
         )
         return
     }
-    val liquid = LocalAppUiTheme.current == AppUiTheme.LIQUID_GLASS
+    val liquid = LocalAppUiTheme.current.usesLiquidGlass
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -1063,7 +1063,7 @@ fun AppButton(
                 )
             }
         }
-        AppUiTheme.LIQUID_GLASS -> LiquidButton(
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidButton(
             onClick = onClick,
             backdrop = LocalLiquidGlassAmbientBackdrop.current,
             modifier = modifier.heightIn(min = AppComponentTokens.TouchTarget),
@@ -1098,7 +1098,7 @@ fun AppToggle(
             modifier = modifier,
             enabled = enabled
         )
-        AppUiTheme.LIQUID_GLASS -> LiquidToggle(
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidToggle(
             selected = { checked },
             onSelect = onCheckedChange,
             backdrop = LocalLiquidGlassAmbientBackdrop.current,
@@ -1150,7 +1150,7 @@ fun <T> AppSelectField(
             enabled = enabled,
             valueTextAlign = valueTextAlign
         )
-        AppUiTheme.LIQUID_GLASS -> LiquidGlassSelectField(
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidGlassSelectField(
             label = label,
             selected = selected,
             selectedLabel = selectedLabel,
@@ -1859,7 +1859,7 @@ fun AppModalBottomSheet(
             }
         }
 
-        AppUiTheme.LIQUID_GLASS -> {
+        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> {
             val visibility = remember {
                 MutableTransitionState(false).apply { targetState = true }
             }

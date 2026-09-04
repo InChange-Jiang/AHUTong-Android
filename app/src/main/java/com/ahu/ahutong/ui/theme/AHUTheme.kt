@@ -172,7 +172,7 @@ fun AHUTheme(content: @Composable () -> Unit) {
         }
         MaterialTheme(colorScheme = colorScheme) {
             val liquidGlassTokens = rememberLiquidGlassTokens(
-                enabled = isUiThemePreferenceReady && appUiTheme == AppUiTheme.LIQUID_GLASS
+                enabled = isUiThemePreferenceReady && appUiTheme.usesLiquidGlass
             )
             MiuixTheme(controller = miuixController) {
                 CompositionLocalProvider(

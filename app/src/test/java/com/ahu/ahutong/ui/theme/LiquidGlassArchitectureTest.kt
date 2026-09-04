@@ -42,7 +42,7 @@ class LiquidGlassArchitectureTest {
 
         assertTrue(viewModel.contains("_isUiThemePreferenceReady = MutableStateFlow(startupThemePreferences != null)"))
         assertTrue(viewModel.contains("_isUiThemePreferenceReady.value = true"))
-        assertTrue(theme.contains("appUiTheme == AppUiTheme.LIQUID_GLASS"))
+        assertTrue(theme.contains("appUiTheme.usesLiquidGlass"))
         assertTrue(theme.contains("MiuixTheme(controller = miuixController)"))
         assertTrue(theme.contains("ColorSchemeMode.MonetLight"))
         assertTrue(theme.contains("ColorSchemeMode.MonetDark"))

@@ -119,7 +119,7 @@ private fun NavGraphBuilder.animatedComposableWithThemeProvider(
                                 initialOffsetX = { direction * it / 5 },
                                 animationSpec = tween(280)
                             )
-                    AppUiTheme.LIQUID_GLASS ->
+                    AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT ->
                         fadeIn(animationSpec = tween(160)) +
                             slideInHorizontally(
                                 initialOffsetX = { direction * it / 4 },
@@ -150,7 +150,7 @@ private fun NavGraphBuilder.animatedComposableWithThemeProvider(
                 )
             } else {
                 when (uiTheme()) {
-                    AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS ->
+                    AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT ->
                         fadeOut(animationSpec = tween(140)) +
                             slideOutHorizontally(
                                 targetOffsetX = { -direction * it / 12 },
@@ -176,7 +176,7 @@ private fun NavGraphBuilder.animatedComposableWithThemeProvider(
             )
         } else {
             when (uiTheme()) {
-                AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS ->
+                AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT ->
                     fadeIn(animationSpec = tween(180)) +
                         slideInHorizontally(
                             initialOffsetX = { -direction * it / 12 },
@@ -201,7 +201,7 @@ private fun NavGraphBuilder.animatedComposableWithThemeProvider(
             )
         } else {
             when (uiTheme()) {
-                AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS ->
+                AppUiTheme.MATERIAL, AppUiTheme.MIUIX, AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT ->
                     fadeOut(animationSpec = tween(160)) +
                         slideOutHorizontally(
                             targetOffsetX = { direction * it / 4 },

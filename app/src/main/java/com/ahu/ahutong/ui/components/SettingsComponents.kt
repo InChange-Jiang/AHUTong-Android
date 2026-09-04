@@ -658,7 +658,7 @@ fun <T> SettingsSelectRow(
         }
         return
     }
-    if (LocalAppUiTheme.current == AppUiTheme.LIQUID_GLASS) {
+    if (LocalAppUiTheme.current.usesLiquidGlass) {
         var expanded by remember { mutableStateOf(false) }
         var anchorBounds by remember { mutableStateOf(IntRect(0, 0, 0, 0)) }
         val selectedLabel = choices.firstOrNull { it.value == selected }?.label.orEmpty()
@@ -728,7 +728,7 @@ fun <T> SettingsSelectRow(
         return
     }
     var expanded by remember { mutableStateOf(false) }
-    val isLiquidGlass = LocalAppUiTheme.current == AppUiTheme.LIQUID_GLASS
+    val isLiquidGlass = LocalAppUiTheme.current.usesLiquidGlass
     val selectedLabel = choices.firstOrNull { it.value == selected }?.label.orEmpty()
     val menuMinWidth = LocalConfiguration.current.screenWidthDp.dp * 0.5f
     Column(modifier = modifier.fillMaxWidth()) {

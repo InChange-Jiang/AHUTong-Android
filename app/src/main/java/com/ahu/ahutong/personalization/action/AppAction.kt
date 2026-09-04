@@ -203,7 +203,8 @@ object AppActionCatalog {
     private val specById = specs.associateBy(AppActionSpec::id)
     private val specByRoute = specs.mapNotNull { value -> value.route?.let { it to value } }.toMap()
     private val routeAliases = mapOf(
-        "electricity_recent_rooms" to AppActionId.OPEN_ELECTRICITY_PAYMENT
+        "electricity_recent_rooms" to AppActionId.OPEN_ELECTRICITY_PAYMENT,
+        "xuexiaotong" to AppActionId.VIEW_SCHOOL_CALENDAR
     )
     private val commandRoutePrefixes: Map<AppActionId, Set<String>> = mapOf(
         AppActionId.OPEN_PAYMENT_QR to setOf("home"),
@@ -283,7 +284,7 @@ object AppActionCatalog {
         "repository", "repository/{path}", "repository_downloads", "repository_settings", "settings",
         "settings__license", "settings__contributors", "preferences", "electricity_pay",
         "card_balance_deposit", "bathroom_deposit", "cmb_card_recharge", "network_recharge",
-        "electricity_recent_rooms",
+        "electricity_recent_rooms", "xuexiaotong",
         "splash"
     )
 

@@ -1,27 +1,23 @@
 package com.ahu.ahutong.ui.screen.xuexiaotong
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -40,6 +35,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.data.xuexiaotong.ChaoxingApi
 import com.ahu.ahutong.data.xuexiaotong.Store
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppCard
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppTextField
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,13 +49,11 @@ fun XuexiaotongLoginScreen(
     api: ChaoxingApi,
     onLoginSuccess: () -> Unit
 ) {
-    var phone by remember { mutableStateOf("") }
-    var pwd by remember { mutableStateOf("") }
-    var showPwd by remember { mutableStateOf(false) }
+    var account by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
-    var errText by remember { mutableStateOf("") }
-    var agreed by remember { mutableStateOf(false) }
-    var showPrivacy by remember { mutableStateOf(false) }
+    var errorText by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     Box(
@@ -84,87 +82,95 @@ fun XuexiaotongLoginScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "登陆凭证仅用于登录学习通，不会上传到任何第三方",
+                text = "登录凭证仅用于登录学习通，不会上传到任何第三方",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             )
             Spacer(modifier = Modifier.height(32.dp))
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                        RoundedCornerShape(20.dp)
-                    )
-                    .padding(20.dp)
+            AppCard(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(20.dp)
             ) {
-                OutlinedTextField(
-                    value = phone,
-                    onValueChange = { phone = it },
-                    label = { Text("账号") },
-                    placeholder = { Text("手机号 / 超星号 / 邮箱") },
-                    singleLine = true,
+                AppTextField(
+                    value = account,
+                    onValueChange = { account = it },
+                    label = "账号（手机号 / 超星号 / 邮箱）",
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = pwd,
-                    onValueChange = { pwd = it },
-                    label = { Text("密码") },
-                    placeholder = { Text("请输入密码") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = if (showPwd) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        androidx.compose.material3.TextButton(onClick = { showPwd = !showPwd }) {
-                            Text(if (showPwd) "隐藏" else "显示", fontSize = 13.sp)
-                        }
-                    },
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = "密码",
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        visualTransformation = if (showPassword) {
+                            VisualTransformation.None
+                        } else {
+                            PasswordVisualTransformation()
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    AppButton(
+                        onClick = { showPassword = !showPassword },
+                        modifier = Modifier.widthIn(min = 72.dp),
+                        variant = AppButtonVariant.Secondary
+                    ) {
+                        Text(if (showPassword) "隐藏" else "显示", fontSize = 13.sp)
+                    }
+                }
 
-                if (errText.isNotEmpty()) {
+                if (errorText.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text(errText, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    Text(errorText, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                 }
 
                 Spacer(modifier = Modifier.height(24.dp))
-                Button(
+                AppButton(
                     onClick = {
-                        errText = ""
-                        if (phone.isBlank()) { errText = "请输入账号"; return@Button }
-                        if (pwd.isBlank()) { errText = "请输入密码"; return@Button }
+                        errorText = ""
+                        if (account.isBlank()) {
+                            errorText = "请输入账号"
+                            return@AppButton
+                        }
+                        if (password.isBlank()) {
+                            errorText = "请输入密码"
+                            return@AppButton
+                        }
                         loading = true
                         scope.launch {
                             try {
                                 withContext(Dispatchers.IO) {
-                                    api.loginByPassword(phone, pwd)
-                                    Store.saveCredential(phone, pwd)
+                                    api.loginByPassword(account, password)
+                                    Store.saveCredential(account, password)
                                 }
                                 onLoginSuccess()
-                            } catch (e: Exception) {
-                                errText = e.message ?: "登录失败"
+                            } catch (exception: Exception) {
+                                errorText = exception.message ?: "登录失败"
                             } finally {
                                 loading = false
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
                     enabled = !loading
                 ) {
                     if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = MaterialTheme.colorScheme.onPrimary,
+                        AppCircularProgressIndicator(
+                            size = 20.dp,
+                            color = LocalContentColor.current,
                             strokeWidth = 2.dp
                         )
-                        Spacer(modifier = Modifier.size(8.dp))
-                        Text("登录中...")
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("登录中…")
                     } else {
                         Text("登录", fontSize = 16.sp)
                     }

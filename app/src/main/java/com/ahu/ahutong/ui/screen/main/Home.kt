@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen.main
 
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -8,10 +9,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -37,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -46,6 +52,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
@@ -58,7 +65,10 @@ import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.semantic.MutationId
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.AtAGlance
+import com.ahu.ahutong.ui.screen.main.home.HomeDateRow
 import com.ahu.ahutong.ui.screen.main.home.HomeWeatherWidget
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetDragOverlay
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetLibrarySheet
@@ -137,6 +147,15 @@ fun Home(
             emptyList()
         }
     }
+    val radiant = isRadiantUi
+    val slotCount = if (radiant) {
+        HomeWidgetRegistry.slotCountRadiant
+    } else {
+        HomeWidgetRegistry.slotCountClassic
+    }
+    val knownWidgetIds = remember(radiant) {
+        HomeWidgetRegistry.availableWidgets(radiant).mapTo(mutableSetOf()) { it.id }
+    }
     val initialCalendar = remember { Calendar.getInstance(Locale.CHINA) }
     var currentDateText by remember { mutableStateOf("") }
     var currentMinutes by remember {
@@ -145,8 +164,13 @@ fun Home(
         )
     }
     var isEditingHome by remember { mutableStateOf(false) }
-    var homeWidgetSlots by remember {
-        mutableStateOf(normalizeHomeWidgetSlots(listOf("bathroom", "electricity")))
+    var homeWidgetSlots by remember(radiant) {
+        val initialSlots = if (radiant && !AHUCache.hasCustomHomeWidgetSlots()) {
+            HomeWidgetRegistry.defaultSlotsRadiant
+        } else {
+            listOf("bathroom", "electricity")
+        }
+        mutableStateOf(normalizeHomeWidgetSlots(initialSlots, slotCount, knownWidgetIds))
     }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var libraryBounds by remember { mutableStateOf<Rect?>(null) }
@@ -158,7 +182,8 @@ fun Home(
             drag = it,
             slots = homeWidgetSlots,
             slotBounds = slotBounds,
-            dropSlopPx = dropSlopPx
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
         )
     }
     val weatherHomeConfig by produceState(
@@ -169,7 +194,7 @@ fun Home(
     }
 
     fun saveHomeWidgetSlots(slots: List<String?>) {
-        val normalizedSlots = normalizeHomeWidgetSlots(slots)
+        val normalizedSlots = normalizeHomeWidgetSlots(slots, slotCount, knownWidgetIds)
         homeWidgetSlots = normalizedSlots
         AHUCache.saveHomeWidgetSlots(normalizedSlots)
     }
@@ -202,7 +227,8 @@ fun Home(
             drag = drag,
             slots = homeWidgetSlots,
             slotBounds = slotBounds,
-            dropSlopPx = dropSlopPx
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
         )
 
         if (drag.sourceSlot != null && libraryBounds?.contains(dragCenter) == true) {
@@ -284,9 +310,14 @@ fun Home(
         exitHomeEditMode()
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(radiant) {
         homeWidgetSlots = withContext(Dispatchers.IO) {
-            normalizeHomeWidgetSlots(AHUCache.getHomeWidgetSlots())
+            val savedSlots = if (radiant && !AHUCache.hasCustomHomeWidgetSlots()) {
+                HomeWidgetRegistry.defaultSlotsRadiant
+            } else {
+                AHUCache.getHomeWidgetSlots()
+            }
+            normalizeHomeWidgetSlots(savedSlots, slotCount, knownWidgetIds)
         }
     }
     LaunchedEffect(Unit) {
@@ -328,6 +359,23 @@ fun Home(
     DisposableEffect(Unit) {
         onDispose {
             exitHomeEditMode()
+        }
+    }
+    val trailingContent: @Composable RowScope.() -> Unit = {
+        if (BuildConfig.DEBUG) {
+            DebugBuildBadge()
+        }
+        if (
+            !isEditingHome &&
+            weatherHomeConfig.showOnHome &&
+            weatherHomeConfig.mode == WeatherHomeMode.Compact
+        ) {
+            HomeWeatherWidget(
+                onClick = { navController.navigate("weather") },
+                modifier = Modifier.padding(start = 12.dp),
+                config = weatherHomeConfig,
+                mode = WeatherHomeMode.Compact
+            )
         }
     }
     Box(
@@ -379,8 +427,15 @@ fun Home(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .systemBarsPadding()
-                .padding(bottom = if (isEditingHome) 520.dp else 96.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(
+                    top = if (radiant) 48.dp else 0.dp,
+                    bottom = if (isEditingHome) 520.dp else 96.dp
+                ),
+            verticalArrangement = if (radiant) {
+                Arrangement.Center
+            } else {
+                Arrangement.spacedBy(24.dp)
+            }
         ) {
             AtAGlance(
                 todayCourses = todayCourses,
@@ -389,23 +444,7 @@ fun Home(
                 onOpenSchedule = onOpenSchedule,
                 isInSemester = isInSemester,
                 enabled = !isEditingHome,
-                trailingContent = {
-                    if (BuildConfig.DEBUG) {
-                        DebugBuildBadge()
-                    }
-                    if (
-                        !isEditingHome &&
-                        weatherHomeConfig.showOnHome &&
-                        weatherHomeConfig.mode == WeatherHomeMode.Compact
-                    ) {
-                        HomeWeatherWidget(
-                            onClick = { navController.navigate("weather") },
-                            modifier = Modifier.padding(start = 12.dp),
-                            config = weatherHomeConfig,
-                            mode = WeatherHomeMode.Compact
-                        )
-                    }
-                }
+                trailingContent = trailingContent
             )
             if (todayCourses.isNotEmpty()) {
                 TodayCourseList(
@@ -450,8 +489,35 @@ fun Home(
             )
         }
 
+        if (radiant) {
+            val headerBackground = if (LocalIsLiquidGlassEnabled.current) {
+                MaterialTheme.colorScheme.surfaceContainerLowest
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .zIndex(20f)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to headerBackground,
+                            0.35f to headerBackground,
+                            0.68f to headerBackground.copy(alpha = 0.85f),
+                            1f to headerBackground.copy(alpha = 0f)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(top = 12.dp)
+            ) {
+                HomeDateRow(trailingContent = trailingContent)
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+
         val placedWidgetIds = homeWidgetSlots.filterNotNull().toSet()
-        val availableWidgets = HomeWidgetRegistry.widgets.filter { it.id !in placedWidgetIds }
+        val availableWidgets = HomeWidgetRegistry.availableWidgets(radiant)
+            .filter { it.id !in placedWidgetIds }
         val isDraggingFromLibrary = activeDrag != null && activeDrag?.sourceSlot == null
         HomeWidgetLibrarySheet(
             visible = isEditingHome,
@@ -538,10 +604,13 @@ private fun DebugBuildBadge() {
     }
 }
 
-private fun normalizeHomeWidgetSlots(slots: List<String?>): List<String?> {
-    val knownIds = HomeWidgetRegistry.widgetById.keys
+private fun normalizeHomeWidgetSlots(
+    slots: List<String?>,
+    slotCount: Int,
+    knownIds: Set<String>
+): List<String?> {
     val seen = mutableSetOf<String>()
-    return List(HomeWidgetRegistry.slotCount) { index ->
+    return List(slotCount) { index ->
         val id = slots.getOrNull(index)?.takeIf { it in knownIds }
         if (id != null && seen.add(id)) id else null
     }
@@ -551,11 +620,12 @@ private fun findHomeWidgetDropSlot(
     drag: ActiveHomeWidgetDrag,
     slots: List<String?>,
     slotBounds: Map<Int, Rect>,
-    dropSlopPx: Float
+    dropSlopPx: Float,
+    slotCount: Int
 ): Int? {
     val center = drag.center
     return slotBounds
-        .filterKeys { it in 1..HomeWidgetRegistry.slotCount }
+        .filterKeys { it in 1..slotCount }
         .mapNotNull { (slotIndex, bounds) ->
             if (!bounds.expandedBy(dropSlopPx).contains(center)) return@mapNotNull null
             if (drag.sourceSlot == null && slots.getOrNull(slotIndex - 1) != null) return@mapNotNull null

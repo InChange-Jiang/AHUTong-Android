@@ -42,6 +42,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
 import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
@@ -147,6 +148,17 @@ fun Main(
         if (currentRoute == "home") {
             delay(1_500L)
             preloadPrimaryNeighbors = true
+        }
+    }
+
+    LaunchedEffect(appUiTheme) {
+        if (appUiTheme == AppUiTheme.RADIANT && primaryRoute == "tools") {
+            selectPrimaryDestination("home")
+        } else if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
         }
     }
 
@@ -430,9 +442,25 @@ fun Main(
         }
         BottomNavBar(
             backdrop = backdrop,
-            selectedRoute = primaryRoute.takeIf { currentRoute == "home" },
+            selectedRoute = when {
+                currentRoute == "home" -> primaryRoute
+                appUiTheme == AppUiTheme.RADIANT && currentRoute == "xuexiaotong" -> currentRoute
+                else -> null
+            },
             onDestinationSelected = { route ->
-                scope.launch { selectPrimaryDestination(route) }
+                if (route == "xuexiaotong") {
+                    navController.navigate(route) { launchSingleTop = true }
+                } else {
+                    scope.launch {
+                        selectPrimaryDestination(route)
+                        if (currentRoute != "home") {
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                }
             }
         )
         val productUiBlocked = effectiveRoute == "login" || effectiveRoute == "setup" ||
@@ -445,7 +473,10 @@ fun Main(
             backdrop = backdrop,
             blocked = productUiBlocked,
             hiddenForDiagnostics = diagnosticsRouteVisible,
-            bottomSpacing = if (effectiveRoute in primaryDestinationRoutes) {
+            bottomSpacing = if (
+                effectiveRoute in primaryDestinationRoutes ||
+                appUiTheme == AppUiTheme.RADIANT && currentRoute == "xuexiaotong"
+            ) {
                 88.dp
             } else {
                 16.dp

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,18 +64,20 @@ import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun RowScope.CampusCard(
+fun CampusCard(
     balance: Double,
     transitionBalance: Double,
     onRefreshBalance: () -> Unit,
     navController: NavController,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context = context) }
@@ -121,8 +123,7 @@ fun RowScope.CampusCard(
 
 
     Box(
-        modifier = Modifier
-            .weight(1f)
+        modifier = modifier
     ) {
         if (isQrcode) {
             QRcodeView(
@@ -143,7 +144,7 @@ fun RowScope.CampusCard(
                 enabled = enabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(140.dp)
+                    .height(if (isRadiantUi) 78.dp else 140.dp)
             )
         }
     }
@@ -216,6 +217,7 @@ private fun CardView(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
+                .then(if (isRadiantUi) Modifier.width(76.dp) else Modifier)
                 .then(
                     if (enabled) {
                         Modifier.clickable {
@@ -240,13 +242,32 @@ private fun CardView(
                         Modifier
                     }
                 )
-                .padding(16.dp),
+                .padding(if (isRadiantUi) 8.dp else 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "充\n值",
-                style = MaterialTheme.typography.titleMedium
-            )
+            if (isRadiantUi) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_income),
+                        contentDescription = "充值",
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "充值",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            } else {
+                Text(
+                    text = "充\n值",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
     }
 

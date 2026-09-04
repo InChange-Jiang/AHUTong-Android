@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -140,15 +142,23 @@ fun FreeClassroom(
 
         item {
             Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .appLiquidGlassSurface(
-                        shape = SmoothRoundedCornerShape(24.dp),
-                        fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                        level = LiquidGlassSurfaceLevel.Panel
-                    )
-                    .padding(16.dp),
+                modifier = if (isRadiantUi) {
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .clip(SmoothRoundedCornerShape(32.dp))
+                        .background(100.n1 withNight 20.n1)
+                        .padding(20.dp)
+                } else {
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .fillMaxWidth()
+                        .appLiquidGlassSurface(
+                            shape = SmoothRoundedCornerShape(24.dp),
+                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                            level = LiquidGlassSurfaceLevel.Panel
+                        )
+                        .padding(16.dp)
+                },
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
@@ -442,16 +452,25 @@ private fun SupportingText(text: String) {
 @Composable
 private fun FreeRoomCard(room: FreeRoom) {
     Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(20.dp),
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        modifier = if (isRadiantUi) {
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .clip(SmoothRoundedCornerShape(20.dp))
+                .background(95.n1 withNight 25.n1)
+                .padding(14.dp)
+        } else {
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .appLiquidGlassSurface(
+                    shape = SmoothRoundedCornerShape(20.dp),
+                    fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                    level = LiquidGlassSurfaceLevel.Panel
+                )
+                .padding(horizontal = 18.dp, vertical = 16.dp)
+        },
+        verticalArrangement = Arrangement.spacedBy(if (isRadiantUi) 6.dp else 4.dp)
     ) {
         Text(room.nameZh, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(
@@ -474,16 +493,24 @@ private fun MessageCard(
     onAction: (() -> Unit)? = null
 ) {
     Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(20.dp),
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
-            .padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = if (isRadiantUi) {
+            Modifier
+                .padding(horizontal = 16.dp)
+                .clip(SmoothRoundedCornerShape(32.dp))
+                .background(100.n1 withNight 20.n1)
+                .padding(20.dp)
+        } else {
+            Modifier
+                .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .appLiquidGlassSurface(
+                    shape = SmoothRoundedCornerShape(20.dp),
+                    fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                    level = LiquidGlassSurfaceLevel.Panel
+                )
+                .padding(18.dp)
+        },
+        verticalArrangement = Arrangement.spacedBy(if (isRadiantUi) 10.dp else 8.dp)
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)

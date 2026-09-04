@@ -53,6 +53,7 @@ import com.ahu.ahutong.ui.screen.main.FreeClassroom
 import com.ahu.ahutong.ui.screen.main.Grade
 import com.ahu.ahutong.ui.screen.main.Home
 import com.ahu.ahutong.ui.screen.main.LostFound
+import com.ahu.ahutong.ui.screen.main.MoreWidgetsScreen
 import com.ahu.ahutong.ui.screen.main.NetworkRecharge
 import com.ahu.ahutong.ui.screen.main.PhoneBook
 import com.ahu.ahutong.ui.screen.main.Repository
@@ -144,6 +145,15 @@ fun Main(
         )
     }
 
+    fun requestHomeEdit() {
+        behaviorRuntime.recordActionIntentAsync(
+            AppActionId.EDIT_HOME,
+            ActionSource.ORGANIC
+        )
+        shouldEnterHomeEdit = true
+        scope.launch { selectPrimaryDestination("home") }
+    }
+
     LaunchedEffect(currentRoute) {
         if (currentRoute == "home") {
             delay(1_500L)
@@ -222,14 +232,7 @@ fun Main(
                         2 -> Tools(
                             navController = navController,
                             homeEditEnabled = homeEditGrayState.enabled,
-                            onEditHome = {
-                                behaviorRuntime.recordActionIntentAsync(
-                                    AppActionId.EDIT_HOME,
-                                    ActionSource.ORGANIC
-                                )
-                                shouldEnterHomeEdit = true
-                                scope.launch { selectPrimaryDestination("home") }
-                            }
+                            onEditHome = ::requestHomeEdit
                         )
                         3 -> Settings(
                             navController = navController,
@@ -295,9 +298,26 @@ fun Main(
                 )
             }
             animatedComposable(appUiThemeState, "tools") {
-                PrimaryDestinationRedirect(
+                if (appUiTheme == AppUiTheme.RADIANT) {
+                    LaunchedEffect(Unit) {
+                        navController.navigate("widgets") {
+                            popUpTo("tools") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxSize())
+                } else {
+                    PrimaryDestinationRedirect(
+                        navController = navController,
+                        onRedirect = { primaryPagerState.scrollToPage(2) }
+                    )
+                }
+            }
+            animatedComposable(appUiThemeState, "widgets") {
+                MoreWidgetsScreen(
                     navController = navController,
-                    onRedirect = { primaryPagerState.scrollToPage(2) }
+                    homeEditEnabled = homeEditGrayState.enabled,
+                    onEditHome = ::requestHomeEdit
                 )
             }
             animatedComposable(appUiThemeState, "school_calendar") {
@@ -492,7 +512,9 @@ fun Main(
                         navController.navigate("home") { launchSingleTop = true }
                     } else {
                         com.ahu.ahutong.personalization.action.AppActionCatalog.spec(action).route?.let { route ->
-                            if (route in primaryDestinationRoutes) {
+                            if (appUiTheme == AppUiTheme.RADIANT && route == "tools") {
+                                navController.navigate("widgets") { launchSingleTop = true }
+                            } else if (route in primaryDestinationRoutes) {
                                 if (currentRoute != "home") {
                                     navController.navigate("home") {
                                         popUpTo("home") { inclusive = false }

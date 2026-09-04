@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.kyant.monet.a1
@@ -49,7 +50,8 @@ fun TodayCourseList(
                 .padding(horizontal = 16.dp)
                 .appLiquidGlassSurface(
                     shape = panelShape,
-                    fallbackColor = 100.n1 withNight 20.n1
+                    fallbackColor = 100.n1 withNight 20.n1,
+                    backdropSamplingEnabled = isRadiantUi
                 )
                 .then(
                     if (enabled) {
@@ -88,7 +90,8 @@ fun TodayCourseList(
             .padding(horizontal = 16.dp)
             .appLiquidGlassSurface(
                 shape = panelShape,
-                fallbackColor = 100.n1 withNight 20.n1
+                fallbackColor = 100.n1 withNight 20.n1,
+                backdropSamplingEnabled = isRadiantUi
             )
             .then(
                 if (enabled) {

@@ -443,7 +443,9 @@ fun Home(
                 enabled = !isEditingHome,
                 trailingContent = trailingContent
             )
+            if (radiant) Spacer(modifier = Modifier.height(12.dp))
             if (todayCourses.isNotEmpty()) {
+                if (radiant) Spacer(modifier = Modifier.height(16.dp))
                 TodayCourseList(
                     todayCourses = todayCourses,
                     currentMinutes = currentMinutes,
@@ -452,6 +454,7 @@ fun Home(
                 )
             }
             if (weatherHomeConfig.showOnHome && weatherHomeConfig.mode == WeatherHomeMode.Detailed) {
+                if (radiant) Spacer(modifier = Modifier.height(20.dp))
                 if (!isEditingHome) {
                     HomeWeatherWidget(
                         onClick = { navController.navigate("weather") },
@@ -460,6 +463,7 @@ fun Home(
                     )
                 }
             }
+            if (radiant) Spacer(modifier = Modifier.height(8.dp))
             HomeWidgetSlotLayout(
                 balance = discoveryViewModel.balance,
                 transitionBalance = discoveryViewModel.transitionBalance,

@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 
@@ -38,7 +39,15 @@ fun MoreWidgetsScreen(
     homeEditEnabled: Boolean = false,
     onEditHome: () -> Unit = {}
 ) {
-    val homeWidgetIds = remember { AHUCache.getHomeWidgetSlots().filterNotNull().toSet() }
+    val radiant = isRadiantUi
+    val layoutFamily = if (radiant) {
+        HomeWidgetLayoutFamily.RADIANT
+    } else {
+        HomeWidgetLayoutFamily.CLASSIC
+    }
+    val homeWidgetIds = remember(layoutFamily) {
+        AHUCache.getHomeWidgetSlots(layoutFamily).filterNotNull().toSet()
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -89,7 +98,7 @@ fun MoreWidgetsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HomeWidgetRegistry.availableWidgets(isRadiantUi)
+            HomeWidgetRegistry.availableWidgets(radiant)
                 .filter { it.id !in homeWidgetIds }
                 .forEach { widget ->
                     ToolItem(
@@ -100,5 +109,6 @@ fun MoreWidgetsScreen(
                     )
                 }
         }
+        DesktopScheduleWidgetCard()
     }
 }

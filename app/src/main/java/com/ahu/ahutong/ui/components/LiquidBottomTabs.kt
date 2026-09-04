@@ -14,28 +14,22 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -46,9 +40,6 @@ import com.ahu.ahutong.ui.utils.DampedDragAnimation
 import com.ahu.ahutong.ui.utils.InteractiveHighlight
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.emptyBackdrop
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
@@ -59,8 +50,6 @@ import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.sign
@@ -94,9 +83,6 @@ fun LiquidBottomTabs(
             else Color(0xFF121212).copy(0.4f)
         }
 
-    val tabsBackdrop = rememberLayerBackdrop()
-    val tabsSource: Backdrop = if (capturesBackdrop) tabsBackdrop else emptyBackdrop()
-
     BoxWithConstraints(
         modifier,
         contentAlignment = Alignment.CenterStart
@@ -118,13 +104,19 @@ fun LiquidBottomTabs(
 
         val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
         val animationScope = rememberCoroutineScope()
-        var currentIndex by remember {
-            mutableIntStateOf(selectedTabIndex())
-        }
-        val dampedDragAnimation = remember(animationScope, isLiquid) {
+        val requestedIndex = selectedTabIndex().coerceIn(0, tabsCount - 1)
+        val selectedIndexState = rememberUpdatedState(requestedIndex)
+        val onTabSelectedState = rememberUpdatedState(onTabSelected)
+        val dampedDragAnimation = remember(
+            animationScope,
+            isLiquid,
+            tabsCount,
+            tabWidth,
+            isLtr
+        ) {
             DampedDragAnimation(
                 animationScope = animationScope,
-                initialValue = selectedTabIndex().toFloat(),
+                initialValue = requestedIndex.toFloat(),
                 valueRange = 0f..(tabsCount - 1).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
@@ -133,8 +125,10 @@ fun LiquidBottomTabs(
                 onDragStarted = {},
                 onDragStopped = {
                     val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
-                    currentIndex = targetIndex
                     animateToValue(targetIndex.toFloat())
+                    if (targetIndex != selectedIndexState.value) {
+                        onTabSelectedState.value(targetIndex)
+                    }
                     animationScope.launch {
                         offsetAnimation.animateTo(
                             0f,
@@ -153,19 +147,8 @@ fun LiquidBottomTabs(
                 }
             )
         }
-        val requestedIndex = selectedTabIndex()
-        LaunchedEffect(requestedIndex) {
-            if (currentIndex != requestedIndex) {
-                currentIndex = requestedIndex
-            }
-        }
-        LaunchedEffect(dampedDragAnimation) {
-            snapshotFlow { currentIndex }
-                .drop(1)
-                .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat())
-                    onTabSelected(index)
-                }
+        LaunchedEffect(requestedIndex, dampedDragAnimation) {
+            dampedDragAnimation.animateToValue(requestedIndex.toFloat())
         }
 
         val interactiveHighlight = remember(animationScope, isLiquid) {
@@ -221,58 +204,6 @@ fun LiquidBottomTabs(
             content = content
         )
 
-        CompositionLocalProvider(
-            LocalLiquidBottomTabScale provides {
-                if (isLiquid) lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
-                else 1f
-            }
-        ) {
-            Row(
-                Modifier
-                    .clearAndSetSemantics {}
-                    .alpha(0f)
-                    .then(
-                        if (capturesBackdrop) Modifier.layerBackdrop(tabsBackdrop) else Modifier
-                    )
-                    .graphicsLayer {
-                        translationX = panelOffset
-                    }
-                    .drawBackdrop(
-                        backdrop = backdrop,
-                        shape = { ContinuousCapsule },
-                        effects = {
-                            val progress = dampedDragAnimation.pressProgress
-                            if (canBlur) {
-                                vibrancy()
-                                blur(tokens.floating.blurRadius.toPx())
-                            }
-                            if (canRefract && progress > 0f) {
-                                lens(
-                                    tokens.floating.refractionHeight.toPx() * progress,
-                                    tokens.floating.refractionAmount.toPx() * progress
-                                )
-                            }
-                        },
-                        highlight = {
-                            if (isLiquid) {
-                                val progress = dampedDragAnimation.pressProgress
-                                Highlight.Default.copy(alpha = progress)
-                            } else {
-                                null
-                            }
-                        },
-                        onDrawSurface = { drawRect(containerColor) }
-                    )
-                    .then(interactiveHighlight.modifier)
-                    .height(56f.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = 4f.dp)
-                    .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
-                verticalAlignment = Alignment.CenterVertically,
-                content = content
-            )
-        }
-
         Box(
             Modifier
                 .padding(horizontal = 4f.dp)
@@ -299,7 +230,7 @@ fun LiquidBottomTabs(
                     }
                 )
                 .drawBackdrop(
-                    backdrop = rememberCombinedBackdrop(backdrop, tabsSource),
+                    backdrop = backdrop,
                     shape = { ContinuousCapsule },
                     effects = {
                         if (canRefract) {

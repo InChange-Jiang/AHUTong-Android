@@ -94,8 +94,6 @@ fun Tools(
     homeEditEnabled: Boolean = false,
     onEditHome: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val radiant = isRadiantUi
     val layoutFamily = if (radiant) {
         HomeWidgetLayoutFamily.RADIANT
@@ -173,44 +171,51 @@ fun Tools(
                     )
                 }
         }
-        Column(
+        DesktopScheduleWidgetCard()
+    }
+}
+
+@Composable
+internal fun DesktopScheduleWidgetCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(32.dp),
+                fallbackColor = 100.n1 withNight 30.n1
+            ),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "添加桌面课表微件",
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.titleLarge
+        )
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(R.mipmap.schedule_widget_prev)
+                .crossfade(false)
+                .build(),
+            contentDescription = "桌面课表微件",
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            contentScale = ContentScale.Fit
+        )
+        AppButton(
+            onClick = {
+                scope.launch {
+                    GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
+                        ScheduleAppWidgetReceiver::class.java
+                    )
+                }
+            },
             modifier = Modifier
+                .padding(16.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .appLiquidGlassSurface(
-                    shape = SmoothRoundedCornerShape(32.dp),
-                    fallbackColor = 100.n1 withNight 30.n1
-                ),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "添加桌面课表微件",
-                modifier = Modifier.padding(24.dp),
-                style = MaterialTheme.typography.titleLarge
-            )
-            AsyncImage(
-                model = ImageRequest.Builder(context)
-                    .data(R.mipmap.schedule_widget_prev)
-                    .crossfade(false)
-                    .build(),
-                contentDescription = "桌面课表微件",
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-                contentScale = ContentScale.Fit
-            )
-            AppButton(
-                onClick = {
-                    scope.launch {
-                        GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
-                            ScheduleAppWidgetReceiver::class.java
-                        )
-                    }
-                },
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth()
-            ) {
-                Text("添加", style = MaterialTheme.typography.titleMedium)
-            }
+            Text("添加", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

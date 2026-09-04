@@ -1,7 +1,13 @@
 package com.ahu.ahutong.ui.screen.main.home
 
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -122,30 +128,46 @@ fun CampusCard(
     }
 
 
+    val campusShape = SmoothRoundedCornerShape(24.dp)
     Box(
-        modifier = modifier
+        modifier = modifier.appLiquidGlassSurface(
+            shape = campusShape,
+            fallbackColor = 100.n1 withNight 20.n1,
+            backdropSamplingEnabled = isRadiantUi
+        )
     ) {
-        if (isQrcode) {
-            QRcodeView(
-                balance = balance,
-                onBack = {
-                    isQrcode = false
-                }
-            )
-        } else {
-            CardView(
-                balance = balance,
-                transitionBalance = transitionBalance,
-                onClick = {
-                    behaviorRuntime.recordActionIntentAsync(AppActionId.OPEN_PAYMENT_QR, ActionSource.ORGANIC)
-                    isQrcode = true
-                },
-                navController = navController,
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (isRadiantUi) 78.dp else 140.dp)
-            )
+        AnimatedContent(
+            targetState = isQrcode,
+            transitionSpec = {
+                (fadeIn(tween(150)) togetherWith fadeOut(tween(150)))
+                    .using(SizeTransform(clip = true))
+            },
+            contentAlignment = Alignment.TopStart,
+            label = "campus-card-qrcode"
+        ) { showQrcode ->
+            if (showQrcode) {
+                QRcodeView(
+                    balance = balance,
+                    onBack = { isQrcode = false }
+                )
+            } else {
+                CardView(
+                    balance = balance,
+                    transitionBalance = transitionBalance,
+                    onClick = {
+                        behaviorRuntime.recordActionIntentAsync(
+                            AppActionId.OPEN_PAYMENT_QR,
+                            ActionSource.ORGANIC
+                        )
+                        isQrcode = true
+                    },
+                    navController = navController,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (isRadiantUi) 78.dp else 140.dp)
+                )
+            }
         }
     }
 
@@ -162,13 +184,8 @@ private fun CardView(
     enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val shape = SmoothRoundedCornerShape(24.dp)
     Row(
-        modifier = modifier
-            .appLiquidGlassSurface(
-                shape = shape,
-                fallbackColor = 100.n1 withNight 20.n1
-            ),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -352,13 +369,9 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
         }
     }
 
-    val panelShape = SmoothRoundedCornerShape(24.dp)
     Column(
         modifier = Modifier
-            .appLiquidGlassSurface(
-                shape = panelShape,
-                fallbackColor = 100.n1 withNight 20.n1
-            )
+            .fillMaxWidth()
             .padding(
                 start = 20.dp,
                 top = 12.dp,

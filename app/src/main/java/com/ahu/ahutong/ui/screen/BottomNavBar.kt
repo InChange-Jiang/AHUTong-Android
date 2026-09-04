@@ -119,7 +119,6 @@ private fun BoxScope.RadiantBottomNavBar(
     val destinations = listOf(
         RadiantDestination("home", "主页", R.drawable.ic_nav_home),
         RadiantDestination("schedule", "课表", R.drawable.ic_nav_schedule),
-        RadiantDestination("tools", "小工具", R.drawable.ic_nav_tools),
         RadiantDestination(
             "xuexiaotong",
             if (showingSchedule) "日程" else "课程",
@@ -166,15 +165,25 @@ private fun BoxScope.RadiantBottomNavBar(
             ) {
                 destinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
+                    val contentColor = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                     LiquidBottomTab(
                         selected = selected,
                         onClick = { select(destination.route) }
                     ) {
                         Icon(
                             painter = painterResource(destination.iconId),
-                            contentDescription = destination.label
+                            contentDescription = destination.label,
+                            tint = contentColor
                         )
-                        Text(destination.label, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            destination.label,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             }
@@ -265,6 +274,11 @@ private fun BoxScope.ClassicBottomNavBar(
             ) {
                 classicDestinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
+                    val contentColor = if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
                     LiquidBottomTab(
                         selected = selected,
                         onClick = { onDestinationSelected(destination.route) }
@@ -275,9 +289,14 @@ private fun BoxScope.ClassicBottomNavBar(
                             } else {
                                 destination.unselectedIcon
                             },
-                            contentDescription = destination.label
+                            contentDescription = destination.label,
+                            tint = contentColor
                         )
-                        Text(destination.label, style = MaterialTheme.typography.labelMedium)
+                        Text(
+                            destination.label,
+                            color = contentColor,
+                            style = MaterialTheme.typography.labelMedium
+                        )
                     }
                 }
             }

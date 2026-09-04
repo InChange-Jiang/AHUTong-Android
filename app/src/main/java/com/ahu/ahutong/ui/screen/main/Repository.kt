@@ -66,6 +66,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.repository.GitHubContentItem
 import com.ahu.ahutong.data.repository.RepositoryDirectorySummary
 import com.ahu.ahutong.data.repository.RepositoryManager

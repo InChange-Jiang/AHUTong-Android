@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
 }
@@ -16,17 +17,9 @@ android {
         }
     }
 
-    packaging {
-        jniLibs {
-            excludes += "**/libahutong_rs.so"
-        }
-    }
-
     lint {
-        //即使报错也不会停止打包
-        abortOnError = false
-        //打包release版本的时候是否进行检测
-        checkReleaseBuilds = false
+        abortOnError = true
+        checkReleaseBuilds = true
     }
     //关闭PNG合法性检查
     // aaptOptions.useNewCruncher = false
@@ -34,8 +27,8 @@ android {
         applicationId = "com.ahu.ahutong"
         minSdk = 26
         targetSdk = 36
-        versionCode = 322
-        versionName = "3.2.2"
+        versionCode = 330
+        versionName = "3.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -44,8 +37,8 @@ android {
 
     buildTypes {
         release {
-            isShrinkResources = true  // 移除无用的resource文件
-            isMinifyEnabled = true //是否对代码进行混淆，true表示混淆
+            isShrinkResources = true
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -136,6 +129,7 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.material3)
+    implementation(libs.miuix.android)
     implementation(libs.androidx.runtime.livedata)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)

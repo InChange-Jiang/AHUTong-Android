@@ -70,8 +70,11 @@ import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.sdk.RustSDK
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.state.LoginState
 import com.ahu.ahutong.ui.state.LoginViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -151,7 +154,7 @@ fun Login(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
+                    .appLiquidGlassSceneBackground(MaterialTheme.colorScheme.background)
             )
         Column(
             modifier = Modifier
@@ -211,8 +214,11 @@ fun Login(
                 onValueChange = { userID = it },
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(100.n1 withNight 20.n1)
+                    .appLiquidGlassSurface(
+                        shape = ContinuousCapsule,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Control
+                    )
                     .onFocusChanged {
                         if (it.isFocused) {
                             focusIndex = 0
@@ -255,8 +261,11 @@ fun Login(
                 onValueChange = { password = it },
                 modifier = Modifier
                     .padding(horizontal = 16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(100.n1 withNight 20.n1)
+                    .appLiquidGlassSurface(
+                        shape = ContinuousCapsule,
+                        fallbackColor = 100.n1 withNight 20.n1,
+                        level = LiquidGlassSurfaceLevel.Control
+                    )
                     .onFocusChanged {
                         if (it.isFocused) {
                             focusIndex = 1

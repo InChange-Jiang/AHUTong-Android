@@ -16,6 +16,7 @@ import com.ahu.ahutong.data.model.EvalTask
 import com.ahu.ahutong.data.model.EvalTaskItem
 import com.ahu.ahutong.data.model.EvalTeacher
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class EvaluationViewModel : ViewModel() {
@@ -42,24 +43,34 @@ class EvaluationViewModel : ViewModel() {
     val presetQuestions = MutableStateFlow<List<EvalQuestion>>(emptyList())
     val isPresetLoading = MutableStateFlow(false)
     val presetActionMessage = MutableStateFlow<String?>(null)
+    private var listLoadJob: Job? = null
 
     fun loadSemesters() {
-        viewModelScope.launch {
+        listLoadJob?.cancel()
+        listLoadJob = viewModelScope.launch {
             isLoading.value = true
             errorMessage.value = null
-            EvaluationRepository.getSemesters()
-                .onSuccess { items ->
-                    semesters.value = items
-                    if (selectedSemesterId.value.isEmpty() && items.isNotEmpty()) {
-                        val currentSemesterId = EvaluationRepository.getCurrentSemesterId()
-                        selectedSemesterId.value = items.firstOrNull {
-                            it.id == currentSemesterId
-                        }?.id ?: items.first().id
-                    }
-                    loadEvaluationList()
+            try {
+                val items = EvaluationRepository.getSemesters().getOrElse {
+                    errorMessage.value = it.message ?: "加载学期失败"
+                    return@launch
                 }
-                .onFailure { errorMessage.value = it.message ?: "加载学期失败" }
-            isLoading.value = false
+                semesters.value = items
+                if (selectedSemesterId.value.isEmpty() && items.isNotEmpty()) {
+                    val currentSemesterId = EvaluationRepository.getCurrentSemesterId()
+                    selectedSemesterId.value = items.firstOrNull {
+                        it.id == currentSemesterId
+                    }?.id ?: items.first().id
+                }
+                val semesterId = selectedSemesterId.value
+                if (semesterId.isNotEmpty()) {
+                    EvaluationRepository.getEvaluationList(semesterId)
+                        .onSuccess { taskItems.value = it }
+                        .onFailure { errorMessage.value = it.message ?: "加载评教列表失败" }
+                }
+            } finally {
+                isLoading.value = false
+            }
         }
     }
 
@@ -67,13 +78,17 @@ class EvaluationViewModel : ViewModel() {
         val semesterId = selectedSemesterId.value
         if (semesterId.isEmpty()) return
 
-        viewModelScope.launch {
+        listLoadJob?.cancel()
+        listLoadJob = viewModelScope.launch {
             isLoading.value = true
             errorMessage.value = null
-            EvaluationRepository.getEvaluationList(semesterId)
-                .onSuccess { taskItems.value = it }
-                .onFailure { errorMessage.value = it.message ?: "加载评教列表失败" }
-            isLoading.value = false
+            try {
+                EvaluationRepository.getEvaluationList(semesterId)
+                    .onSuccess { taskItems.value = it }
+                    .onFailure { errorMessage.value = it.message ?: "加载评教列表失败" }
+            } finally {
+                isLoading.value = false
+            }
         }
     }
 

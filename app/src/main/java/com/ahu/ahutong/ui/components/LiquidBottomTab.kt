@@ -1,11 +1,11 @@
 package com.ahu.ahutong.ui.components
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -22,6 +22,7 @@ internal val LocalLiquidBottomTabScale =
 @Composable
 fun RowScope.LiquidBottomTab(
     onClick: () -> Unit,
+    selected: Boolean,
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
@@ -29,7 +30,8 @@ fun RowScope.LiquidBottomTab(
     Column(
         modifier
             .clip(ContinuousCapsule)
-            .clickable(
+            .selectable(
+                selected = selected,
                 interactionSource = null,
                 indication = null,
                 role = Role.Tab,

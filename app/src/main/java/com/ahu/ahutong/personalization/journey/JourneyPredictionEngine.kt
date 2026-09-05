@@ -1,5 +1,6 @@
 package com.ahu.ahutong.personalization.journey
 
+import android.util.Log
 import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.action.AppActionId
@@ -23,12 +24,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.ln
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -50,7 +53,11 @@ class JourneyPredictionEngine @Inject constructor(
     private val modelStore: JourneyModelStateStore,
     private val telemetryAggregateStore: TelemetryAggregateStore
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            Log.e(TAG, "Background journey task failed", error)
+        }
+    )
     private val locks = ConcurrentHashMap<String, Mutex>()
     private val deadlineJobs = ConcurrentHashMap<String, Job>()
     private val dwellJobs = ConcurrentHashMap<String, Job>()
@@ -139,7 +146,12 @@ class JourneyPredictionEngine @Inject constructor(
         val path = pending.observedActionIdsCsv.split(',').filter(String::isNotBlank) + action.stableId
         val count = pending.observedActionCount + 1
         if (count > pending.maximumActions) {
-            resolve(pending, JourneyGoalCatalog.NONE_OUTPUT_ID, eventId, "INTERVENTION_FREE_MAX_STEPS")
+            resolve(
+                pending,
+                JourneyGoalCatalog.NONE_OUTPUT_ID,
+                eventId,
+                JourneyTrainingLabelPolicy.INTERVENTION_FREE_MAX_STEPS
+            )
             return@withLock
         }
         val updated = pending.copy(
@@ -151,16 +163,28 @@ class JourneyPredictionEngine @Inject constructor(
         )
         dao.updatePendingJourney(updated)
         when {
-            JourneyGoalCatalog.isImmediateMilestone(action) -> resolve(updated, action.stableId, eventId, "ORGANIC_JOURNEY")
+            JourneyGoalCatalog.isImmediateMilestone(action) -> resolve(
+                updated,
+                action.stableId,
+                eventId,
+                JourneyTrainingLabelPolicy.ORGANIC_JOURNEY
+            )
             JourneyGoalCatalog.isSafeTerminal(action) -> scheduleDwell(updated, action, eventId)
-            count == pending.maximumActions -> resolve(updated, JourneyGoalCatalog.NONE_OUTPUT_ID, eventId, "INTERVENTION_FREE_MAX_STEPS")
+            count == pending.maximumActions -> resolve(
+                updated,
+                JourneyGoalCatalog.NONE_OUTPUT_ID,
+                eventId,
+                JourneyTrainingLabelPolicy.INTERVENTION_FREE_MAX_STEPS
+            )
         }
     }
 
     suspend fun onExplicitMilestone(profileKey: String, target: AppActionId, eventId: String) =
         locks.getOrPut(profileKey) { Mutex() }.withLock {
             if (!JourneyGoalCatalog.isSafeTerminal(target)) return@withLock
-            dao.latestPendingJourney(profileKey)?.let { resolve(it, target.stableId, eventId, "ORGANIC_JOURNEY") }
+            dao.latestPendingJourney(profileKey)?.let {
+                resolve(it, target.stableId, eventId, JourneyTrainingLabelPolicy.ORGANIC_JOURNEY)
+            }
         }
 
     suspend fun censorProfile(profileKey: String, reason: String) = locks.getOrPut(profileKey) { Mutex() }.withLock {
@@ -197,26 +221,36 @@ class JourneyPredictionEngine @Inject constructor(
 
     private fun scheduleDwell(pending: PendingJourneyEntity, action: AppActionId, eventId: String) {
         dwellJobs.remove(pending.journeyId)?.cancel()
-        dwellJobs[pending.journeyId] = scope.async {
+        dwellJobs[pending.journeyId] = scope.launch {
             delay(LEAF_DWELL_MS)
             locks.getOrPut(pending.profileKey) { Mutex() }.withLock {
                 val current = dao.pendingJourney(pending.journeyId) ?: return@withLock
                 if (current.resolutionStatus == "PENDING" && current.lastLeafActionId == action.stableId &&
                     current.lastLeafEventId == eventId
-                ) resolve(current, action.stableId, eventId, "ORGANIC_JOURNEY")
+                ) resolve(
+                    current,
+                    action.stableId,
+                    eventId,
+                    JourneyTrainingLabelPolicy.ORGANIC_JOURNEY
+                )
             }
         }
     }
 
     private fun scheduleDeadline(pending: PendingJourneyEntity) {
         deadlineJobs.remove(pending.journeyId)?.cancel()
-        deadlineJobs[pending.journeyId] = scope.async {
+        deadlineJobs[pending.journeyId] = scope.launch {
             val remaining = (pending.deadlineElapsedMs - android.os.SystemClock.elapsedRealtime()).coerceAtLeast(0)
             delay(remaining + 250)
             locks.getOrPut(pending.profileKey) { Mutex() }.withLock {
                 val current = dao.pendingJourney(pending.journeyId) ?: return@withLock
                 if (current.resolutionStatus == "PENDING" && current.interventionState == "NONE") {
-                    resolve(current, JourneyGoalCatalog.NONE_OUTPUT_ID, UUID.randomUUID().toString(), "INTERVENTION_FREE_TIMEOUT")
+                    resolve(
+                        current,
+                        JourneyGoalCatalog.NONE_OUTPUT_ID,
+                        UUID.randomUUID().toString(),
+                        JourneyTrainingLabelPolicy.INTERVENTION_FREE_TIMEOUT
+                    )
                 }
             }
         }
@@ -352,6 +386,7 @@ class JourneyPredictionEngine @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "JourneyPrediction"
         const val JOURNEY_WINDOW_MS = 120_000L
         const val MAX_ACTIONS = 5
         const val LEAF_DWELL_MS = 4_000L

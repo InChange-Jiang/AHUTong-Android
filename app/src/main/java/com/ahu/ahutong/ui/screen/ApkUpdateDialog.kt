@@ -31,8 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.ahu.ahutong.data.server.model.ApkUpdateInfo
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ApkDownloadSegment
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -59,8 +61,15 @@ fun ApkUpdateDialog(
     val progressColor = 70.a1 withNight 80.a1
     val progressTrackColor = 92.n1 withNight 30.n1
     val activeSegmentColor = 80.a1.copy(alpha = 0.45f) withNight 55.a1.copy(alpha = 0.65f)
+    val dialogShape = SmoothRoundedCornerShape(32.dp)
 
     AlertDialog(
+        modifier = Modifier.appLiquidGlassSurface(
+            shape = dialogShape,
+            fallbackColor = containerColor,
+            level = LiquidGlassSurfaceLevel.Floating,
+            backdropSamplingEnabled = false
+        ),
         onDismissRequest = {
             if (!info.force && !downloading) onDismiss()
         },
@@ -179,8 +188,8 @@ fun ApkUpdateDialog(
                 }
             }
         },
-        shape = SmoothRoundedCornerShape(32.dp),
-        containerColor = containerColor,
+        shape = dialogShape,
+        containerColor = Color.Transparent,
         confirmButton = {
             FilledTonalButton(
                 onClick = if (apkLocalReady && !downloading) onInstallLocal else onConfirm,
@@ -245,8 +254,15 @@ fun ApkMirrorSourceDialog(
 ) {
     val contentColor = 10.n1 withNight 90.n1
     val containerColor = 100.n1 withNight 20.n1
+    val dialogShape = SmoothRoundedCornerShape(32.dp)
 
     AlertDialog(
+        modifier = Modifier.appLiquidGlassSurface(
+            shape = dialogShape,
+            fallbackColor = containerColor,
+            level = LiquidGlassSurfaceLevel.Floating,
+            backdropSamplingEnabled = false
+        ),
         onDismissRequest = onKeepOriginal,
         properties = DialogProperties(
             dismissOnBackPress = true,
@@ -267,8 +283,8 @@ fun ApkMirrorSourceDialog(
                 color = contentColor
             )
         },
-        shape = SmoothRoundedCornerShape(32.dp),
-        containerColor = containerColor,
+        shape = dialogShape,
+        containerColor = Color.Transparent,
         confirmButton = {
             FilledTonalButton(
                 onClick = onUseMirror,

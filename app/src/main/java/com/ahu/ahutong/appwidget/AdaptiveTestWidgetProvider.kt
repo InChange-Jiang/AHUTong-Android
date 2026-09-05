@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
@@ -163,7 +164,11 @@ class ScheduleAdaptiveWidgetProvider : AppWidgetProvider() {
         remoteViews.setTextColor(titleId, widgetColors.primaryText.toArgb())
         remoteViews.setTextColor(subtitleId, widgetColors.secondaryText.toArgb())
         remoteViews.removeAllViews(itemsContainerId)
-        remoteViews.setColorStateList(R.id.layout_wight, "setBackgroundTintList", ColorStateList.valueOf(widgetColors.background.toArgb()))
+        setRemoteViewBackgroundColor(
+            remoteViews,
+            R.id.layout_wight,
+            widgetColors.background.toArgb()
+        )
         if (displayCourses.isEmpty()) {
             val emptyItem = RemoteViews(context.packageName, R.layout.layout_widget_item)
             emptyItem.setViewVisibility(R.id.little_circle, View.GONE)
@@ -174,7 +179,11 @@ class ScheduleAdaptiveWidgetProvider : AppWidgetProvider() {
             emptyItem.setTextColor(R.id.course_name_tv, widgetColors.primaryText.toArgb())
             emptyItem.setTextColor(R.id.course_time_tv, widgetColors.secondaryText.toArgb())
             emptyItem.setTextColor(R.id.course_location_tv, widgetColors.secondaryText.toArgb())
-            emptyItem.setColorStateList(R.id.widget_item_color_bg, "setBackgroundTintList", ColorStateList.valueOf(Color.TRANSPARENT))
+            setRemoteViewBackgroundColor(
+                emptyItem,
+                R.id.widget_item_color_bg,
+                Color.TRANSPARENT
+            )
             remoteViews.addView(itemsContainerId, emptyItem)
         } else {
             displayCourses.forEach {
@@ -206,18 +215,31 @@ class ScheduleAdaptiveWidgetProvider : AppWidgetProvider() {
                     if (isOngoing) widgetColors.ongoingSecondaryText.toArgb() else widgetColors.secondaryText.toArgb()
                 )
 
-                item.setColorStateList(
+                setRemoteViewBackgroundColor(
+                    item,
                     R.id.widget_item_color_bg,
-                    "setBackgroundTintList",
-                    ColorStateList.valueOf(
-                        if (isOngoing) widgetColors.activatedRow.toArgb()
-                        else Color.TRANSPARENT
-                    )
+                    if (isOngoing) widgetColors.activatedRow.toArgb() else Color.TRANSPARENT
                 )
                 remoteViews.addView(itemsContainerId, item)
             }
         }
         appWidgetManager.updateAppWidget(appWidgetId, remoteViews)
+    }
+
+    private fun setRemoteViewBackgroundColor(
+        remoteViews: RemoteViews,
+        viewId: Int,
+        color: Int
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            remoteViews.setColorStateList(
+                viewId,
+                "setBackgroundTintList",
+                ColorStateList.valueOf(color)
+            )
+        } else {
+            remoteViews.setInt(viewId, "setBackgroundColor", color)
+        }
     }
 
     private fun createRefreshPendingIntent(context: Context, appWidgetId: Int): PendingIntent {

@@ -100,10 +100,9 @@ interface EvaluationApi {
                 if (response.code == 401 && response.request.url.encodedPath
                         .startsWith("/eams5-evaluation-service/")
                 ) {
-                    val body = response.peekBody(4096).string()
                     Log.w(
                         TAG,
-                        "401 ${redactUrl(response.request.url.toString())} body=${body.take(4096)}"
+                        "401 ${redactUrl(response.request.url.toString())}; response body suppressed"
                     )
                 }
                 response

@@ -1,9 +1,6 @@
 package com.ahu.ahutong.ui.screen.main
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -12,10 +9,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,12 +35,14 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -49,17 +52,24 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.debug.DebugClock
+import com.ahu.ahutong.data.model.ScheduleConfigBean
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.semantic.MutationId
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.AtAGlance
+import com.ahu.ahutong.ui.screen.main.home.HomeDateRow
 import com.ahu.ahutong.ui.screen.main.home.HomeWeatherWidget
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetDragOverlay
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetLibrarySheet
@@ -70,7 +80,14 @@ import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.ui.state.WeatherHomeConfig
 import com.ahu.ahutong.ui.state.WeatherHomeMode
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import com.kyant.monet.n1
+import com.kyant.monet.withNight
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -92,6 +109,7 @@ fun Home(
     scheduleViewModel: ScheduleViewModel = viewModel(),
     navController: NavHostController,
     behaviorRuntime: BehaviorPredictionRuntime,
+    onOpenSchedule: () -> Unit = { navController.navigate("schedule") },
     homeEditEnabled: Boolean = false,
     enterEditModeRequest: Boolean = false,
     onEnterEditModeRequestConsumed: () -> Unit = {}
@@ -99,49 +117,93 @@ fun Home(
     val density = LocalDensity.current
     val schedule = scheduleViewModel.schedule.observeAsState().value?.getOrNull() ?: emptyList()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
-    val effectiveScheduleConfig = scheduleConfig ?: CurrentWeekResolver.resolveLocalConfig()?.config
+    val localScheduleConfig by produceState<ScheduleConfigBean?>(
+        initialValue = null,
+        key1 = scheduleConfig
+    ) {
+        value = scheduleConfig ?: withContext(Dispatchers.IO) {
+            CurrentWeekResolver.resolveLocalConfig()?.config
+        }
+    }
+    val effectiveScheduleConfig = scheduleConfig ?: localScheduleConfig
     val isInSemester = effectiveScheduleConfig?.isInSemester != false
     val currentWeek = effectiveScheduleConfig?.week ?: 1
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
-    val todayCourses = if (isInSemester) {
-        schedule
-            .filter { effectiveScheduleConfig?.week in it.startWeek..it.endWeek }
-            .filter { it.weekday == (effectiveScheduleConfig?.weekDay ?: 1) }
-            .filter {
-                if (currentWeek in it.weekIndexes) {
-                    true
-                } else {
-                    currentWeek % 2 == it.startWeek % 2
+    val todayCourses = remember(schedule, effectiveScheduleConfig, isInSemester, currentWeek) {
+        if (isInSemester) {
+            schedule
+                .asSequence()
+                .filter { effectiveScheduleConfig?.week in it.startWeek..it.endWeek }
+                .filter { it.weekday == (effectiveScheduleConfig?.weekDay ?: 1) }
+                .filter {
+                    if (currentWeek in it.weekIndexes) {
+                        true
+                    } else {
+                        currentWeek % 2 == it.startWeek % 2
+                    }
                 }
-            }
-            .sortedBy { it.startTime }
-    } else {
-        emptyList()
+                .sortedBy { it.startTime }
+                .toList()
+        } else {
+            emptyList()
+        }
     }
-    var currentMinutes by remember { mutableIntStateOf(DebugClock.currentMinutes()) }
+    val radiant = isRadiantUi
+    val layoutFamily = if (radiant) {
+        HomeWidgetLayoutFamily.RADIANT
+    } else {
+        HomeWidgetLayoutFamily.CLASSIC
+    }
+    val slotCount = if (radiant) {
+        HomeWidgetRegistry.slotCountRadiant
+    } else {
+        HomeWidgetRegistry.slotCountClassic
+    }
+    val knownWidgetIds = remember(radiant) {
+        HomeWidgetRegistry.availableWidgets(radiant).mapTo(mutableSetOf()) { it.id }
+    }
+    val initialCalendar = remember { Calendar.getInstance(Locale.CHINA) }
+    var currentDateText by remember { mutableStateOf("") }
+    var currentMinutes by remember {
+        mutableIntStateOf(
+            initialCalendar.get(Calendar.HOUR_OF_DAY) * 60 + initialCalendar.get(Calendar.MINUTE)
+        )
+    }
     var isEditingHome by remember { mutableStateOf(false) }
-    var homeWidgetSlots by remember {
-        mutableStateOf(normalizeHomeWidgetSlots(AHUCache.getHomeWidgetSlots()))
+    var homeWidgetSlots by remember(layoutFamily) {
+        mutableStateOf(
+            normalizeHomeWidgetSlots(
+                AHUCache.getHomeWidgetSlots(layoutFamily),
+                slotCount,
+                knownWidgetIds
+            )
+        )
     }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var libraryBounds by remember { mutableStateOf<Rect?>(null) }
     var rootTopLeft by remember { mutableStateOf(Offset.Zero) }
     var activeDrag by remember { mutableStateOf<ActiveHomeWidgetDrag?>(null) }
-    val dropSlopPx = with(density) { 48.dp.toPx() }
+    val dropSlopPx = remember(density) { with(density) { 48.dp.toPx() } }
     val highlightedSlot = activeDrag?.let {
         findHomeWidgetDropSlot(
             drag = it,
             slots = homeWidgetSlots,
             slotBounds = slotBounds,
-            dropSlopPx = dropSlopPx
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
         )
     }
-    val weatherHomeConfig = WeatherHomeConfig.fromCache()
+    val weatherHomeConfig by produceState(
+        initialValue = WeatherHomeConfig(),
+        key1 = Unit
+    ) {
+        value = withContext(Dispatchers.IO) { WeatherHomeConfig.fromCache() }
+    }
 
     fun saveHomeWidgetSlots(slots: List<String?>) {
-        val normalizedSlots = normalizeHomeWidgetSlots(slots)
+        val normalizedSlots = normalizeHomeWidgetSlots(slots, slotCount, knownWidgetIds)
         homeWidgetSlots = normalizedSlots
-        AHUCache.saveHomeWidgetSlots(normalizedSlots)
+        AHUCache.saveHomeWidgetSlots(layoutFamily, normalizedSlots)
     }
 
     fun enterHomeEditMode() {
@@ -172,7 +234,8 @@ fun Home(
             drag = drag,
             slots = homeWidgetSlots,
             slotBounds = slotBounds,
-            dropSlopPx = dropSlopPx
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
         )
 
         if (drag.sourceSlot != null && libraryBounds?.contains(dragCenter) == true) {
@@ -258,12 +321,6 @@ fun Home(
         if (!enterEditModeRequest) {
             exitHomeEditMode()
         }
-        discoveryViewModel.loadActivityBean()
-
-        repeat(2 - discoveryViewModel.visibilities.size) {
-            delay(100)
-            discoveryViewModel.visibilities += discoveryViewModel.visibilities.lastIndex + 1
-        }
     }
     LaunchedEffect(enterEditModeRequest) {
         if (enterEditModeRequest) {
@@ -286,8 +343,13 @@ fun Home(
     }
     LaunchedEffect(Unit) {
         while (true) {
+            val now = withContext(Dispatchers.IO) { DebugClock.nowDate() }
+            val calendar = Calendar.getInstance(Locale.CHINA).apply { time = now }
+            currentDateText = withContext(Dispatchers.Default) {
+                SimpleDateFormat("MM-dd / EE", Locale.CHINA).format(now)
+            }
+            currentMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
             delay(HOME_REFRESH_INTERVAL_MS)
-            currentMinutes = DebugClock.currentMinutes()
             discoveryViewModel.refreshCardBalance()
         }
     }
@@ -296,9 +358,27 @@ fun Home(
             exitHomeEditMode()
         }
     }
+    val trailingContent: @Composable RowScope.() -> Unit = {
+        if (BuildConfig.DEBUG) {
+            DebugBuildBadge()
+        }
+        if (
+            !isEditingHome &&
+            weatherHomeConfig.showOnHome &&
+            weatherHomeConfig.mode == WeatherHomeMode.Compact
+        ) {
+            HomeWeatherWidget(
+                onClick = { navController.navigate("weather") },
+                modifier = Modifier.padding(start = 12.dp),
+                config = weatherHomeConfig,
+                mode = WeatherHomeMode.Compact
+            )
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             .onGloballyPositioned { rootTopLeft = it.boundsInRoot().topLeft }
             .pointerInput(isEditingHome, homeEditEnabled) {
                 if (isEditingHome) {
@@ -344,45 +424,38 @@ fun Home(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .systemBarsPadding()
-                .padding(bottom = if (isEditingHome) 520.dp else 96.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+                .padding(
+                    top = if (radiant) 48.dp else 0.dp,
+                    bottom = if (isEditingHome) 520.dp else 96.dp
+                ),
+            verticalArrangement = if (radiant) {
+                Arrangement.Center
+            } else {
+                Arrangement.spacedBy(24.dp)
+            }
         ) {
             AtAGlance(
                 todayCourses = todayCourses,
                 currentMinutes = currentMinutes,
-                navController = navController,
+                currentDateText = currentDateText,
+                onOpenSchedule = onOpenSchedule,
                 isInSemester = isInSemester,
                 enabled = !isEditingHome,
-                trailingContent = {
-                    if (BuildConfig.DEBUG) {
-                        DebugBuildBadge()
-                    }
-                    if (
-                        !isEditingHome &&
-                        weatherHomeConfig.showOnHome &&
-                        weatherHomeConfig.mode == WeatherHomeMode.Compact
-                    ) {
-                        HomeWeatherWidget(
-                            onClick = { navController.navigate("weather") },
-                            modifier = Modifier.padding(start = 12.dp),
-                            config = weatherHomeConfig,
-                            mode = WeatherHomeMode.Compact
-                        )
-                    }
-                }
+                trailingContent = trailingContent
             )
+            if (radiant) Spacer(modifier = Modifier.height(12.dp))
             if (todayCourses.isNotEmpty()) {
-                SlideInContent(visible = 0 in discoveryViewModel.visibilities) {
-                    TodayCourseList(
-                        todayCourses = todayCourses,
-                        currentMinutes = currentMinutes,
-                        navController = navController,
-                        enabled = !isEditingHome
-                    )
-                }
+                if (radiant) Spacer(modifier = Modifier.height(16.dp))
+                TodayCourseList(
+                    todayCourses = todayCourses,
+                    currentMinutes = currentMinutes,
+                    onOpenSchedule = onOpenSchedule,
+                    enabled = !isEditingHome
+                )
             }
             if (weatherHomeConfig.showOnHome && weatherHomeConfig.mode == WeatherHomeMode.Detailed) {
-                SlideInContent(visible = !isEditingHome) {
+                if (radiant) Spacer(modifier = Modifier.height(20.dp))
+                if (!isEditingHome) {
                     HomeWeatherWidget(
                         onClick = { navController.navigate("weather") },
                         config = weatherHomeConfig,
@@ -390,36 +463,62 @@ fun Home(
                     )
                 }
             }
-            SlideInContent(visible = 1 in discoveryViewModel.visibilities) {
-                HomeWidgetSlotLayout(
-                    balance = discoveryViewModel.balance,
-                    transitionBalance = discoveryViewModel.transitionBalance,
-                    onRefreshBalance = discoveryViewModel::refreshCardBalance,
-                    navController = navController,
-                    slots = homeWidgetSlots,
-                    isEditing = isEditingHome,
-                    highlightedSlot = highlightedSlot,
-                    draggingWidgetId = activeDrag?.widgetId,
-                    onEnterEdit = ::enterHomeEditMode,
-                    onHomeWidgetClick = ::removeHomeWidget,
-                    onSlotPositioned = { slotIndex, bounds ->
-                        slotBounds[slotIndex] = bounds
-                    },
-                    onHomeWidgetDragStarted = { widgetId, slotIndex, bounds ->
-                        startDrag(widgetId, slotIndex, bounds)
-                    },
-                    onHomeWidgetDragged = { dragAmount ->
-                        activeDrag = activeDrag?.let {
-                            it.copy(topLeft = it.topLeft + dragAmount)
-                        }
-                    },
-                    onHomeWidgetDragStopped = ::stopDrag
-                )
+            if (radiant) Spacer(modifier = Modifier.height(8.dp))
+            HomeWidgetSlotLayout(
+                balance = discoveryViewModel.balance,
+                transitionBalance = discoveryViewModel.transitionBalance,
+                onRefreshBalance = discoveryViewModel::refreshCardBalance,
+                navController = navController,
+                slots = homeWidgetSlots,
+                isEditing = isEditingHome,
+                highlightedSlot = highlightedSlot,
+                draggingWidgetId = activeDrag?.widgetId,
+                onEnterEdit = ::enterHomeEditMode,
+                onHomeWidgetClick = ::removeHomeWidget,
+                onSlotPositioned = { slotIndex, bounds ->
+                    slotBounds[slotIndex] = bounds
+                },
+                onHomeWidgetDragStarted = { widgetId, slotIndex, bounds ->
+                    startDrag(widgetId, slotIndex, bounds)
+                },
+                onHomeWidgetDragged = { dragAmount ->
+                    activeDrag = activeDrag?.let {
+                        it.copy(topLeft = it.topLeft + dragAmount)
+                    }
+                },
+                onHomeWidgetDragStopped = ::stopDrag
+            )
+        }
+
+        if (radiant) {
+            val headerBackground = if (LocalIsLiquidGlassEnabled.current) {
+                MaterialTheme.colorScheme.surfaceContainerLowest
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .zIndex(20f)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to headerBackground,
+                            0.35f to headerBackground,
+                            0.68f to headerBackground.copy(alpha = 0.85f),
+                            1f to headerBackground.copy(alpha = 0f)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(top = 12.dp)
+            ) {
+                HomeDateRow(trailingContent = trailingContent)
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
 
         val placedWidgetIds = homeWidgetSlots.filterNotNull().toSet()
-        val availableWidgets = HomeWidgetRegistry.widgets.filter { it.id !in placedWidgetIds }
+        val availableWidgets = HomeWidgetRegistry.availableWidgets(radiant)
+            .filter { it.id !in placedWidgetIds }
         val isDraggingFromLibrary = activeDrag != null && activeDrag?.sourceSlot == null
         HomeWidgetLibrarySheet(
             visible = isEditingHome,
@@ -506,10 +605,13 @@ private fun DebugBuildBadge() {
     }
 }
 
-private fun normalizeHomeWidgetSlots(slots: List<String?>): List<String?> {
-    val knownIds = HomeWidgetRegistry.widgetById.keys
+private fun normalizeHomeWidgetSlots(
+    slots: List<String?>,
+    slotCount: Int,
+    knownIds: Set<String>
+): List<String?> {
     val seen = mutableSetOf<String>()
-    return List(HomeWidgetRegistry.slotCount) { index ->
+    return List(slotCount) { index ->
         val id = slots.getOrNull(index)?.takeIf { it in knownIds }
         if (id != null && seen.add(id)) id else null
     }
@@ -519,11 +621,12 @@ private fun findHomeWidgetDropSlot(
     drag: ActiveHomeWidgetDrag,
     slots: List<String?>,
     slotBounds: Map<Int, Rect>,
-    dropSlopPx: Float
+    dropSlopPx: Float,
+    slotCount: Int
 ): Int? {
     val center = drag.center
     return slotBounds
-        .filterKeys { it in 1..HomeWidgetRegistry.slotCount }
+        .filterKeys { it in 1..slotCount }
         .mapNotNull { (slotIndex, bounds) ->
             if (!bounds.expandedBy(dropSlopPx).contains(center)) return@mapNotNull null
             if (drag.sourceSlot == null && slots.getOrNull(slotIndex - 1) != null) return@mapNotNull null
@@ -544,18 +647,4 @@ private fun Rect.expandedBy(padding: Float): Rect {
 
 private fun Rect.centerDistanceTo(point: Offset): Float {
     return hypot(center.x - point.x, center.y - point.y)
-}
-
-@Composable
-fun SlideInContent(
-    visible: Boolean,
-    modifier: Modifier = Modifier,
-    content: @Composable AnimatedVisibilityScope.() -> Unit
-) {
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = fadeIn() + slideInVertically { it / 2 },
-        content = content
-    )
 }

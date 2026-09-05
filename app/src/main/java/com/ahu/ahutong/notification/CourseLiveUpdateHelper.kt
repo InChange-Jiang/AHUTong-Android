@@ -1,11 +1,14 @@
 package com.ahu.ahutong.notification
 
+import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
@@ -59,6 +62,15 @@ object CourseLiveUpdateHelper {
             .build()
 
         if (!hasPromotableCharacteristics(notification)) return false
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ActivityCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
 
         NotificationManagerCompat.from(context).notify(LIVE_NOTIFICATION_ID, notification)
         return true

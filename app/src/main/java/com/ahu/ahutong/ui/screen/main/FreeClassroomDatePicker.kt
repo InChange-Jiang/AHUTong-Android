@@ -10,6 +10,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -35,7 +40,7 @@ fun MyDatePickerDialog(
     )
 
     val colors = DatePickerDefaults.colors(
-        containerColor = 100.n1 withNight 20.n1,
+        containerColor = Color.Transparent,
         titleContentColor = 10.n1 withNight 90.n1,
         headlineContentColor = 10.n1 withNight 90.n1,
         weekdayContentColor = 40.n1 withNight 60.n1,
@@ -57,6 +62,12 @@ fun MyDatePickerDialog(
 
     DatePickerDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier.appLiquidGlassSurface(
+            shape = DatePickerDefaults.shape,
+            fallbackColor = 100.n1 withNight 20.n1,
+            level = LiquidGlassSurfaceLevel.Floating,
+            backdropSamplingEnabled = false
+        ),
         confirmButton = {
             TextButton(
                 onClick = {
@@ -82,6 +93,8 @@ fun MyDatePickerDialog(
                 Text("取消")
             }
         },
+        shape = DatePickerDefaults.shape,
+        tonalElevation = 0.dp,
         colors = colors
     ) {
         DatePicker(

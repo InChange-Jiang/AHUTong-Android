@@ -34,6 +34,25 @@ import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
+internal object RepositoryIndexRefreshPolicy {
+    const val AUTO_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1_000L
+
+    fun canReuse(
+        cachedAtMillis: Long,
+        cachedVersion: Int,
+        expectedVersion: Int,
+        hasRootContents: Boolean,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        val age = nowMillis - cachedAtMillis
+        return cachedAtMillis > 0L &&
+            age >= 0L &&
+            age < AUTO_REFRESH_INTERVAL_MS &&
+            cachedVersion == expectedVersion &&
+            hasRootContents
+    }
+}
+
 object RepositoryManager {
     private const val RAW_HOST = "https://raw.githubusercontent.com"
     private const val GITHUB_HOST = "https://github.com"
@@ -145,6 +164,12 @@ object RepositoryManager {
 
             if (!forceRefresh) {
                 getCachedContents(path)?.items?.let { return@withContext it }
+
+                // The screen starts the full index warm-up independently. On a cold install the
+                // six repository trees should not block the first frame: the virtual repository
+                // roots are already known locally and can be rendered immediately while the
+                // detailed directory index is built on Dispatchers.IO.
+                fallbackRootItems?.let { return@withContext it }
             }
 
             runCatching {
@@ -172,12 +197,14 @@ object RepositoryManager {
             warmUpMutex.withLock {
                 val cachedUpdateTime = kv.decodeLong(CONTENT_TREE_CACHE_TIME_KEY, 0L)
                 val cachedVersion = kv.decodeInt(CONTENT_TREE_CACHE_VERSION_KEY, 0)
-                // UI warm-up passes onProgress and should refresh remote trees even when cache exists.
+                val hasUsableFreshCache = RepositoryIndexRefreshPolicy.canReuse(
+                    cachedAtMillis = cachedUpdateTime,
+                    cachedVersion = cachedVersion,
+                    expectedVersion = CONTENT_CACHE_VERSION,
+                    hasRootContents = getCachedContents("") != null
+                )
                 if (!forceRefresh &&
-                    onProgress == null &&
-                    cachedUpdateTime > 0L &&
-                    cachedVersion == CONTENT_CACHE_VERSION &&
-                    getCachedContents("") != null
+                    hasUsableFreshCache
                 ) {
                     return@withLock cachedUpdateTime
                 }
@@ -529,7 +556,6 @@ object RepositoryManager {
         source: RepositorySource,
         tree: List<GitHubTreeItem>
     ): RepositoryIndexCache {
-        val resolvedLfsSizes = resolveGitLfsDisplaySizes(source, tree)
         val allChildren = mutableMapOf<String, MutableList<GitHubTreeItem>>()
         val allDirectories = mutableSetOf("")
 
@@ -565,7 +591,10 @@ object RepositoryManager {
                             name = childName,
                             path = virtualPath(source, childPath),
                             type = "file",
-                            size = resolvedLfsSizes[childPath] ?: child.size,
+                            // GitHub's recursive tree already contains the index metadata. Do not
+                            // fetch every small file just to detect an LFS pointer; the actual LFS
+                            // size is resolved lazily when that file is opened or downloaded.
+                            size = child.size,
                             downloadUrl = source.rawUrl(childPath),
                             htmlUrl = source.githubUrl(childPath, tree = false),
                             repositoryId = source.id,
@@ -754,34 +783,6 @@ object RepositoryManager {
             .repositoryAccelerationSource
             .first()
         return accelerationSources.firstOrNull { it.id == selectedId } ?: accelerationSources.first()
-    }
-
-    private fun resolveGitLfsDisplaySizes(
-        source: RepositorySource,
-        tree: List<GitHubTreeItem>
-    ): Map<String, Long> {
-        val candidatePaths = tree.asSequence()
-            .filter { it.type == "blob" }
-            .filter { it.size in 1..GIT_LFS_POINTER_MAX_BYTES.toLong() }
-            .map { normalizeRepositoryPath(it.path) }
-            .filter { it.isNotEmpty() && isDocumentFile(it.substringAfterLast('/')) }
-            .toList()
-
-        if (candidatePaths.isEmpty()) return emptyMap()
-
-        return candidatePaths.mapNotNull { repositoryPath ->
-            val request = Request.Builder()
-                .url(source.rawUrl(repositoryPath))
-                .header("User-Agent", "AHUTong-Android")
-                .build()
-            val size = runCatching {
-                downloadClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use null
-                    response.readGitLfsPointer()?.size
-                }
-            }.getOrNull()
-            size?.let { repositoryPath to it }
-        }.toMap()
     }
 
     private fun isDocumentFile(name: String): Boolean {

@@ -1,8 +1,7 @@
 package com.ahu.ahutong.ui.screen
 
+import com.ahu.ahutong.BuildConfig
 import androidx.compose.animation.ExperimentalAnimationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,19 +22,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavType
 import androidx.navigation.NavHostController
 import androidx.navigation.navArgument
@@ -41,16 +42,18 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
 import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
-import com.ahu.ahutong.ui.screen.main.CmbCardRecharge
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
+import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
 import com.ahu.ahutong.ui.screen.main.Evaluation
 import com.ahu.ahutong.ui.screen.main.Exam
 import com.ahu.ahutong.ui.screen.main.FreeClassroom
 import com.ahu.ahutong.ui.screen.main.Grade
 import com.ahu.ahutong.ui.screen.main.Home
 import com.ahu.ahutong.ui.screen.main.LostFound
+import com.ahu.ahutong.ui.screen.main.MoreWidgetsScreen
 import com.ahu.ahutong.ui.screen.main.NetworkRecharge
 import com.ahu.ahutong.ui.screen.main.PhoneBook
 import com.ahu.ahutong.ui.screen.main.Repository
@@ -63,32 +66,39 @@ import com.ahu.ahutong.ui.screen.main.SchoolCalendar
 import com.ahu.ahutong.ui.screen.main.Tools
 import com.ahu.ahutong.ui.screen.main.RepositorySettings
 import com.ahu.ahutong.ui.screen.main.Weather
+import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen
 import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
 import com.ahu.ahutong.ui.screen.settings.License
 import com.ahu.ahutong.ui.screen.settings.Preferences
 import com.ahu.ahutong.ui.screen.setup.Info
 import com.ahu.ahutong.ui.screen.setup.Login
-import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
+import com.ahu.ahutong.ui.components.LiquidGlassAppHost
+import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.ui.components.LocalLiquidGlassContentBackdrop
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppDialogSurface
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.captureLiquidGlassContent
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
+import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
 import com.ahu.ahutong.ui.state.LoginViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.utils.animatedComposable
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.capsule.ContinuousCapsule
-import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
 import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.ui.SmartSuggestionHost
 import com.ahu.ahutong.personalization.action.AppActionId
+
+private val primaryDestinationRoutes = listOf("home", "schedule", "tools", "settings")
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -112,19 +122,60 @@ fun Main(
         mutableStateOf(GrayReleaseManager.localState(GrayFeatures.HomeEdit, context))
     }
     var firstDestination by remember { mutableStateOf(true) }
-    var lastBackStackDepth by remember { mutableIntStateOf(0) }
+    var lastRoute by remember { mutableStateOf<String?>(null) }
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = currentBackStackEntry?.destination?.route
-    val currentBackStack by navController.currentBackStack.collectAsState()
-    val currentBackStackDepth = currentBackStack.size
     val suggestionOverlayBlocked by behaviorRuntime.suggestionOverlayBlocked.collectAsState()
     val imeVisible = WindowInsets.isImeVisible
     val diagnosticsRouteVisible = diagnosticsContribution.isDiagnosticsRoute(currentRoute) ||
         currentRoute == "debug"
+    val appUiTheme = LocalAppUiTheme.current
+    val appUiThemeState = rememberUpdatedState(appUiTheme)
+    val primaryPagerState = rememberPagerState(pageCount = { primaryDestinationRoutes.size })
+    var preloadPrimaryNeighbors by remember { mutableStateOf(false) }
+    val primaryRoute = primaryDestinationRoutes[primaryPagerState.currentPage]
+    val effectiveRoute = if (currentRoute == "home") primaryRoute else currentRoute
 
-    LaunchedEffect(currentRoute, currentBackStackDepth) {
-        val route = currentRoute ?: return@LaunchedEffect
-        val isBackStackRestore = lastBackStackDepth > 0 && currentBackStackDepth < lastBackStackDepth
+    suspend fun selectPrimaryDestination(route: String) {
+        val destinationIndex = primaryDestinationRoutes.indexOf(route)
+        if (destinationIndex < 0 || destinationIndex == primaryPagerState.currentPage) return
+        primaryPagerState.animateScrollToPage(
+            page = destinationIndex,
+            animationSpec = tween(durationMillis = 260)
+        )
+    }
+
+    fun requestHomeEdit() {
+        behaviorRuntime.recordActionIntentAsync(
+            AppActionId.EDIT_HOME,
+            ActionSource.ORGANIC
+        )
+        shouldEnterHomeEdit = true
+        scope.launch { selectPrimaryDestination("home") }
+    }
+
+    LaunchedEffect(currentRoute) {
+        if (currentRoute == "home") {
+            delay(1_500L)
+            preloadPrimaryNeighbors = true
+        }
+    }
+
+    LaunchedEffect(appUiTheme) {
+        if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
+            navController.navigate("home") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(effectiveRoute) {
+        val route = effectiveRoute ?: return@LaunchedEffect
+        val previousRoute = navController.previousBackStackEntry?.destination?.route
+        val isBackStackRestore = !firstDestination &&
+            lastRoute != null &&
+            previousRoute != lastRoute
         behaviorRuntime.onRouteChanged(
             route,
             when {
@@ -134,37 +185,66 @@ fun Main(
             }
         )
         firstDestination = false
-        lastBackStackDepth = currentBackStackDepth
+        lastRoute = route
     }
 
     LaunchedEffect(Unit) {
         homeEditGrayState = GrayReleaseManager.state(GrayFeatures.HomeEdit, context)
     }
 
-    Box {
-        val backdrop = rememberLayerBackdrop()
+    LiquidGlassAppHost(modifier = Modifier.fillMaxSize()) {
+        val backdrop = LocalLiquidGlassContentBackdrop.current
         NavHost(
             navController = navController,
             startDestination = "splash",
             modifier = Modifier
-                .layerBackdrop(backdrop)
+                .captureLiquidGlassContent()
                 .fillMaxSize()
-                .background(96.n1 withNight 10.n1)
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
         ) {
-            animatedComposable("home") {
-                Home(
-                    discoveryViewModel = discoveryViewModel,
-                    scheduleViewModel = scheduleViewModel,
-                    navController = navController,
-                    behaviorRuntime = behaviorRuntime,
-                    homeEditEnabled = homeEditGrayState.enabled,
-                    enterEditModeRequest = shouldEnterHomeEdit,
-                    onEnterEditModeRequestConsumed = {
-                        shouldEnterHomeEdit = false
+            animatedComposable(appUiThemeState, "home") {
+                HorizontalPager(
+                    state = primaryPagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = if (preloadPrimaryNeighbors) 1 else 0,
+                    userScrollEnabled = false,
+                    key = primaryDestinationRoutes::get
+                ) { page ->
+                    when (page) {
+                        0 -> Home(
+                            discoveryViewModel = discoveryViewModel,
+                            scheduleViewModel = scheduleViewModel,
+                            navController = navController,
+                            behaviorRuntime = behaviorRuntime,
+                            onOpenSchedule = {
+                                scope.launch { selectPrimaryDestination("schedule") }
+                            },
+                            homeEditEnabled = homeEditGrayState.enabled,
+                            enterEditModeRequest = shouldEnterHomeEdit,
+                            onEnterEditModeRequestConsumed = {
+                                shouldEnterHomeEdit = false
+                            }
+                        )
+                        1 -> Schedule(
+                            scheduleViewModel = scheduleViewModel,
+                            behaviorRuntime = behaviorRuntime
+                        )
+                        2 -> Tools(
+                            navController = navController,
+                            homeEditEnabled = homeEditGrayState.enabled,
+                            onEditHome = ::requestHomeEdit
+                        )
+                        3 -> Settings(
+                            navController = navController,
+                            mainViewModel = mainViewModel,
+                            aboutViewModel = aboutViewModel,
+                            scheduleViewModel = scheduleViewModel,
+                            behaviorRuntime = behaviorRuntime
+                        )
                     }
-                )
+                }
             }
-            animatedComposable("setup") {
+            animatedComposable(appUiThemeState, "setup") {
                 Setup(
                     scheduleViewModel = scheduleViewModel,
                     aboutViewModel = aboutViewModel,
@@ -181,12 +261,16 @@ fun Main(
                     }
                 )
             }
-            animatedComposable("login") {
+            animatedComposable(appUiThemeState, "login") {
                 Login(
                     loginViewModel = loginViewModel,
                     onLoggedIn = {
                         scheduleViewModel.clear()
                         scope.launch {
+                            navController.navigate("home") {
+                                popUpTo(navController.graph.id) { inclusive = true }
+                            }
+                            primaryPagerState.scrollToPage(0)
                             com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
                                 behaviorRuntime.startProfile(it)
                             }
@@ -195,63 +279,77 @@ fun Main(
                                 context
                             )
                         }
-                        navController.navigate("home") {
-                            popUpTo("login") { inclusive = true }
-                        }
                         discoveryViewModel.loadActivityBean()
                         scheduleViewModel.loadConfig()
                         scheduleViewModel.refreshSchedule()
                     }
                 )
             }
-            animatedComposable("info") {
+            animatedComposable(appUiThemeState, "info") {
                 Info(
                     scheduleViewModel = scheduleViewModel,
                     onSetup = { navController.popBackStack() }
                 )
             }
-            animatedComposable("schedule") {
-                Schedule(scheduleViewModel = scheduleViewModel, behaviorRuntime = behaviorRuntime)
-            }
-            animatedComposable("tools") {
-                Tools(
+            animatedComposable(appUiThemeState, "schedule") {
+                PrimaryDestinationRedirect(
                     navController = navController,
-                    homeEditEnabled = homeEditGrayState.enabled,
-                    onEditHome = {
-                        behaviorRuntime.recordActionIntentAsync(AppActionId.EDIT_HOME, ActionSource.ORGANIC)
-                        shouldEnterHomeEdit = true
-                    }
+                    onRedirect = { primaryPagerState.scrollToPage(1) }
                 )
             }
-            animatedComposable("school_calendar") {
+            animatedComposable(appUiThemeState, "tools") {
+                if (appUiTheme == AppUiTheme.RADIANT) {
+                    LaunchedEffect(Unit) {
+                        navController.navigate("widgets") {
+                            popUpTo("tools") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                    Box(modifier = Modifier.fillMaxSize())
+                } else {
+                    PrimaryDestinationRedirect(
+                        navController = navController,
+                        onRedirect = { primaryPagerState.scrollToPage(2) }
+                    )
+                }
+            }
+            animatedComposable(appUiThemeState, "widgets") {
+                MoreWidgetsScreen(
+                    navController = navController,
+                    homeEditEnabled = homeEditGrayState.enabled,
+                    onEditHome = ::requestHomeEdit
+                )
+            }
+            animatedComposable(appUiThemeState, "school_calendar") {
                 SchoolCalendar(navController = navController)
             }
-            animatedComposable("grade") {
+            animatedComposable(appUiThemeState, "grade") {
                 Grade(
                     onNavigateToEvaluation = {
                         navController.navigate("evaluation")
-                    }
+                    },
+                    onBack = { navController.popBackStack() }
                 )
             }
-            animatedComposable("phone_book") {
-                PhoneBook()
+            animatedComposable(appUiThemeState, "phone_book") {
+                PhoneBook(onBack = { navController.popBackStack() })
             }
-            animatedComposable("exam") {
-                Exam()
+            animatedComposable(appUiThemeState, "exam") {
+                Exam(onBack = { navController.popBackStack() })
             }
-            animatedComposable("evaluation") {
-                Evaluation()
+            animatedComposable(appUiThemeState, "evaluation") {
+                Evaluation(onBack = { navController.popBackStack() })
             }
-            animatedComposable("free_classroom") {
-                FreeClassroom()
+            animatedComposable(appUiThemeState, "free_classroom") {
+                FreeClassroom(onBack = { navController.popBackStack() })
             }
-            animatedComposable("lost_found") {
-                LostFound()
+            animatedComposable(appUiThemeState, "lost_found") {
+                LostFound(onBack = { navController.popBackStack() })
             }
-            animatedComposable("weather") {
-                Weather()
+            animatedComposable(appUiThemeState, "weather") {
+                Weather(onBack = { navController.popBackStack() })
             }
-            animatedComposable(REPOSITORY_ROUTE) {
+            animatedComposable(appUiThemeState, REPOSITORY_ROUTE) {
                 Repository(
                     navController = navController,
                     path = "",
@@ -259,6 +357,7 @@ fun Main(
                 )
             }
             animatedComposable(
+                appUiThemeState,
                 route = REPOSITORY_DIRECTORY_ROUTE,
                 arguments = listOf(
                     navArgument(REPOSITORY_PATH_ARG) {
@@ -274,93 +373,128 @@ fun Main(
                     behaviorRuntime = behaviorRuntime
                 )
             }
-            animatedComposable("repository_downloads") {
+            animatedComposable(appUiThemeState, "repository_downloads") {
                 RepositoryDownloads(navController = navController)
             }
-            animatedComposable("repository_settings") {
+            animatedComposable(appUiThemeState, "repository_settings") {
                 RepositorySettings(navController = navController)
             }
-            animatedComposable("settings") {
-                Settings(
+            animatedComposable(appUiThemeState, "settings") {
+                PrimaryDestinationRedirect(
                     navController = navController,
-                    mainViewModel = mainViewModel,
-                    aboutViewModel = aboutViewModel,
-                    behaviorRuntime = behaviorRuntime
+                    onRedirect = { primaryPagerState.scrollToPage(3) }
                 )
             }
-            animatedComposable("settings__license") {
-                License()
+            animatedComposable(appUiThemeState, "settings__license") {
+                License(onBack = { navController.popBackStack() })
             }
-            animatedComposable("settings__contributors") {
-                Contributors()
+            animatedComposable(appUiThemeState, "settings__contributors") {
+                Contributors(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable("preferences") {
+            animatedComposable(appUiThemeState, "preferences") {
                 Preferences(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable("electricity_pay") {
-                ElectricityDeposit()
+            animatedComposable(appUiThemeState, "electricity_pay") {
+                ElectricityDeposit(
+                    onBack = { navController.popBackStack() },
+                    onOpenRecentRooms = { navController.navigate("electricity_recent_rooms") }
+                )
             }
 
-            animatedComposable("card_balance_deposit") {
+            animatedComposable(appUiThemeState, "electricity_recent_rooms") { backStackEntry ->
+                val parentEntry = remember(backStackEntry) {
+                    navController.getBackStackEntry("electricity_pay")
+                }
+                val electricityViewModel: ElectricityDepositViewModel = hiltViewModel(parentEntry)
+                ElectricityRecentRooms(
+                    onBack = { navController.popBackStack() },
+                    onRoomSelected = { navController.popBackStack() },
+                    viewModel = electricityViewModel
+                )
+            }
+
+            animatedComposable(appUiThemeState, "card_balance_deposit") {
                 CardBalanceDeposit(navController = navController)
             }
 
-            animatedComposable("bathroom_deposit") {
-                BathroomDeposit()
+            animatedComposable(appUiThemeState, "bathroom_deposit") {
+                BathroomDeposit(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable("cmb_card_recharge") {
-                CmbCardRecharge(
-                    onExit = { navController.popBackStack() },
-                    onRechargeSuccessExit = {
-                        val returnedHome = navController.popBackStack("home", inclusive = false)
-                        if (!returnedHome) {
-                            navController.navigate("home") {
-                                popUpTo("cmb_card_recharge") { inclusive = true }
-                                launchSingleTop = true
+            animatedComposable(appUiThemeState, "cmb_card_recharge") {
+                CardBalanceDeposit(navController = navController)
+            }
+
+            animatedComposable(appUiThemeState, "network_recharge") {
+                NetworkRecharge(onBack = { navController.popBackStack() })
+            }
+
+            animatedComposable(appUiThemeState, "xuexiaotong") {
+                val api = remember { com.ahu.ahutong.data.xuexiaotong.ChaoxingApi(context) }
+                XuexiaotongScreen(api = api)
+            }
+
+            if (BuildConfig.DEBUG) {
+                animatedComposable(appUiThemeState, "debug") {
+                    Debug(
+                        scheduleViewModel = scheduleViewModel,
+                        discoveryViewModel = discoveryViewModel,
+                        onGrayStateChanged = {
+                            scope.launch {
+                                homeEditGrayState = GrayReleaseManager.state(
+                                    GrayFeatures.HomeEdit,
+                                    context
+                                )
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
 
-            animatedComposable("network_recharge") {
-                NetworkRecharge()
-            }
-
-            animatedComposable("debug") {
-                Debug(
-                    scheduleViewModel = scheduleViewModel,
-                    discoveryViewModel = discoveryViewModel,
-                    onGrayStateChanged = {
-                        scope.launch {
-                            homeEditGrayState = GrayReleaseManager.state(
-                                GrayFeatures.HomeEdit,
-                                context
-                            )
-                        }
-                    }
-                )
-            }
-
-            animatedComposable("splash") {
+            animatedComposable(appUiThemeState, "splash") {
                 Splash(navController)
             }
             diagnosticsContribution.installRoutes(this, navController, behaviorRuntime)
         }
-        BottomNavBar(navController, backdrop)
-        val productUiBlocked = currentRoute == "login" || currentRoute == "setup" ||
-            currentRoute == "splash" || currentRoute?.contains("deposit") == true ||
-            currentRoute?.contains("recharge") == true || currentRoute == "electricity_pay" ||
+        BottomNavBar(
+            backdrop = backdrop,
+            selectedRoute = when {
+                currentRoute == "home" -> primaryRoute
+                appUiTheme == AppUiTheme.RADIANT && currentRoute == "xuexiaotong" -> currentRoute
+                else -> null
+            },
+            onDestinationSelected = { route ->
+                if (route == "xuexiaotong") {
+                    navController.navigate(route) { launchSingleTop = true }
+                } else {
+                    scope.launch {
+                        selectPrimaryDestination(route)
+                        if (currentRoute != "home") {
+                            navController.navigate("home") {
+                                popUpTo("home") { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        }
+                    }
+                }
+            }
+        )
+        val productUiBlocked = effectiveRoute == "login" || effectiveRoute == "setup" ||
+            effectiveRoute == "splash" || effectiveRoute?.contains("deposit") == true ||
+            effectiveRoute?.contains("recharge") == true ||
+            effectiveRoute in setOf("electricity_pay", "electricity_recent_rooms") ||
             isReLoginShown || suggestionOverlayBlocked || imeVisible
         SmartSuggestionHost(
             runtime = behaviorRuntime,
             backdrop = backdrop,
             blocked = productUiBlocked,
             hiddenForDiagnostics = diagnosticsRouteVisible,
-            bottomSpacing = if (currentRoute in setOf("home", "schedule", "tools", "settings")) {
+            bottomSpacing = if (
+                effectiveRoute in primaryDestinationRoutes ||
+                appUiTheme == AppUiTheme.RADIANT && currentRoute == "xuexiaotong"
+            ) {
                 88.dp
             } else {
                 16.dp
@@ -378,7 +512,19 @@ fun Main(
                         navController.navigate("home") { launchSingleTop = true }
                     } else {
                         com.ahu.ahutong.personalization.action.AppActionCatalog.spec(action).route?.let { route ->
-                            navController.navigate(route) { launchSingleTop = true }
+                            if (appUiTheme == AppUiTheme.RADIANT && route == "tools") {
+                                navController.navigate("widgets") { launchSingleTop = true }
+                            } else if (route in primaryDestinationRoutes) {
+                                if (currentRoute != "home") {
+                                    navController.navigate("home") {
+                                        popUpTo("home") { inclusive = false }
+                                        launchSingleTop = true
+                                    }
+                                }
+                                selectPrimaryDestination(route)
+                            } else {
+                                navController.navigate(route) { launchSingleTop = true }
+                            }
                         }
                     }
                 }
@@ -388,43 +534,52 @@ fun Main(
         with(diagnosticsContribution) {
             Overlay(navController, behaviorRuntime, productUiBlocked)
         }
-    }
-    if (isReLoginShown) {
-        Dialog(
-            onDismissRequest = { onReLoginDismiss() },
-            properties = DialogProperties(
-                dismissOnBackPress = false,
-                dismissOnClickOutside = false
-            )
-        ) {
-            Column(
-                modifier = Modifier
-                    .clip(SmoothRoundedCornerShape(32.dp))
-                    .background(96.n1 withNight 10.n1)
-                    .padding(vertical = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                Text(
-                    text = "当前登录状态已过期，请重新登录!",
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    color = 0.n1 withNight 100.n1,
-                    style = MaterialTheme.typography.titleLarge
+        if (isReLoginShown) {
+            AppDialogSurface(
+                onDismissRequest = { onReLoginDismiss() },
+                properties = DialogProperties(
+                    dismissOnBackPress = false,
+                    dismissOnClickOutside = false,
+                    usePlatformDefaultWidth = false
                 )
-                Text(
-                    text = "重新登录",
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp)
-                        .clip(ContinuousCapsule)
-                        .background(90.a1 withNight 30.n1)
-                        .clickable {
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    Text(
+                        text = "当前登录状态已过期，请重新登录!",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.titleLarge
+                    )
+                    AppButton(
+                        onClick = {
                             navController.navigate("login")
                             onReLoginDismiss()
-                        }
-                        .padding(12.dp, 8.dp),
-                    color = 100.n1 withNight 100.n1,
-                    style = MaterialTheme.typography.titleMedium
-                )
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("重新登录", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun PrimaryDestinationRedirect(
+    navController: NavHostController,
+    onRedirect: suspend () -> Unit
+) {
+    LaunchedEffect(Unit) {
+        onRedirect()
+        if (!navController.popBackStack("home", inclusive = false)) {
+            navController.navigate("home") {
+                popUpTo(navController.graph.startDestinationId) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize())
 }

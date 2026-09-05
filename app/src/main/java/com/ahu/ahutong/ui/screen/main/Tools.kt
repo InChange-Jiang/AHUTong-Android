@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.screen.main
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,9 +65,15 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.utils.FileUtils
 import com.ahu.ahutong.R
 import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.capsule.ContinuousCapsule
@@ -81,6 +85,8 @@ import kotlin.system.measureTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Edit
 
 @Composable
 fun Tools(
@@ -88,17 +94,21 @@ fun Tools(
     homeEditEnabled: Boolean = false,
     onEditHome: () -> Unit = {}
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var homeWidgetIds by remember {
-        mutableStateOf(AHUCache.getHomeWidgetSlots().filterNotNull().toSet())
+    val radiant = isRadiantUi
+    val layoutFamily = if (radiant) {
+        HomeWidgetLayoutFamily.RADIANT
+    } else {
+        HomeWidgetLayoutFamily.CLASSIC
+    }
+    var homeWidgetIds by remember(layoutFamily) {
+        mutableStateOf(AHUCache.getHomeWidgetSlots(layoutFamily).filterNotNull().toSet())
     }
 
     fun refreshHomeWidgetIds() {
-        homeWidgetIds = AHUCache.getHomeWidgetSlots().filterNotNull().toSet()
+        homeWidgetIds = AHUCache.getHomeWidgetSlots(layoutFamily).filterNotNull().toSet()
     }
 
-    LaunchedEffect(navController) {
+    LaunchedEffect(navController, layoutFamily) {
         refreshHomeWidgetIds()
         navController.currentBackStackEntryFlow.collect { backStackEntry ->
             if (backStackEntry.destination.route == "tools") {
@@ -110,6 +120,7 @@ fun Tools(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             .verticalScroll(rememberScrollState())
             .systemBarsPadding()
             .padding(bottom = 96.dp),
@@ -127,7 +138,10 @@ fun Tools(
                 style = MaterialTheme.typography.headlineMedium
             )
             if (homeEditEnabled) {
-                IconButton(
+                AppHeaderIconButton(
+                    imageVector = Icons.Outlined.Edit,
+                    miuixImageVector = MiuixIcons.Useful.Edit,
+                    contentDescription = "编辑首页",
                     onClick = {
                         onEditHome()
                         navController.navigate("home") {
@@ -137,12 +151,7 @@ fun Tools(
                             launchSingleTop = true
                         }
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Edit,
-                        contentDescription = "编辑首页"
-                    )
-                }
+                )
             }
         }
         FlowRow(
@@ -151,7 +160,7 @@ fun Tools(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            HomeWidgetRegistry.widgets
+            HomeWidgetRegistry.availableWidgets(radiant)
                 .filter { it.id !in homeWidgetIds }
                 .forEach { widget ->
                     ToolItem(
@@ -161,54 +170,58 @@ fun Tools(
                         onClick = { navController.navigate(widget.route) }
                     )
                 }
-            ToolItem(
-                title = "网费充值",
-                iconId = R.drawable.ic_network_recharge,
-                tint = Color(0xFF1E88E5),
-                onClick = { navController.navigate("network_recharge") }
-            )
         }
-        Column(
+        DesktopScheduleWidgetCard()
+    }
+}
+
+@Composable
+internal fun DesktopScheduleWidgetCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .appLiquidGlassSurface(
+                shape = SmoothRoundedCornerShape(32.dp),
+                fallbackColor = 100.n1 withNight 30.n1
+            ),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text(
+            text = "添加桌面课表微件",
+            modifier = Modifier.padding(24.dp),
+            style = MaterialTheme.typography.titleLarge
+        )
+        AsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(R.mipmap.schedule_widget_prev)
+                .crossfade(false)
+                .build(),
+            contentDescription = "桌面课表微件",
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            contentScale = ContentScale.Fit
+        )
+        AppButton(
+            onClick = {
+                scope.launch {
+                    GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
+                        ScheduleAppWidgetReceiver::class.java
+                    )
+                }
+            },
             modifier = Modifier
+                .padding(16.dp)
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(100.n1 withNight 30.n1),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = "添加桌面课表微件",
-                modifier = Modifier.padding(24.dp),
-                style = MaterialTheme.typography.titleLarge
-            )
-            Image(
-                painter = painterResource(id = R.mipmap.schedule_widget_prev),
-                contentDescription = "桌面课表微件",
-                modifier = Modifier.align(Alignment.CenterHorizontally)
-            )
-            Text(
-                text = "添加",
-                modifier = Modifier
-                    .padding(16.dp)
-                    .clip(ContinuousCapsule)
-                    .background(90.a1)
-                    .clickable {
-                        scope.launch {
-                            GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
-                                ScheduleAppWidgetReceiver::class.java
-                            )
-                        }
-                    }
-                    .padding(16.dp, 8.dp),
-                color = 0.n1,
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text("添加", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
 
 @Composable
-private fun ToolItem(
+internal fun ToolItem(
     title: String,
     iconId: Int,
     tint: Color,

@@ -496,10 +496,22 @@ class SdkDataSource : BaseDataSource {
     }
 
     override suspend fun getBathRooms(): AHUResponse<List<BathRoom>> {
-        return AHUResponse<List<BathRoom>>()
+        return crawlerFallback.getBathRooms()
     }
 
     override suspend fun getExamInfo(studentID: String, studentName: String): AHUResponse<List<Exam>> {
+        // The Android crawler understands the current server-rendered exam page. The bundled
+        // service can still expose the legacy payload shape and currently spends several seconds
+        // before reporting that it cannot parse it, so use it only as a recovery path.
+        val crawlerResult = crawlerFallback.getExamInfo(studentID, studentName)
+        if (crawlerResult.code == 0) {
+            return crawlerResult
+        }
+
+        Log.w(
+            "LocalServiceClient",
+            "[getExamInfo] Android crawler failed, trying local service: ${crawlerResult.msg}"
+        )
         val response = AHUResponse<List<Exam>>()
         try {
             val httpClient = getHttpClient()
@@ -514,12 +526,15 @@ class SdkDataSource : BaseDataSource {
                 response.code = 0
                 response.data = result.getOrNull()
             } else {
-                Log.w("LocalServiceClient", "[getExamInfo] Rust failed, fallback to Android crawler: ${result.exceptionOrNull()?.message}")
-                return crawlerFallback.getExamInfo(studentID, studentName)
+                Log.w(
+                    "LocalServiceClient",
+                    "[getExamInfo] Local service recovery failed: ${result.exceptionOrNull()?.message}"
+                )
+                return crawlerResult
             }
         } catch (e: Exception) {
-            Log.w("LocalServiceClient", "[getExamInfo] Rust threw, fallback to Android crawler", e)
-            return crawlerFallback.getExamInfo(studentID, studentName)
+            Log.w("LocalServiceClient", "[getExamInfo] Local service recovery threw", e)
+            return crawlerResult
         }
         return response
     }
@@ -559,7 +574,7 @@ class SdkDataSource : BaseDataSource {
             .build()
 
 
-        val res = YcardApi.API.getFeeItemThirdData(formBody)
+        val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
 
         if (res.isSuccessful) {
             val responseBody = res.body()
@@ -585,26 +600,33 @@ class SdkDataSource : BaseDataSource {
     }
 
     override suspend fun getCardInfo(): AHUResponse<CardInfo> {
-
         val response = AHUResponse<CardInfo>()
-
-        response.data = YcardApi.API.loadCardRecharge()
-        response.code = 0
-
+        val result = YcardApi.authorizedCall { loadCardRecharge() }
+        val body = result.body()
+        if (result.isSuccessful && body != null) {
+            response.data = body
+            response.code = 0
+            response.msg = "success"
+        } else {
+            response.code = result.code().takeIf { it != 0 } ?: -1
+            response.msg = "校园卡信息加载失败：${result.message()}"
+        }
         return response
     }
 
     override suspend fun getOrderThirdData(request : RequestBody): AHUResponse<Response<ResponseBody>> {
         val response = AHUResponse<Response<ResponseBody>>()
-        response.data = YcardApi.API.getOrderThirdData(request.toFormBody())
-        response.code = 0;
+        response.data = YcardApi.authorizedCall { getOrderThirdData(request.toFormBody()) }
+        response.code = if (response.data?.isSuccessful == true) 0 else -1
+        response.msg = response.data?.message().orEmpty()
         return response
     }
 
     override suspend fun pay(request: RequestBody): AHUResponse<Response<ResponseBody>> {
         val response = AHUResponse<Response<ResponseBody>>()
-        response.data = YcardApi.API.pay(request.toFormBody())
-        response.code = 0;
+        response.data = YcardApi.authorizedCall { pay(request.toFormBody()) }
+        response.code = if (response.data?.isSuccessful == true) 0 else -1
+        response.msg = response.data?.message().orEmpty()
         return response
     }
 

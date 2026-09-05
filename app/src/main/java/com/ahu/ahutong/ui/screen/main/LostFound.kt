@@ -1,10 +1,12 @@
 package com.ahu.ahutong.ui.screen.main
 
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -12,6 +14,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
@@ -23,7 +26,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -33,20 +38,41 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppFloatingActionButton
+import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppLazyPageLayout
+import com.ahu.ahutong.ui.components.AppModalBottomSheet
+import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppSelectField
+import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppTextField
+import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.LostFoundViewModel
-import com.kyant.capsule.ContinuousCapsule
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.flow.distinctUntilChanged
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
+import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
+import top.yukonga.miuix.kmp.icon.icons.useful.Search
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LostFound(
+    onBack: (() -> Unit)? = null,
     lostFoundViewModel: LostFoundViewModel = hiltViewModel()
 ) {
     DisposableEffect(lostFoundViewModel) {
@@ -242,20 +268,7 @@ fun LostFound(
             }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-    ) {
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement =
-                Arrangement.spacedBy(24.dp),
-            contentPadding =
-                PaddingValues(bottom = 96.dp)
-        ) {
+    val pageContent: LazyListScope.() -> Unit = {
 
             item {
                 Column(
@@ -265,147 +278,12 @@ fun LostFound(
                     verticalArrangement =
                         Arrangement.spacedBy(16.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-
-                        /**
-                         * 左边 1/3
-                         */
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            FilterChip(
-                                selected =
-                                    lostFoundViewModel.currentState == 1,
-                                onClick = {
-                                    lostFoundViewModel.switchState(1)
-                                },
-                                label = {
-                                    Text(
-                                        text = "失物招领",
-                                        fontSize = 18.sp,
-                                        maxLines = 1
-                                    )
-                                }
-                            )
-                        }
-
-                        /**
-                         * 中间 1/3
-                         */
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            FilterChip(
-                                selected =
-                                    lostFoundViewModel.currentState == 2,
-                                onClick = {
-                                    lostFoundViewModel.switchState(2)
-                                },
-                                label = {
-                                    Text(
-                                        text = "寻物启事",
-                                        fontSize = 18.sp,
-                                        maxLines = 1
-                                    )
-                                }
-                            )
-                        }
-
-                        /**
-                         * 右边 1/3（容器三等分，按钮不拉伸）
-                         */
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .clip(ContinuousCapsule)
-                                    .background(
-                                        100.n1 withNight 30.n1
-                                    ),
-                                horizontalArrangement =
-                                    Arrangement.spacedBy(4.dp),
-                                verticalAlignment =
-                                    Alignment.CenterVertically
-                            ) {
-                                IconButton(
-                                    onClick = {
-                                        lostFoundViewModel.refreshList()
-
-                                        Toast.makeText(
-                                            context,
-                                            "刷新成功",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector =
-                                            Icons.Default.Refresh,
-                                        contentDescription = null
-                                    )
-                                }
-
-                                IconButton(
-                                    onClick = {
-                                        searchExpanded =
-                                            !searchExpanded
-
-                                        if (!searchExpanded) {
-                                            searchQuery = ""
-                                        }
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector =
-                                            if (searchExpanded)
-                                                Icons.Default.Close
-                                            else
-                                                Icons.Default.Search,
-                                        contentDescription = null
-                                    )
-                                }
-                            }
-                        }
-                    }
                     if (searchExpanded) {
-                        OutlinedTextField(
+                        AppSearchField(
                             value = searchQuery,
-                            onValueChange = {
-                                searchQuery = it
-                            },
+                            onValueChange = { searchQuery = it },
                             modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = ContinuousCapsule,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = 0.n1 withNight 100.n1,
-                                unfocusedTextColor = 0.n1 withNight 100.n1,
-                                cursorColor = 90.a1 withNight 90.a1,
-                            ),
-                            placeholder = {
-                                Text("搜索全部信息")
-                            }
-                        )
-                    }
-                    lostFoundViewModel.presetCandidates.firstOrNull()?.let { candidate ->
-                        LaunchedEffect(candidate.opportunityId, candidate.presetId) {
-                            lostFoundViewModel.onPresetCandidateVisible(candidate)
-                        }
-                        Text(
-                            text = "使用常用条件",
-                            modifier = Modifier
-                                .clip(ContinuousCapsule)
-                                .background(90.a1)
-                                .clickable { lostFoundViewModel.applyPresetCandidate(candidate) }
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            color = 0.n1,
-                            style = MaterialTheme.typography.titleMedium
+                            placeholder = "搜索全部信息"
                         )
                     }
                 }
@@ -413,150 +291,42 @@ fun LostFound(
 
             if (!searchExpanded) {
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier
-                            .padding(
-                                horizontal = 16.dp
-                            )
-                            .clip(
-                                ContinuousCapsule
-                            )
-                            .background(
-                                100.n1 withNight 20.n1
-                            )
-                            .padding(8.dp),
-                        verticalAlignment =
-                            Alignment.CenterVertically
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        FilterChip(
-                            selected =
-                                lostFoundViewModel.selectedCampus == null,
-                            onClick = {
-                                lostFoundViewModel.selectCampusFilter(null)
-                            },
-                            label = {
-                                Text("全部校区")
-                            }
+                        AppSelectField(
+                            label = "信息类别",
+                            selected = lostFoundViewModel.currentState,
+                            options = listOf(
+                                AppSelectOption(1, "失物招领"),
+                                AppSelectOption(2, "寻物启事")
+                            ),
+                            onSelected = lostFoundViewModel::switchState,
+                            miuixStandalone = true
                         )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(8.dp)
+                        AppSelectField(
+                            label = "校区",
+                            selected = lostFoundViewModel.selectedCampus,
+                            options = listOf(AppSelectOption<String?>(null, "全部校区")) +
+                                allCampus.map { campus ->
+                                    AppSelectOption<String?>(campus.id, campus.campusName)
+                                },
+                            onSelected = lostFoundViewModel::selectCampusFilter,
+                            miuixStandalone = true
                         )
-
-                        LazyRow(
-                            horizontalArrangement =
-                                Arrangement.spacedBy(
-                                    8.dp
-                                )
-                        ) {
-                            items(allCampus) { campus ->
-                                val selected =
-                                    lostFoundViewModel.selectedCampus == campus.id
-
-                                Text(
-                                    text =
-                                        campus.campusName,
-                                    modifier =
-                                        Modifier
-                                            .clip(
-                                                ContinuousCapsule
-                                            )
-                                            .background(
-                                                if (selected)
-                                                    90.a1
-                                                else
-                                                    Color.Unspecified
-                                            )
-                                            .clickable {
-                                                lostFoundViewModel.selectCampusFilter(campus.id)
-                                            }
-                                            .padding(
-                                                16.dp,
-                                                8.dp
-                                            ),
-                                    color =
-                                        if (selected)
-                                            0.n1
-                                        else
-                                            Color.Unspecified
-                                )
-                            }
-                        }
-                    }
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier
-                            .padding(
-                                horizontal = 16.dp
-                            )
-                            .clip(
-                                ContinuousCapsule
-                            )
-                            .background(
-                                100.n1 withNight 20.n1
-                            )
-                            .padding(8.dp),
-                        verticalAlignment =
-                            Alignment.CenterVertically
-                    ) {
-                        FilterChip(
-                            selected =
-                                lostFoundViewModel.selectedType == null,
-                            onClick = {
-                                lostFoundViewModel.selectTypeFilter(null)
-                            },
-                            label = {
-                                Text("全部类型")
-                            }
+                        AppSelectField(
+                            label = "物品类型",
+                            selected = lostFoundViewModel.selectedType,
+                            options = listOf(AppSelectOption<String?>(null, "全部类型")) +
+                                allLostFoundType.map { type ->
+                                    AppSelectOption<String?>(type.typeId, type.typeName)
+                                },
+                            onSelected = lostFoundViewModel::selectTypeFilter,
+                            miuixStandalone = true
                         )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(8.dp)
-                        )
-
-                        LazyRow(
-                            horizontalArrangement =
-                                Arrangement.spacedBy(
-                                    8.dp
-                                )
-                        ) {
-                            items(allLostFoundType) { type ->
-                                val selected =
-                                    lostFoundViewModel.selectedType == type.typeId
-
-                                Text(
-                                    text =
-                                        type.typeName,
-                                    modifier =
-                                        Modifier
-                                            .clip(
-                                                ContinuousCapsule
-                                            )
-                                            .background(
-                                                if (selected)
-                                                    90.a1
-                                                else
-                                                    Color.Unspecified
-                                            )
-                                            .clickable {
-                                                lostFoundViewModel.selectTypeFilter(type.typeId)
-                                            }
-                                            .padding(
-                                                16.dp,
-                                                8.dp
-                                            ),
-                                    color =
-                                        if (selected)
-                                            0.n1
-                                        else
-                                            Color.Unspecified
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -587,6 +357,7 @@ fun LostFound(
                     TextButton(
                         onClick = {
                             showMyPostSheet = true
+                            lostFoundViewModel.loadMyPosts()
                         }
                     ) {
                         Text("管理我的帖子")
@@ -594,20 +365,73 @@ fun LostFound(
                 }
             }
 
-            items(filteredList) { item ->
+            if (lostFoundViewModel.listLoading && lostFoundList.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) { AppCircularProgressIndicator() }
+                }
+            }
+
+            lostFoundViewModel.errorMessage?.let { message ->
+                item {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .fillMaxWidth()
+                            .appLiquidGlassSurface(
+                                shape = SmoothRoundedCornerShape(20.dp),
+                                fallbackColor = MaterialTheme.colorScheme.errorContainer,
+                                level = LiquidGlassSurfaceLevel.Panel
+                            )
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
+                        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        AppButton(
+                            onClick = { lostFoundViewModel.fetchFirstPage() },
+                            variant = AppButtonVariant.Secondary
+                        ) { Text("重试") }
+                    }
+                }
+            }
+
+            if (!lostFoundViewModel.listLoading && filteredList.isEmpty() && lostFoundViewModel.errorMessage == null) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp)
+                            .fillMaxWidth()
+                            .appLiquidGlassSurface(
+                                shape = SmoothRoundedCornerShape(20.dp),
+                                fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                level = LiquidGlassSurfaceLevel.Panel
+                            )
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("暂无匹配内容", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "尝试切换校区、类型或清空搜索关键词。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            items(filteredList, key = { it.id }) { item ->
                 Column(
                     modifier = Modifier
                         .padding(
                             horizontal = 16.dp
                         )
                         .fillMaxWidth()
-                        .clip(
-                            SmoothRoundedCornerShape(
-                                4.dp
-                            )
-                        )
-                        .background(
-                            100.n1 withNight 20.n1
+                        .appLiquidGlassSurface(
+                            shape = SmoothRoundedCornerShape(20.dp),
+                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                            level = LiquidGlassSurfaceLevel.Panel
                         )
                         .clickable {
                             selectedItem = item
@@ -708,33 +532,115 @@ fun LostFound(
                         contentAlignment =
                             Alignment.Center
                     ) {
-                        CircularProgressIndicator()
+                        AppCircularProgressIndicator()
                     }
                 }
             }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
+    ) {
+        if (isRadiantUi) {
+            SecondaryPageScaffold(
+                title = "失物招领",
+                contentEdgeToEdge = true,
+                trailingContent = {
+                    LostFoundRadiantTitleButton(
+                        icon = R.drawable.ic_refresh,
+                        contentDescription = "刷新失物招领",
+                        onClick = lostFoundViewModel::refreshList
+                    )
+                    LostFoundRadiantTitleButton(
+                        icon = if (searchExpanded) null else R.drawable.ic_find,
+                        imageVector = if (searchExpanded) Icons.Default.Close else null,
+                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
+                        onClick = {
+                            searchExpanded = !searchExpanded
+                            if (!searchExpanded) searchQuery = ""
+                        }
+                    )
+                }
+            ) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .systemBarsPadding(),
+                    contentPadding = PaddingValues(top = 72.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                    content = pageContent
+                )
+            }
+        } else {
+            AppLazyPageLayout(
+                title = "失物招领",
+                onBack = onBack,
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(24.dp),
+                bottomPadding = 96.dp,
+                actions = {
+                    AppHeaderIconButton(
+                        imageVector = Icons.Default.Refresh,
+                        miuixImageVector = MiuixIcons.Useful.Refresh,
+                        contentDescription = "刷新失物招领",
+                        onClick = lostFoundViewModel::refreshList
+                    )
+                    AppHeaderIconButton(
+                        imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
+                        miuixImageVector = if (searchExpanded) {
+                            MiuixIcons.Useful.Cancel
+                        } else {
+                            MiuixIcons.Useful.Search
+                        },
+                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
+                        onClick = {
+                            searchExpanded = !searchExpanded
+                            if (!searchExpanded) searchQuery = ""
+                        }
+                    )
+                },
+                content = pageContent
+            )
         }
-        FloatingActionButton(
+        AppFloatingActionButton(
             onClick = {
                 showPublishSheet = true
             },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(24.dp)
-                .size(64.dp)
         ) {
-            Text(
-                text = "+",
-                fontSize = 28.sp
-            )
+            val addColor = LocalContentColor.current
+            Canvas(modifier = Modifier.size(22.dp)) {
+                val strokeWidth = 2.5.dp.toPx()
+                drawLine(
+                    color = addColor,
+                    start = androidx.compose.ui.geometry.Offset(size.width / 2f, 0f),
+                    end = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height),
+                    strokeWidth = strokeWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+                drawLine(
+                    color = addColor,
+                    start = androidx.compose.ui.geometry.Offset(0f, size.height / 2f),
+                    end = androidx.compose.ui.geometry.Offset(size.width, size.height / 2f),
+                    strokeWidth = strokeWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round
+                )
+            }
         }
 
         selectedItem?.let { item ->
-            ModalBottomSheet(
+            AppModalBottomSheet(
+                title = item.title ?: "无标题",
                 onDismissRequest = {
                     selectedItem = null
                 }
             ) {
-
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -742,15 +648,6 @@ fun LostFound(
                     verticalArrangement =
                         Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = item.title ?: "无标题",
-                        style =
-                            MaterialTheme.typography
-                                .headlineSmall,
-                        fontWeight =
-                            FontWeight.Bold
-                    )
-
                     Text(
                         "联系人：${item.linkman ?: "未知"}"
                     )
@@ -893,12 +790,8 @@ fun LostFound(
     }
 
     if (showMyPostSheet) {
-        val myPosts = lostFoundList.filter {
-            it.pubuser?.idNumber ==
-                    lostFoundViewModel.currentUserName
-        }
-
-        ModalBottomSheet(
+        AppModalBottomSheet(
+            title = "管理我的帖子",
             onDismissRequest = {
                 showMyPostSheet = false
             }
@@ -908,25 +801,36 @@ fun LostFound(
                     .fillMaxWidth()
                     .padding(24.dp)
             ) {
-                Text(
-                    text = "管理我的帖子",
-                    style =
-                        MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(
-                    modifier = Modifier.height(16.dp)
-                )
-
-                if (myPosts.isEmpty()) {
-                    Text("暂无帖子")
-                } else {
+                when {
+                    lostFoundViewModel.myPostsLoading -> Box(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AppCircularProgressIndicator(size = 24.dp, strokeWidth = 2.5.dp)
+                    }
+                    lostFoundViewModel.myPostsError != null -> Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = lostFoundViewModel.myPostsError.orEmpty(),
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        AppButton(
+                            onClick = lostFoundViewModel::loadMyPosts,
+                            modifier = Modifier.fillMaxWidth(),
+                            variant = AppButtonVariant.Secondary
+                        ) { Text("重试") }
+                    }
+                    lostFoundViewModel.myPosts.isEmpty() -> Text("暂无帖子")
+                    else -> {
                     LazyColumn(
                         verticalArrangement =
                             Arrangement.spacedBy(12.dp)
                     ) {
-                        items(myPosts) { item ->
+                        items(
+                            items = lostFoundViewModel.myPosts,
+                            key = LostFoundItem::id
+                        ) { item ->
                             Card(
                                 modifier =
                                     Modifier.fillMaxWidth()
@@ -961,25 +865,27 @@ fun LostFound(
 
                                     TextButton(
                                         onClick = {
-                                            item.id?.let { id ->
-                                                lostFoundViewModel
-                                                    .deleteLostFound(
-                                                        id
-                                                    )
-
+                                            lostFoundViewModel.deleteLostFound(item.id) { result ->
                                                 Toast.makeText(
                                                     context,
-                                                    "删除成功",
+                                                    if (result.isSuccess) "删除成功" else
+                                                        result.exceptionOrNull()?.message ?: "删除失败",
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
-                                        }
+                                        },
+                                        enabled = item.id !in lostFoundViewModel.deletingPostIds
                                     ) {
-                                        Text("删除")
+                                        if (item.id in lostFoundViewModel.deletingPostIds) {
+                                            AppCircularProgressIndicator(size = 16.dp, strokeWidth = 2.dp)
+                                        } else {
+                                            Text("删除")
+                                        }
                                     }
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -1018,7 +924,8 @@ fun LostFound(
             mutableStateOf("1")
         }
 
-        ModalBottomSheet(
+        AppModalBottomSheet(
+            title = "发布帖子",
             onDismissRequest = {
                 showPublishSheet = false
             }
@@ -1030,6 +937,7 @@ fun LostFound(
                     .imePadding()
                     .padding(24.dp)
                     .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ){
                 Text(
                      text = "*目前智慧安大图片功能有时无法使用，请大家文字描述尽量详尽",
@@ -1037,142 +945,68 @@ fun LostFound(
                      color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                      fontSize = 14.sp
                  )
-                 Text(
-                     text = "发布帖子",
-                     style =
-                         MaterialTheme.typography.headlineSmall,
-                     fontWeight = FontWeight.Bold
-                 )
-
-                 Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedTextField(
+                AppTextField(
                     value = linkman,
-                    onValueChange = {
-                        linkman = it
-                    },
+                    onValueChange = { linkman = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("联系人 *")
-                    }
+                    label = "联系人 *"
                 )
 
-                OutlinedTextField(
+                AppTextField(
                     value = phone,
-                    onValueChange = {
-                        phone = it
-                    },
+                    onValueChange = { phone = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("联系电话 *")
-                    }
+                    label = "联系电话 *"
                 )
 
-                OutlinedTextField(
+                AppTextField(
                     value = title,
-                    onValueChange = {
-                        title = it
-                    },
+                    onValueChange = { title = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("描述内容 *")
-                    }
+                    label = "描述内容 *"
                 )
 
-                OutlinedTextField(
+                AppTextField(
                     value = num1,
-                    onValueChange = {
-                        num1 = it
-                    },
+                    onValueChange = { num1 = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Text("证件号（可选）")
-                    }
+                    label = "证件号（可选）"
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    "选择校区",
-                    style = MaterialTheme.typography.titleSmall
+                AppSelectField(
+                    label = "校区 *",
+                    selected = publishCampusId,
+                    options = allCampus.map { campus ->
+                        AppSelectOption(campus.id, campus.campusName)
+                    },
+                    onSelected = { publishCampusId = it },
+                    placeholder = "请选择校区",
+                    miuixStandalone = true
                 )
 
-                LazyRow(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-                    items(allCampus) { campus ->
-                        FilterChip(
-                            selected =
-                                publishCampusId == campus.id,
-                            onClick = {
-                                publishCampusId = campus.id
-                            },
-                            label = {
-                                Text(campus.campusName)
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    "选择类型",
-                    style = MaterialTheme.typography.titleSmall
+                AppSelectField(
+                    label = "物品类型 *",
+                    selected = publishTypeId,
+                    options = allLostFoundType.map { type ->
+                        AppSelectOption(type.typeId, type.typeName)
+                    },
+                    onSelected = { publishTypeId = it },
+                    placeholder = "请选择物品类型",
+                    miuixStandalone = true
                 )
 
-                LazyRow(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-                    items(allLostFoundType) { type ->
-                        FilterChip(
-                            selected =
-                                publishTypeId == type.typeId,
-                            onClick = {
-                                publishTypeId = type.typeId
-                            },
-                            label = {
-                                Text(type.typeName)
-                            }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    "选择事件类型",
-                    style = MaterialTheme.typography.titleSmall
+                AppSelectField(
+                    label = "信息类别 *",
+                    selected = publishState,
+                    options = listOf(
+                        AppSelectOption("1", "失物招领"),
+                        AppSelectOption("2", "寻物启事")
+                    ),
+                    onSelected = { publishState = it },
+                    miuixStandalone = true
                 )
 
-                Row(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = publishState == "1",
-                        onClick = {
-                            publishState = "1"
-                        },
-                        label = {
-                            Text("失物招领")
-                        }
-                    )
-
-                    FilterChip(
-                        selected = publishState == "2",
-                        onClick = {
-                            publishState = "2"
-                        },
-                        label = {
-                            Text("寻物启事")
-                        }
-                    )
-                }
-
-                Button(
+                AppButton(
                     onClick = {
 
                         if (
@@ -1188,7 +1022,7 @@ fun LostFound(
                                 Toast.LENGTH_SHORT
                             ).show()
 
-                            return@Button
+                            return@AppButton
                         }
 
                         lostFoundViewModel.publishLostFound(
@@ -1199,23 +1033,59 @@ fun LostFound(
                             campusId = publishCampusId!!,
                             typeId = publishTypeId!!,
                             state = publishState
-                        )
-
-                        showPublishSheet = false
-
-                        Toast.makeText(
-                            context,
-                            "发布成功",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                        ) { result ->
+                            if (result.isSuccess) showPublishSheet = false
+                            Toast.makeText(
+                                context,
+                                if (result.isSuccess) "发布成功" else
+                                    result.exceptionOrNull()?.message ?: "发布失败",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !lostFoundViewModel.isPublishing
                 ) {
-                    Text("发布")
+                    if (lostFoundViewModel.isPublishing) {
+                        AppCircularProgressIndicator(size = 18.dp, strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(if (lostFoundViewModel.isPublishing) "正在发布" else "发布")
                 }
 
                 Spacer(
                     modifier = Modifier.height(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LostFoundRadiantTitleButton(
+    icon: Int? = null,
+    imageVector: ImageVector? = null,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
+        contentAlignment = Alignment.Center
+    ) {
+        IconButton(onClick = onClick) {
+            when {
+                icon != null -> Icon(
+                    painter = painterResource(icon),
+                    contentDescription = contentDescription,
+                    modifier = Modifier.size(18.dp)
+                )
+                imageVector != null -> Icon(
+                    imageVector = imageVector,
+                    contentDescription = contentDescription,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }

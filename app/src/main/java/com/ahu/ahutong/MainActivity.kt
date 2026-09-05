@@ -46,9 +46,12 @@ import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.action.ActionSource
 import java.io.File
 import java.security.MessageDigest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private const val DEBUG_BUILD_NOTICE_DURATION_MS = 3_000L
+private const val STARTUP_BACKGROUND_WORK_DELAY_MS = 250L
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -71,7 +74,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         initializeActivityResultLauncher()
-        init()
         if (intent?.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
 
         setContent {
@@ -156,28 +158,24 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        init()
         showDebugBuildNotice(savedInstanceState)
     }
 
     private fun init() {
         lifecycleScope.launchSafe {
+            // Let Compose draw the cached first screen before starting native services,
+            // widget scheduling and network refreshes.
+            delay(STARTUP_BACKGROUND_WORK_DELAY_MS)
             if (AHUCache.isPrivacyAccepted()) {
                 AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let { behaviorRuntime.startProfile(it) }
             }
-        }
-        if (!BuildConfig.DEBUG) {
-            lifecycleScope.launchSafe {
-                mainViewModel.checkApkUpdate(this@MainActivity)
+
+            val storageInitialized = withContext(Dispatchers.IO) {
+                WidgetUpdateScheduler.scheduleNext(this@MainActivity)
+                RustSDK.loadLibrary(context = applicationContext)
+                startLocalService()
             }
-        }
-        WidgetUpdateScheduler.scheduleNext(this@MainActivity)
-
-        RustSDK.loadLibrary(context = applicationContext)
-
-        // 在 native library 加载后启动本地 HTTP 服务
-        val storageInitialized = startLocalService()
-
-        lifecycleScope.launchSafe {
             if (!storageInitialized) {
                 restoreRustCookies()
             }
@@ -189,6 +187,10 @@ class MainActivity : ComponentActivity() {
                 discoveryViewModel.loadActivityBean()
                 scheduleViewModel.loadConfig()
                 scheduleViewModel.refreshSchedule()
+            }
+
+            if (!BuildConfig.DEBUG) {
+                mainViewModel.checkApkUpdate(this@MainActivity)
             }
         }
     }

@@ -15,10 +15,12 @@ import com.ahu.ahutong.data.repository.GitHubContentItem
 import com.ahu.ahutong.data.repository.RepositoryDirectorySummary
 import com.ahu.ahutong.data.repository.RepositoryMarkdownDocument
 import com.ahu.ahutong.data.repository.RepositoryManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 data class RepositoryUiState(
@@ -62,23 +64,28 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
     private val _directoryStates = MutableStateFlow<Map<String, RepositoryUiState>>(emptyMap())
     val directoryStates: StateFlow<Map<String, RepositoryUiState>> = _directoryStates.asStateFlow()
 
-    private val _sharedState = MutableStateFlow(
-        RepositorySharedUiState(downloadedPaths = refreshDownloadedSet())
-    )
+    private val _sharedState = MutableStateFlow(RepositorySharedUiState())
     val sharedState: StateFlow<RepositorySharedUiState> = _sharedState.asStateFlow()
 
     private val _markdownState = MutableStateFlow(RepositoryMarkdownUiState())
     val markdownState: StateFlow<RepositoryMarkdownUiState> = _markdownState.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            val downloadedPaths = withContext(Dispatchers.IO) { refreshDownloadedSet() }
+            _sharedState.value = _sharedState.value.copy(downloadedPaths = downloadedPaths)
+        }
+    }
+
     fun getInitialDirectoryState(path: String): RepositoryUiState {
-        return _directoryStates.value[path] ?: cachedDirectoryState(path) ?: RepositoryUiState(
+        return _directoryStates.value[path] ?: RepositoryUiState(
             currentPath = path,
             isLoading = true
         )
     }
 
     fun getDirectoryState(path: String): RepositoryUiState {
-        return _directoryStates.value[path] ?: cachedDirectoryState(path) ?: RepositoryUiState(
+        return _directoryStates.value[path] ?: RepositoryUiState(
             currentPath = path,
             isLoading = true
         )
@@ -96,13 +103,7 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
     fun loadContents(path: String = "", forceRefresh: Boolean = false) {
         val requestId = ++loadRequestId
         pathRequestIds[path] = requestId
-        val cached = if (forceRefresh) null else RepositoryManager.getCachedContents(path)
-        val startState = _directoryStates.value[path] ?: cachedDirectoryState(path)
-
-        if (cached != null) {
-            setDirectoryState(path, directoryStateFromCache(path, cached.items, cached.updateTime))
-            return
-        }
+        val startState = _directoryStates.value[path]
 
         setDirectoryState(
             path,
@@ -116,35 +117,38 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
 
         viewModelScope.launch {
             try {
-                val items = RepositoryManager.getContents(path, forceRefresh = forceRefresh)
+                val resolvedState = withContext(Dispatchers.IO) {
+                    val cached = if (forceRefresh) null else RepositoryManager.getCachedContents(path)
+                    if (cached != null) {
+                        directoryStateFromCache(path, cached.items, cached.updateTime)
+                    } else {
+                        val items = RepositoryManager.getContents(path, forceRefresh = forceRefresh)
+                        val sortedItems = sortDisplayItems(path, items)
+                        RepositoryUiState(
+                            isLoading = false,
+                            isRefreshing = false,
+                            isLoaded = true,
+                            items = sortedItems,
+                            currentPath = path,
+                            isShowingCachedContents = false,
+                            cacheUpdatedAt = System.currentTimeMillis(),
+                            directorySummaries = RepositoryManager.getDirectorySummaries(sortedItems)
+                        )
+                    }
+                }
                 if (pathRequestIds[path] != requestId) return@launch
-                val sortedItems = sortDisplayItems(path, items)
-                setDirectoryState(
-                    path,
-                    RepositoryUiState(
-                        isLoading = false,
-                        isRefreshing = false,
-                        isLoaded = true,
-                        items = sortedItems,
-                        currentPath = path,
-                        isShowingCachedContents = false,
-                        cacheUpdatedAt = System.currentTimeMillis(),
-                        directorySummaries = RepositoryManager.getDirectorySummaries(sortedItems)
-                    )
-                )
-                _sharedState.value = _sharedState.value.copy(
-                    downloadedPaths = refreshDownloadedSet()
-                )
+                setDirectoryState(path, resolvedState)
             } catch (e: Exception) {
                 if (pathRequestIds[path] != requestId) return@launch
-                val fallback = RepositoryManager.getCachedContents(path)
-                if (fallback != null) {
-                    setDirectoryState(
-                        path,
+                val fallbackState = withContext(Dispatchers.IO) {
+                    RepositoryManager.getCachedContents(path)?.let { fallback ->
                         directoryStateFromCache(path, fallback.items, fallback.updateTime).copy(
                             error = null
                         )
-                    )
+                    }
+                }
+                if (fallbackState != null) {
+                    setDirectoryState(path, fallbackState)
                 } else {
                     setDirectoryState(
                         path,
@@ -167,8 +171,8 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
             cacheWarmUpCount = 0
         )
         viewModelScope.launch {
-            runCatching {
-                RepositoryManager.warmUpAllContentCaches(
+            try {
+                val updateTime = RepositoryManager.warmUpAllContentCaches(
                     forceRefresh = forceRefresh,
                     onProgress = { fetchedCount ->
                         _sharedState.value = _sharedState.value.copy(
@@ -177,11 +181,17 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
                         )
                     }
                 )
-            }.onSuccess { updateTime ->
-                val states = _directoryStates.value.toMutableMap()
-                states.keys.toList().forEach { path ->
-                    RepositoryManager.getCachedContents(path)?.let { cached ->
-                        states[path] = directoryStateFromCache(path, cached.items, updateTime)
+                val states = withContext(Dispatchers.IO) {
+                    _directoryStates.value.toMutableMap().also { currentStates ->
+                        currentStates.keys.toList().forEach { path ->
+                            RepositoryManager.getCachedContents(path)?.let { cached ->
+                                currentStates[path] = directoryStateFromCache(
+                                    path,
+                                    cached.items,
+                                    updateTime
+                                )
+                            }
+                        }
                     }
                 }
                 _directoryStates.value = states
@@ -189,7 +199,7 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
                     isCacheWarming = false,
                     cacheWarmUpCount = 0
                 )
-            }.onFailure {
+            } catch (_: Exception) {
                 _sharedState.value = _sharedState.value.copy(
                     isCacheWarming = false,
                     cacheWarmUpCount = 0
@@ -224,7 +234,7 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
                     )
                 }
                 if (file != null) {
-                    val downloads = refreshDownloadedSet()
+                    val downloads = withContext(Dispatchers.IO) { refreshDownloadedSet() }
                     _sharedState.value = _sharedState.value.copy(
                         downloadingPath = null,
                         downloadedPaths = downloads,
@@ -262,9 +272,13 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun deleteFile(path: String) {
-        RepositoryManager.deleteFile(path, context)
-        val downloads = refreshDownloadedSet()
-        _sharedState.value = _sharedState.value.copy(downloadedPaths = downloads)
+        viewModelScope.launch {
+            val downloads = withContext(Dispatchers.IO) {
+                RepositoryManager.deleteFile(path, context)
+                refreshDownloadedSet()
+            }
+            _sharedState.value = _sharedState.value.copy(downloadedPaths = downloads)
+        }
     }
 
     fun getRawUrl(path: String): String = RepositoryManager.getRawUrl(path)
@@ -420,11 +434,6 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun cachedDirectoryState(path: String): RepositoryUiState? {
-        val cached = RepositoryManager.getCachedContents(path) ?: return null
-        return directoryStateFromCache(path, cached.items, cached.updateTime)
-    }
-
     private fun directoryStateFromCache(
         path: String,
         items: List<GitHubContentItem>,
@@ -450,7 +459,7 @@ class RepositoryViewModel(application: Application) : AndroidViewModel(applicati
     private fun setPathError(path: String, message: String) {
         setDirectoryState(
             path,
-            (_directoryStates.value[path] ?: cachedDirectoryState(path) ?: RepositoryUiState(
+            (_directoryStates.value[path] ?: RepositoryUiState(
                 currentPath = path
             )).copy(error = message)
         )

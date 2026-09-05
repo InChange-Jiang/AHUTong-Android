@@ -7,6 +7,7 @@ import com.ahu.ahutong.data.crawler.model.ycard.CardBalanceRequest
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
 import com.ahu.ahutong.data.crawler.model.ycard.CardPayRequest
 import com.ahu.ahutong.data.crawler.model.ycard.PayResponse
+import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.ext.launchSafe
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -44,7 +45,7 @@ class CardBalanceDepositViewModel : ViewModel() {
     }
 
 
-    fun charge(value: String) = viewModelScope.launchSafe {
+    fun charge(value: String, bank: CardRechargeBank) = viewModelScope.launchSafe {
 
         withContext(Dispatchers.IO) {
 
@@ -71,7 +72,7 @@ class CardBalanceDepositViewModel : ViewModel() {
 
                 target?.let {
 
-                    val request = CardPayRequest(it)
+                    val request = CardPayRequest(it, bank)
 
                     try {
                         val response = AHURepository.pay(request)

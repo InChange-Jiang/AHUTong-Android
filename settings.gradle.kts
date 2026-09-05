@@ -9,15 +9,6 @@ pluginManagement {
         }
         mavenCentral()
         gradlePluginPortal()
-        maven("https://maven.aliyun.com/repository/google") {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
-        maven("https://maven.aliyun.com/repository/gradle-plugin")
-        maven("https://maven.aliyun.com/repository/public")
     }
 }
 dependencyResolutionManagement {
@@ -25,10 +16,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io")
-        maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/central")
-        maven("https://maven.aliyun.com/repository/public")
+        exclusiveContent {
+            forRepository { maven("https://jitpack.io") }
+            filter {
+                includeGroup("com.github.Kyant0")
+                includeGroup("com.github.franmontiel")
+            }
+        }
     }
 }
 

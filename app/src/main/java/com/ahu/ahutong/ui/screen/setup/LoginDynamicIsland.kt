@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.CircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,8 +34,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.R
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.LoginState
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -47,28 +49,40 @@ fun BoxScope.LoginDynamicIsland(
     succeedMessage: String,
     onLogIn: () -> Unit
 ) {
+    val islandShape = SmoothRoundedCornerShape(32.dp)
+    val islandColor = animateColorAsState(
+        targetValue = when (state) {
+            LoginState.Idle -> 90.a1 withNight 85.a1
+            LoginState.InProgress -> 70.a1 withNight 60.a1
+            LoginState.WebVerification -> 70.a1 withNight 60.a1
+            LoginState.Failed -> MaterialTheme.colorScheme.error
+            LoginState.Succeeded -> 70.a1 withNight 60.a1
+        }
+    ).value
+    val idleContentColor = 0.n1 withNight 100.n1
     Box(
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .navigationBarsPadding()
             .padding(16.dp)
-            .clip(SmoothRoundedCornerShape(32.dp)) // TODO: clip bug
-            .background(
-                animateColorAsState(
-                    targetValue = when (state) {
-                        LoginState.Idle -> 90.a1 withNight 85.a1
-                        LoginState.InProgress -> 70.a1 withNight 60.a1
-                        LoginState.WebVerification -> 70.a1 withNight 60.a1
-                        LoginState.Failed -> Color.Red
-                        LoginState.Succeeded -> 70.a1 withNight 60.a1
-                    }
-                ).value
+            .then(
+                if (state == LoginState.Idle) {
+                    Modifier.appLiquidGlassSurface(
+                        shape = islandShape,
+                        fallbackColor = islandColor,
+                        level = LiquidGlassSurfaceLevel.Floating
+                    )
+                } else {
+                    Modifier
+                        .clip(islandShape)
+                        .background(islandColor)
+                }
             )
             .animateContentSize(spring(stiffness = Spring.StiffnessLow))
     ) {
         when (state) {
             LoginState.Idle -> {
-                CompositionLocalProvider(LocalIndication provides ripple(color = 0.n1)) {
+                CompositionLocalProvider(LocalIndication provides ripple(color = idleContentColor)) {
                     Text(
                         text = stringResource(id = R.string.login),
                         modifier = Modifier
@@ -77,7 +91,7 @@ fun BoxScope.LoginDynamicIsland(
                                 onClick = onLogIn
                             )
                             .padding(24.dp, 16.dp),
-                        color = 0.n1,
+                        color = idleContentColor,
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -91,8 +105,8 @@ fun BoxScope.LoginDynamicIsland(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(56.dp),
+                    AppCircularProgressIndicator(
+                        size = 56.dp,
                         color = 100.n1,
                         strokeWidth = 6.dp
                     )

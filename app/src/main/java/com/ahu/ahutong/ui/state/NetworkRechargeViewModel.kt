@@ -299,7 +299,7 @@ class NetworkRechargeViewModel : ViewModel() {
 
     private suspend fun fetchFeeItem(): AHUResponse<NetworkFeeItem> {
         val responseWrapper = AHUResponse<NetworkFeeItem>()
-        val response = YcardApi.API.getSingleFeeItem(NETWORK_FEE_ITEM_ID)
+        val response = YcardApi.authorizedCall { getSingleFeeItem(NETWORK_FEE_ITEM_ID) }
         return parseJsonResponse(response, responseWrapper) { body ->
             val parsed = Gson().fromJson(body, NetworkFeeItemPageResponse::class.java)
             if (parsed.code == 200 && parsed.feeitem != null) {
@@ -320,7 +320,7 @@ class NetworkRechargeViewModel : ViewModel() {
             .add("type", "IEC")
             .add("level", "0")
             .build()
-        val response = YcardApi.API.getFeeItemThirdData(formBody)
+        val response = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
         return parseJsonResponse(response, responseWrapper) { body ->
             val parsed = Gson().fromJson(body, NetworkFeeInfoResponse::class.java)
             val map = parsed.map
@@ -355,7 +355,7 @@ class NetworkRechargeViewModel : ViewModel() {
                 "third_party" to Gson().toJson(thirdPartyData)
             )
         )
-        val response = YcardApi.API.pay(formBody)
+        val response = YcardApi.authorizedCall { pay(formBody) }
         return parseJsonResponse(response, responseWrapper) { body ->
             val parsed = Gson().fromJson(body, NetworkOrderResponse::class.java)
             if (parsed.code == 200 && parsed.data != null) {
@@ -379,7 +379,7 @@ class NetworkRechargeViewModel : ViewModel() {
                 "orderid" to orderId
             )
         )
-        val response = YcardApi.API.pay(formBody)
+        val response = YcardApi.authorizedCall { pay(formBody) }
         return parseJsonResponse(response, responseWrapper) { body ->
             val parsed = Gson().fromJson(body, NetworkAccountPayInfoResponse::class.java)
             if (parsed.code == 200 && parsed.data?.passwordMap?.isNotEmpty() == true) {
@@ -412,7 +412,7 @@ class NetworkRechargeViewModel : ViewModel() {
                 "isWX" to "0"
             )
         )
-        val response = YcardApi.API.pay(formBody)
+        val response = YcardApi.authorizedCall { pay(formBody) }
         return parseJsonResponse(response, responseWrapper) { body ->
             val parsed = Gson().fromJson(body, NetworkFinalPayResponse::class.java)
             if (parsed.code == 200 && parsed.success && !parsed.data.isNullOrBlank()) {
@@ -459,7 +459,7 @@ class NetworkRechargeViewModel : ViewModel() {
         wrapper: AHUResponse<Unit>,
         errorMessage: String
     ): AHUResponse<Unit> {
-        val response = YcardApi.API.getFeeItemThirdData(formBody)
+        val response = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
         return parseJsonResponse(response, wrapper) { body ->
             val responseBody = Gson().fromJson(body, ThirdDataResponse::class.java)
             if (responseBody.code == 200) {

@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class EvalApiResponse<T>(
     val code: Int = 0,
-    val msg: String = "",
+    val msg: String? = null,
     val data: T? = null,
     val ok: Boolean = false
 )

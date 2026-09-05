@@ -1,6 +1,7 @@
 package com.ahu.ahutong.sdk
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.util.Log
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.model.Card
@@ -25,6 +26,8 @@ import android.provider.MediaStore
 import android.os.Build
 import android.os.Environment
 import java.io.FileInputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import kotlin.system.exitProcess
 import org.conscrypt.Conscrypt
 import java.security.Security
@@ -165,16 +168,8 @@ object RustSDK {
                 val prefs = context.getSharedPreferences("rust_sdk_config", Context.MODE_PRIVATE)
                 val currentVersion = prefs.getInt("so_version", 301)
 
-                // Get original URL and Host from SDK
                 val originalConfigUrl = getUpdateConfigUrl()
-                val originalHost = try { URL(originalConfigUrl).host } catch (e: Exception) {
-                    Log.w(TAG_HOTUPDATE, "Failed to parse host from config url", e)
-                    ""
-                }
-                val serverIp = getApiServerIp()
-
-                // Construct IP-based URL by replacing host
-                val configUrl = originalConfigUrl.replace(originalHost, serverIp)
+                val configUrl = URL(originalConfigUrl).also(::requireTrustedUpdateUrl).toString()
 
                 Log.i(
                     TAG_HOTUPDATE,
@@ -186,9 +181,9 @@ object RustSDK {
                 val startMs = System.currentTimeMillis()
                 val jsonStr: String = try {
                     val url = URL(configUrl)
-                    val conn = (url.openConnection() as java.net.HttpURLConnection).apply {
+                    val conn = (url.openConnection() as javax.net.ssl.HttpsURLConnection).apply {
 
-                        instanceFollowRedirects = true
+                        instanceFollowRedirects = false
                         connectTimeout = 5000
                         readTimeout = 5000
                         requestMethod = "GET"
@@ -199,16 +194,6 @@ object RustSDK {
                         setRequestProperty("Accept", "application/json")
                         setRequestProperty("Connection", "close")
 
-                        if (this is javax.net.ssl.HttpsURLConnection) {
-                            try {
-                                this.sslSocketFactory = getConscryptSocketFactory()
-                                this.hostnameVerifier = javax.net.ssl.HostnameVerifier { hostname, session ->
-                                    if (hostname == serverIp) true else javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
-                                }
-                            } catch (e: Exception) {
-                                Log.w(TAG_HOTUPDATE, "Failed to set Conscrypt factory", e)
-                            }
-                        }
                     }
 
                     // 触发真正连接/请求
@@ -268,10 +253,8 @@ object RustSDK {
 
                 // 3) 解析 JSON（带保护日志）
                 val config: UpdateConfig = try {
-                    Gson().fromJson(jsonStr, UpdateConfig::class.java).let {
-                        // Replace domain with IP for download url
-                        it.copy(url = it.url.replace(originalHost, serverIp))
-                    }.also {
+                    Gson().fromJson(jsonStr, UpdateConfig::class.java).also {
+                        requireTrustedUpdateUrl(URL(it.url))
                         Log.i(
                             TAG_HOTUPDATE,
                             "checkUpdate parsed config ok. remoteVersion=${it.version}, soUrl=${it.url.take(200)}"
@@ -566,7 +549,10 @@ object RustSDK {
         val dir = File(context.filesDir, "images")
         if (!dir.exists()) dir.mkdirs()
         val file = File(dir, "xiaoli.jpg")
-        return if (file.exists()) file else null
+        return if (isValidCalendarImage(file)) file else {
+            if (file.exists()) file.delete()
+            null
+        }
     }
 
     suspend fun fetchSchoolCalendar(context: Context, onProgress: (Float) -> Unit): File? {
@@ -577,7 +563,7 @@ object RustSDK {
                 if (!dir.exists()) dir.mkdirs()
                 val saveFile = File(dir, "xiaoli.jpg")
 
-                if (saveFile.exists()) {
+                if (isValidCalendarImage(saveFile)) {
                     Log.d("RustSDK", "Found cached calendar: ${saveFile.absolutePath}")
                     onProgress(1.0f)
                     return@withContext saveFile
@@ -587,7 +573,7 @@ object RustSDK {
                 // Use Kotlin implementation to bypass SNI block
                 val success = downloadSchoolCalendarKotlin(saveFile.absolutePath, onProgress)
                 Log.d("RustSDK", "Download result: $success")
-                if (success && saveFile.exists()) {
+                if (success && isValidCalendarImage(saveFile)) {
                     saveFile
                 } else {
                     null
@@ -600,23 +586,26 @@ object RustSDK {
     }
 
     private fun downloadSchoolCalendarKotlin(savePath: String, onProgress: (Float) -> Unit): Boolean {
-        val serverIp = getApiServerIp()
-        val urlStr = "https://$serverIp/download/xiaoli.jpg"
+        val urlStr = "https://openahu.org/download/xiaoli.jpg"
+        val saveFile = File(savePath)
+        val tempFile = File(saveFile.parentFile, "${saveFile.name}.part")
         return try {
-            val conn = URL(urlStr).openConnection()
+            tempFile.delete()
+            val conn = URL(urlStr).openConnection() as javax.net.ssl.HttpsURLConnection
             conn.connectTimeout = 10_000
             conn.readTimeout = 10_000
             conn.useCaches = false
-            if (conn is javax.net.ssl.HttpsURLConnection) {
-                conn.hostnameVerifier = javax.net.ssl.HostnameVerifier { hostname, session ->
-                    if (hostname == serverIp) true else javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier().verify(hostname, session)
-                }
+            conn.instanceFollowRedirects = false
+            val status = conn.responseCode
+            require(status in 200..299) { "Calendar download returned HTTP $status" }
+            require(conn.contentType?.substringBefore(';')?.startsWith("image/") == true) {
+                "Calendar download returned a non-image response"
             }
-            val totalBytes = conn.contentLength
+            val totalBytes = conn.contentLengthLong
             var downloadedBytes = 0
             
             conn.getInputStream().use { input ->
-                FileOutputStream(File(savePath)).use { output ->
+                FileOutputStream(tempFile).use { output ->
                     val buffer = ByteArray(8 * 1024)
                     var bytes = input.read(buffer)
                     while (bytes >= 0) {
@@ -627,12 +616,45 @@ object RustSDK {
                         }
                         bytes = input.read(buffer)
                     }
+                    output.fd.sync()
                 }
+            }
+            require(downloadedBytes > 0) { "Calendar image is empty" }
+            require(totalBytes <= 0 || downloadedBytes.toLong() == totalBytes) {
+                "Calendar image is incomplete"
+            }
+            require(isValidCalendarImage(tempFile)) { "Calendar response cannot be decoded" }
+            try {
+                Files.move(
+                    tempFile.toPath(),
+                    saveFile.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+            } catch (_: Exception) {
+                Files.move(tempFile.toPath(), saveFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
             }
             true
         } catch (e: Exception) {
             Log.e(TAG_HOTUPDATE, "Failed to download calendar (Kotlin fallback)", e)
+            tempFile.delete()
             false
+        }
+    }
+
+    private fun isValidCalendarImage(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        return options.outWidth > 0 && options.outHeight > 0
+    }
+
+    private fun requireTrustedUpdateUrl(url: URL) {
+        require(url.protocol.equals("https", ignoreCase = true)) { "Update URL must use HTTPS" }
+        require(url.port == -1 || url.port == 443) { "Update URL must use the default HTTPS port" }
+        val host = url.host.lowercase()
+        require(host == "openahu.org" || host.endsWith(".openahu.org")) {
+            "Untrusted update host"
         }
     }
 

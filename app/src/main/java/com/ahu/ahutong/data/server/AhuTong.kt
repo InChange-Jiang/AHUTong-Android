@@ -94,5 +94,9 @@ interface AhuTong {
         val API = createApi(okHttpClient)
         val APK_DOWNLOAD_API = createApi(apkDownloadOkHttpClient)
         val GRAY_API = createApi(grayOkHttpClient)
+
+        fun cancelApkDownloads() {
+            apkDownloadOkHttpClient.dispatcher.cancelAll()
+        }
     }
 }

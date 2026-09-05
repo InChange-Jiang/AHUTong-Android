@@ -7,7 +7,6 @@ import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.Exam
 import com.ahu.ahutong.ext.launchSafe
-import com.google.gson.Gson
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +14,29 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 enum class RefreshState { IDLE, LOADING, UPDATED }
+
+internal object ExamRefreshPolicy {
+    const val AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1_000L
+
+    fun shouldRefresh(cachedAtMillis: Long, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        return cachedAtMillis <= 0L ||
+            nowMillis < cachedAtMillis ||
+            nowMillis - cachedAtMillis >= AUTO_REFRESH_INTERVAL_MS
+    }
+}
+
+internal fun List<Exam>.hasSameExamContents(other: List<Exam>): Boolean {
+    if (size != other.size) return false
+    return indices.all { index ->
+        val left = this[index]
+        val right = other[index]
+        left.course == right.course &&
+            left.location == right.location &&
+            left.time == right.time &&
+            left.seatNum == right.seatNum &&
+            left.finished == right.finished
+    }
+}
 
 class ExamViewModel : ViewModel() {
     val data = MutableLiveData<Result<List<Exam>>>()
@@ -28,12 +50,15 @@ class ExamViewModel : ViewModel() {
     private var refreshJob: Job? = null
 
     fun loadExam(isRefresh: Boolean = false) {
+        if (refreshJob?.isActive == true) {
+            if (!isRefresh) return
+            refreshJob?.cancel()
+        }
         // 正在刷新中则忽略新请求
         if (_refreshState.value == RefreshState.LOADING) return
         // 首次自动后台加载也跳过重复
         if (!isRefresh && isLoading.value == true) return
 
-        refreshJob?.cancel()
         refreshJob = viewModelScope.launchSafe {
             val user = AHUCache.getCurrentUser()
             if (user == null && !AHUCache.getMockData()) {
@@ -44,19 +69,25 @@ class ExamViewModel : ViewModel() {
 
             // 1. 优先展示缓存数据，首屏秒出
             val cached = AHUCache.getExamInfo().orEmpty()
-            if (cached.isNotEmpty() && !isRefresh) {
+            val cachedAt = AHUCache.getExamInfoUpdatedAt()
+            val hasCachedSnapshot = cachedAt > 0L
+            if (!isRefresh && (cached.isNotEmpty() || hasCachedSnapshot)) {
                 data.value = Result.success(cached)
             }
 
-            // 手动刷新时：先显示 LOADING，保证最少 1 秒可见
+            if (!isRefresh && !ExamRefreshPolicy.shouldRefresh(cachedAt)) {
+                isLoading.value = false
+                errorMessage.value = null
+                return@launchSafe
+            }
+
+            // Refresh feedback starts immediately; never delay the actual request for animation.
             if (isRefresh) {
                 _refreshState.value = RefreshState.LOADING
-                // 最小加载时间 1 秒，避免一闪而过
-                delay(800)
             }
 
             // 仅无缓存时显示全屏加载动画
-            if (cached.isEmpty()) {
+            if (!hasCachedSnapshot && cached.isEmpty()) {
                 isLoading.value = true
             }
             errorMessage.value = null
@@ -71,18 +102,19 @@ class ExamViewModel : ViewModel() {
                 val newExams = result.getOrNull().orEmpty()
 
                 // 与缓存比对，有差异才更新 UI
-                val cachedJson = Gson().toJson(cached)
-                val newJson = Gson().toJson(newExams)
-                if (cachedJson != newJson) {
-                    AHUCache.saveExamInfo(newExams)
+                if (!hasCachedSnapshot || !cached.hasSameExamContents(newExams)) {
                     data.value = Result.success(newExams)
                 }
 
-                // 手动刷新后显示"已更新"，最少 2 秒
+                // Keep acknowledgement visible without holding up data delivery or navigation.
                 if (isRefresh) {
                     _refreshState.value = RefreshState.UPDATED
-                    delay(2000)
-                    _refreshState.value = RefreshState.IDLE
+                    viewModelScope.launch {
+                        delay(700)
+                        if (_refreshState.value == RefreshState.UPDATED) {
+                            _refreshState.value = RefreshState.IDLE
+                        }
+                    }
                 }
             } else {
                 // 网络失败：手动刷新时立即恢复 IDLE

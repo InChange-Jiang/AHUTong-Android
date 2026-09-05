@@ -1,7 +1,13 @@
 package com.ahu.ahutong.ui.screen.main.home
 
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,7 +16,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,7 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material3.CircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +47,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,18 +69,24 @@ import com.ahu.ahutong.personalization.prefetch.PaymentQrCommandEntryPoint
 import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionSource
+import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.isRadiantUi
+import com.ahu.ahutong.ui.components.liquidGlassSurface
+import com.ahu.ahutong.ui.components.liquidGlassTint
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
-fun RowScope.CampusCard(
+fun CampusCard(
     balance: Double,
     transitionBalance: Double,
     onRefreshBalance: () -> Unit,
     navController: NavController,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context = context) }
@@ -119,31 +131,55 @@ fun RowScope.CampusCard(
     }
 
 
+    val radiant = isRadiantUi
+    val campusShape = SmoothRoundedCornerShape(24.dp)
+    val campusSurface = if (radiant) {
+        Modifier.liquidGlassSurface(
+            backdrop = LocalLiquidGlassAmbientBackdrop.current,
+            shape = campusShape,
+            surfaceColor = liquidGlassTint()
+        )
+    } else {
+        Modifier.appLiquidGlassSurface(
+            shape = campusShape,
+            fallbackColor = 100.n1 withNight 20.n1
+        )
+    }
     Box(
-        modifier = Modifier
-            .weight(1f)
+        modifier = modifier.then(campusSurface)
     ) {
-        if (isQrcode) {
-            QRcodeView(
-                balance = balance,
-                onBack = {
-                    isQrcode = false
-                }
-            )
-        } else {
-            CardView(
-                balance = balance,
-                transitionBalance = transitionBalance,
-                onClick = {
-                    behaviorRuntime.recordActionIntentAsync(AppActionId.OPEN_PAYMENT_QR, ActionSource.ORGANIC)
-                    isQrcode = true
-                },
-                navController = navController,
-                enabled = enabled,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(140.dp)
-            )
+        AnimatedContent(
+            targetState = isQrcode,
+            transitionSpec = {
+                (fadeIn(tween(150)) togetherWith fadeOut(tween(150)))
+                    .using(SizeTransform(clip = true))
+            },
+            contentAlignment = Alignment.TopStart,
+            label = "campus-card-qrcode"
+        ) { showQrcode ->
+            if (showQrcode) {
+                QRcodeView(
+                    balance = balance,
+                    onBack = { isQrcode = false }
+                )
+            } else {
+                CardView(
+                    balance = balance,
+                    transitionBalance = transitionBalance,
+                    onClick = {
+                        behaviorRuntime.recordActionIntentAsync(
+                            AppActionId.OPEN_PAYMENT_QR,
+                            ActionSource.ORGANIC
+                        )
+                        isQrcode = true
+                    },
+                    navController = navController,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (isRadiantUi) 78.dp else 140.dp)
+                )
+            }
         }
     }
 
@@ -160,12 +196,8 @@ private fun CardView(
     enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
-
-
     Row(
-        modifier = modifier
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1),
+        modifier = modifier,
         verticalAlignment = Alignment.CenterVertically
     ) {
 
@@ -214,6 +246,7 @@ private fun CardView(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
+                .then(if (isRadiantUi) Modifier.width(76.dp) else Modifier)
                 .then(
                     if (enabled) {
                         Modifier.clickable {
@@ -232,24 +265,38 @@ private fun CardView(
 //                        Toast.makeText(context, "请安装支付宝", Toast.LENGTH_SHORT).show()
 //                    }
 
-                            val route = if (AHUCache.isCmbCardRechargePreferred()) {
-                                "cmb_card_recharge"
-                            } else {
-                                "card_balance_deposit"
-                            }
-                            navController.navigate(route)
+                            navController.navigate("card_balance_deposit")
                         }
                     } else {
                         Modifier
                     }
                 )
-                .padding(16.dp),
+                .padding(if (isRadiantUi) 8.dp else 16.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "充\n值",
-                style = MaterialTheme.typography.titleMedium
-            )
+            if (isRadiantUi) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_income),
+                        contentDescription = "充值",
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = "充值",
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            } else {
+                Text(
+                    text = "充\n值",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
     }
 
@@ -336,8 +383,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
 
     Column(
         modifier = Modifier
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(100.n1 withNight 20.n1)
+            .fillMaxWidth()
             .padding(
                 start = 20.dp,
                 top = 12.dp,
@@ -409,7 +455,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                     text = "加载失败"
                 )
             } else {
-                CircularProgressIndicator()
+                AppCircularProgressIndicator()
             }
         }
 

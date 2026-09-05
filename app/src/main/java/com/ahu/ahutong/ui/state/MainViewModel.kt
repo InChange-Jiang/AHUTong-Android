@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -41,7 +42,6 @@ import java.util.PriorityQueue
 class MainViewModel : ViewModel() {
 
     companion object {
-        private val apkDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         private val gson = Gson()
         private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
         private const val PROGRESS_MIN_INTERVAL_MS = 1_000L
@@ -67,6 +67,8 @@ class MainViewModel : ViewModel() {
         private const val MAX_CONCURRENT_SPLIT_TRIALS = 3
         private const val HTTP_PARTIAL_CONTENT = 206
     }
+
+    private val apkDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private class RangeUnsupportedException(message: String) : IOException(message)
 
@@ -141,7 +143,7 @@ class MainViewModel : ViewModel() {
     private fun sha256Of(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
-            val buffer = ByteArray(8 * 1024)
+            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
             var read = input.read(buffer)
             while (read >= 0) {
                 digest.update(buffer, 0, read)
@@ -380,11 +382,12 @@ class MainViewModel : ViewModel() {
                     )
                 }
 
-                replaceDownloadedApk(downloadedFile, outFile, update.sha256)
+                val verifiedSha256 = replaceDownloadedApk(downloadedFile, outFile, update.sha256)
                 metaFile.delete()
                 Log.i(
                     "ApkUpdate",
-                    "apk download verified version=${update.info.versionCode}, bytes=${outFile.length()}"
+                    "apk download verified version=${update.info.versionCode}, " +
+                        "bytes=${outFile.length()}, sha256=$verifiedSha256"
                 )
 
                 withContext(Dispatchers.Main) {
@@ -441,7 +444,13 @@ class MainViewModel : ViewModel() {
 
         val appContext = context.applicationContext
         apkDownloadScope.launch {
-            apkDownloadJob?.cancelAndJoin()
+            val previousDownload = apkDownloadJob
+            previousDownload?.cancel()
+            // Cancelling the coroutine alone cannot interrupt a blocking ResponseBody read. Close
+            // every call on the dedicated APK client before waiting, so switching sources does not
+            // stall until the network read timeout expires.
+            AhuTong.cancelApkDownloads()
+            previousDownload?.join()
             withContext(Dispatchers.Main) {
                 if (apkLocalReady.value) {
                     apkDownloading.value = false
@@ -1552,18 +1561,11 @@ class MainViewModel : ViewModel() {
             throw IOException("下载文件大小异常（${partFile.length()}/${probe.totalBytes}）")
         }
 
-        val hash = runCatching { sha256Of(partFile) }.getOrNull()
-        if (!hash.equals(update.sha256, ignoreCase = true)) {
-            Log.w("ApkUpdate", "download sha256 mismatch: expected=${update.sha256}, got=$hash")
-            deletePartialDownload(partFile, metaFile)
-            throw SecurityException("文件校验失败，请重试")
-        }
-
         val elapsed = System.currentTimeMillis() - startedAt
         Log.i(
             "ApkUpdate",
             "adaptive range download complete bytes=${probe.totalBytes}, elapsedMs=$elapsed, " +
-                "avg=${speedText(probe.totalBytes, elapsed)}, sha256=$hash"
+                "avg=${speedText(probe.totalBytes, elapsed)}"
         )
         return partFile
     }
@@ -1963,12 +1965,6 @@ class MainViewModel : ViewModel() {
                 "avg=${speedText(completed, elapsed)}"
         )
 
-        val hash = runCatching { sha256Of(partFile) }.getOrNull()
-        if (!hash.equals(update.sha256, ignoreCase = true)) {
-            Log.w("ApkUpdate", "download sha256 mismatch: expected=${update.sha256}, got=$hash")
-            partFile.delete()
-            throw SecurityException("文件校验失败，请重试")
-        }
         return partFile
     }
 
@@ -2098,12 +2094,28 @@ class MainViewModel : ViewModel() {
         return String.format(Locale.US, "%.1f%%", value * 100.0)
     }
 
-    private fun replaceDownloadedApk(partFile: File, outFile: File, expectedSha256: String) {
+    private fun replaceDownloadedApk(
+        partFile: File,
+        outFile: File,
+        expectedSha256: String
+    ): String {
+        val sourceHash = runCatching { sha256Of(partFile) }.getOrNull()
+            ?: throw SecurityException("文件校验失败，请重试")
+        if (!sourceHash.equals(expectedSha256, ignoreCase = true)) {
+            Log.w(
+                "ApkUpdate",
+                "download sha256 mismatch: expected=$expectedSha256, got=$sourceHash"
+            )
+            partFile.delete()
+            throw SecurityException("文件校验失败，请重试")
+        }
+
         if (outFile.exists() && !outFile.delete()) {
             throw IOException("无法替换旧安装包")
         }
 
-        if (!partFile.renameTo(outFile)) {
+        val renamed = partFile.renameTo(outFile)
+        if (!renamed) {
             partFile.inputStream().use { input ->
                 FileOutputStream(outFile).use { output ->
                     input.copyTo(output)
@@ -2112,11 +2124,13 @@ class MainViewModel : ViewModel() {
             if (!partFile.delete()) {
                 Log.w("ApkUpdate", "failed to delete temporary APK: ${partFile.name}")
             }
+            // A cross-filesystem fallback copy is uncommon, but its destination still needs an
+            // independent integrity check. The normal atomic rename path reuses the source hash.
+            if (!verifyCachedApk(outFile, expectedSha256, "copied APK")) {
+                throw SecurityException("文件校验失败，请重试")
+            }
         }
-
-        if (!verifyCachedApk(outFile, expectedSha256, "downloaded APK")) {
-            throw SecurityException("文件校验失败，请重试")
-        }
+        return sourceHash
     }
 
     private suspend fun emitApkProgress(progress: Float) {
@@ -2240,5 +2254,11 @@ class MainViewModel : ViewModel() {
         AHUCache.logout()
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
+    }
+
+    override fun onCleared() {
+        AhuTong.cancelApkDownloads()
+        apkDownloadScope.cancel()
+        super.onCleared()
     }
 }

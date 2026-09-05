@@ -5,6 +5,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.personalization.action.ActionFamily
 import com.ahu.ahutong.personalization.action.ActionSource
@@ -99,6 +100,7 @@ import javax.crypto.spec.SecretKeySpec
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -224,7 +226,16 @@ class BehaviorPredictionRuntime @Inject constructor(
     private val journeyEngine: JourneyPredictionEngine,
     private val presetRankingEngine: PresetRankingEngine
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, error ->
+            if (error !is CancellationException) {
+                Log.e(TAG, "Background prediction task failed", error)
+                _diagnostics.value = _diagnostics.value.copy(
+                    lastFailure = "BACKGROUND_TASK_FAILED_${error::class.java.simpleName}"
+                )
+            }
+        }
+    )
     private val processInstanceId = UUID.randomUUID().toString()
     private val profileLifecycleMutex = Mutex()
     private val profileLocks = ConcurrentHashMap<String, Mutex>()
@@ -2666,6 +2677,7 @@ class BehaviorPredictionRuntime @Inject constructor(
     )
 
     private companion object {
+        const val TAG = "PredictionRuntime"
         const val LABEL_WINDOW_POLICY_VERSION = 1
         const val CONTEXT_DEBOUNCE_MS = 30_000L
         const val SEMANTIC_CHANGE_SET_WINDOW_MS = 5_000L

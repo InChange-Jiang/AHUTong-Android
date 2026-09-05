@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -47,6 +49,8 @@ import com.ahu.ahutong.data.gray.GrayReleaseManager
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.notification.CourseReminderScheduler
 import com.ahu.ahutong.ui.components.LiquidToggle
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
@@ -165,6 +169,7 @@ fun Debug(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             .verticalScroll(rememberScrollState())
             .systemBarsPadding()
             .padding(bottom = 80.dp)
@@ -490,8 +495,9 @@ fun Debug(
                     unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                     focusedLabelColor = MaterialTheme.colorScheme.primary,
                     unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
+                    focusedContainerColor = subCardColor,
+                    unfocusedContainerColor = subCardColor,
+                    disabledContainerColor = subCardColor,
                     cursorColor = MaterialTheme.colorScheme.primary
                 )
             )
@@ -769,11 +775,14 @@ private fun DebugSection(
     cardColor: Color,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val shape = SmoothRoundedCornerShape(24.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(24.dp))
-            .background(cardColor)
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = cardColor
+            )
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         content = {
@@ -804,7 +813,11 @@ private fun DebugToggleRow(
             .fillMaxWidth()
             .clip(SmoothRoundedCornerShape(20.dp))
             .background(96.n1 withNight 16.n1)
-            .clickable { onCheckedChange(!checked) }
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onCheckedChange
+            )
             .padding(16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
@@ -826,7 +839,8 @@ private fun DebugToggleRow(
         LiquidToggle(
             selected = { checked },
             onSelect = onCheckedChange,
-            backdrop = backdrop
+            backdrop = backdrop,
+            toggleOnTap = false
         )
     }
 }

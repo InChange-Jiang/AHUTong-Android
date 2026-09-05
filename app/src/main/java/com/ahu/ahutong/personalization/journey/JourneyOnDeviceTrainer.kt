@@ -1,5 +1,6 @@
 package com.ahu.ahutong.personalization.journey
 
+import android.util.Log
 import com.ahu.ahutong.personalization.inference.AdamWState
 import com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDataManager
 import com.ahu.ahutong.personalization.inference.TinyMlpBackprop
@@ -26,6 +27,20 @@ data class JourneyTrainingSliceResult(
     val reason: String
 )
 
+internal object JourneyTrainingLabelPolicy {
+    const val ORGANIC_JOURNEY = "ORGANIC_JOURNEY"
+    const val INTERVENTION_FREE_TIMEOUT = "INTERVENTION_FREE_TIMEOUT"
+    const val INTERVENTION_FREE_MAX_STEPS = "INTERVENTION_FREE_MAX_STEPS"
+
+    val supportedSources = setOf(
+        ORGANIC_JOURNEY,
+        INTERVENTION_FREE_TIMEOUT,
+        INTERVENTION_FREE_MAX_STEPS
+    )
+
+    fun accepts(labelSource: String): Boolean = labelSource in supportedSources
+}
+
 @Singleton
 class JourneyOnDeviceTrainer @Inject constructor(
     private val dao: BehaviorDao,
@@ -39,7 +54,12 @@ class JourneyOnDeviceTrainer @Inject constructor(
     private val cancelledGenerations = ConcurrentHashMap<String, Long>()
 
     suspend fun enqueue(sample: JourneyTrainingSampleEntity) {
-        require(sample.labelSource == "ORGANIC_JOURNEY" || sample.labelSource == "INTERVENTION_FREE_TIMEOUT")
+        if (!JourneyTrainingLabelPolicy.accepts(sample.labelSource)) {
+            // Personalization is ancillary. A malformed training label must never terminate the
+            // user-facing flow (for example, login navigation) from a background coroutine.
+            Log.w(TAG, "Ignoring unsupported journey training label: ${sample.labelSource}")
+            return
+        }
         val inserted = dao.insertJourneyTrainingSample(sample)
         if (inserted != -1L) runCatching {
             bootstrapTrainingDataManager?.captureJourney(sample)
@@ -172,6 +192,7 @@ class JourneyOnDeviceTrainer @Inject constructor(
     private fun AdamWState.deepCopy() = AdamWState(firstMoments.map(FloatArray::copyOf), secondMoments.map(FloatArray::copyOf), step)
 
     private companion object {
+        const val TAG = "JourneyTrainer"
         const val MIN_SAMPLES = 128
         const val MIN_NON_NONE = 64
         const val MIN_FAMILIES = 3

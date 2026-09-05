@@ -40,6 +40,7 @@ class FreeClassroomViewModel @Inject constructor(
     val endDate = MutableStateFlow<LocalDate>(LocalDate.now())
     val isLoadingBuildings = MutableStateFlow(false)
     val isSearching = MutableStateFlow(false)
+    val hasSearched = MutableStateFlow(false)
     val freeRooms = MutableStateFlow<List<FreeRoom>>(emptyList())
     val errorMessage = MutableStateFlow<String?>(null)
     val presetCandidates = MutableStateFlow<List<PresetCandidate>>(emptyList())
@@ -59,6 +60,8 @@ class FreeClassroomViewModel @Inject constructor(
         selectedCampusId.value = campusId
         selectedBuildingIds.value = emptySet()
         freeRooms.value = emptyList()
+        hasSearched.value = false
+        errorMessage.value = null
         loadBuildings(campusId)
     }
 
@@ -74,21 +77,48 @@ class FreeClassroomViewModel @Inject constructor(
     }
 
     fun toggleBuilding(buildingId: Int) {
+        errorMessage.value = null
         selectedBuildingIds.value = selectedBuildingIds.value.toMutableSet().apply {
             if (contains(buildingId)) remove(buildingId) else add(buildingId)
         }
     }
 
+    fun selectBuilding(buildingId: Int?) {
+        selectedBuildingIds.value = buildingId?.let(::setOf).orEmpty()
+        errorMessage.value = null
+    }
+
     fun toggleUnit(unit: Int) {
+        errorMessage.value = null
         selectedUnits.value = selectedUnits.value.toMutableSet().apply {
             if (contains(unit)) remove(unit) else add(unit)
         }
     }
 
     fun toggleUnitsRange(start: Int, end: Int) {
+        errorMessage.value = null
         val range = (start..end).toSet()
         val current = selectedUnits.value
         selectedUnits.value = if (range.all { it in current }) current - range else current + range
+    }
+
+    fun selectAllBuildings() {
+        selectedBuildingIds.value = emptySet()
+        errorMessage.value = null
+    }
+
+    fun selectAllUnits() {
+        selectedUnits.value = emptySet()
+        errorMessage.value = null
+    }
+
+    fun selectUnitRange(range: IntRange) {
+        selectedUnits.value = range.filter { it in 1..13 }.toSet()
+        errorMessage.value = null
+    }
+
+    fun clearError() {
+        errorMessage.value = null
     }
 
     fun setDateRange(start: LocalDate, end: LocalDate) {
@@ -120,30 +150,26 @@ class FreeClassroomViewModel @Inject constructor(
             errorMessage.value = "当前校区暂无教学楼数据"
             return@launchSafe
         }
-        val buildingIds = if (selectedBuildingIds.value.isEmpty()) {
-            allBuildings.map { it.id }
-        } else {
-            selectedBuildingIds.value.toList()
-        }
-        val units = if (selectedUnits.value.isEmpty()) {
-            (1..13).map { it.toString() }
-        } else {
-            selectedUnits.value.sorted().map { it.toString() }
-        }
+        val selectedBuildings = selectedBuildingIds.value
+        val buildingQueries = freeClassroomBuildingQueries(selectedBuildings)
+        val units = freeClassroomUnits(selectedUnits.value)
         val start = startDate.value.toString()
         val end = endDate.value.toString()
         isSearching.value = true
+        hasSearched.value = true
         errorMessage.value = null
-        recordDispatchedPreset(campusId, buildingIds, units)
+        recordDispatchedPreset(campusId, selectedBuildings.toList(), units)
         runCatching {
             val allRooms = if (AHUCache.getMockData()) {
-                MockCampusData.freeRooms(campusId, buildingIds)
+                val mockBuildingIds = selectedBuildings.ifEmpty {
+                    allBuildings.mapTo(mutableSetOf()) { it.id }
+                }
+                MockCampusData.freeRooms(campusId, mockBuildingIds.toList())
             } else {
-                val remoteRooms = mutableListOf<FreeRoom>()
-                buildingIds.forEach { buildingId ->
+                buildingQueries.flatMap { buildingId ->
                     val response = JwxtApi.API.getFreeRooms(
                         GetFreeRoomsRequest(
-                            buildingId = buildingId.toString(),
+                            buildingId = buildingId,
                             campusId = campusId.toString(),
                             dateTimeSegmentCmd = DateTimeSegmentCmd(
                                 startDateTime = start,
@@ -152,9 +178,8 @@ class FreeClassroomViewModel @Inject constructor(
                             )
                         )
                     )
-                    remoteRooms += response.roomList
+                    response.roomList
                 }
-                remoteRooms
             }
             freeRooms.value = allRooms
                 .distinctBy { "${it.id}-${it.building.id}" }
@@ -188,7 +213,10 @@ class FreeClassroomViewModel @Inject constructor(
         selectedCampusId.value = decoded.campusId
         selectedBuildingIds.value = emptySet()
         loadBuildings(decoded.campusId)
-        selectedBuildingIds.value = decoded.buildingIds.toSet().intersect(buildings.value.map { it.id }.toSet())
+        selectedBuildingIds.value = decoded.buildingIds
+            .firstOrNull { candidate -> buildings.value.any { it.id == candidate } }
+            ?.let(::setOf)
+            .orEmpty()
         selectedUnits.value = decoded.units.toSet().filter { it in 1..13 }.toSet()
         val start = runCatching { LocalDate.parse(decoded.startDate) }.getOrNull() ?: return@launchSafe
         val end = runCatching { LocalDate.parse(decoded.endDate) }.getOrNull() ?: return@launchSafe
@@ -287,6 +315,13 @@ class FreeClassroomViewModel @Inject constructor(
         isLoadingBuildings.value = false
     }
 }
+
+internal fun freeClassroomBuildingQueries(selectedBuildingIds: Set<Int>): List<String> =
+    selectedBuildingIds.sorted().map(Int::toString).ifEmpty { listOf("") }
+
+internal fun freeClassroomUnits(selectedUnits: Set<Int>): List<String> =
+    selectedUnits.filter { it in 1..13 }.sorted().map(Int::toString)
+        .ifEmpty { (1..13).map(Int::toString) }
 
 data class CampusOption(
     val id: Int,

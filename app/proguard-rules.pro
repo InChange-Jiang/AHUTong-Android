@@ -44,12 +44,12 @@
 -keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation
 -keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
 -keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
+# These models are deserialized both from the native bridge and from local Gson caches. Field-only
+# rules do not prevent vertical class merging, which is unsafe for reflection-based construction.
 -keep class com.ahu.ahutong.data.model.** { *; }
 -keep class com.ahu.ahutong.ui.screen.main.ElectricityDepositKt { *; }
 -keep class com.ahu.ahutong.ui.screen.main.home.ElectricityPaymentKt { *; }
 -keep class com.ahu.ahutong.data.dao.AHUCache { *; }
--keep class com.ahu.ahutong.ui.component.** { *; }
--keep class com.ahu.ahutong.ui.state.** { *; }
 
 -keepclassmembers class kotlinx.coroutines.** {
     volatile <fields>;
@@ -74,7 +74,26 @@
     private *;
 }
 
+# Crawler DTOs are Retrofit/Gson wire contracts. Keeping only their fields still allows R8 to
+# merge the owning classes, which can turn a valid login response into a ClassCastException in
+# minified builds. Keep the complete contracts so Review/Release authentication behaves like Debug.
 -keep class com.ahu.ahutong.data.crawler.model.** { *; }
+
+# Payment view models contain a small number of file-local wire DTOs. Keep only the DTO naming
+# families rather than the ViewModels themselves, so R8 can still optimize the screen logic while
+# Gson retains concrete constructors and field contracts in Review/Release builds.
+-keep class com.ahu.ahutong.ui.state.*Response { *; }
+-keep class com.ahu.ahutong.ui.state.*Map { *; }
+-keep class com.ahu.ahutong.ui.state.*Data { *; }
+-keep class com.ahu.ahutong.ui.state.*DataItem { *; }
+-keep class com.ahu.ahutong.ui.state.*Details { *; }
+-keep class com.ahu.ahutong.ui.state.*Payload { *; }
+-keep class com.ahu.ahutong.ui.state.*FeeItem { *; }
+
+# Native campus-card WebView bridge messages are also Gson contracts.
+-keep class com.ahu.ahutong.ui.screen.main.CmbRechargeBridgePayload { *; }
+-keep class com.ahu.ahutong.ui.screen.main.CmbRechargeBridgePaymentMethod { *; }
+-keep class com.ahu.ahutong.ui.screen.main.CmbPaymentUiPayload { *; }
 
 
 -renamesourcefileattribute AHUTong
@@ -160,22 +179,14 @@
 -keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingCredentialResponse { *; }
 -keep class com.ahu.ahutong.personalization.bootstrap.BootstrapTrainingDeletionRequest { *; }
 
-# Data source interface + implementations (prevent R8 from stripping abstract methods)
--keep interface com.ahu.ahutong.data.base.BaseDataSource { *; }
--keep class com.ahu.ahutong.data.crawler.CrawlerDataSource { *; }
--keep class com.ahu.ahutong.data.crawler.SdkDataSource { *; }
--keep class com.ahu.ahutong.data.mock.MockDataSource { *; }
-
-# Weather API + models (prevent R8 from stripping Gson/Retrofit classes)
+# Weather responses are constructed and populated reflectively by Gson. Field-only rules with
+# allowoptimization let R8 remove fields that are only read through reflection, which leaves the
+# release weather widget with an incomplete response model.
 -keep class com.ahu.ahutong.data.weather.** { *; }
 -keep interface com.ahu.ahutong.data.weather.WeatherApi { *; }
 
 # Repository / GitHub models
--keep class com.ahu.ahutong.data.repository.** { *; }
-
-# AHURepository
--keep class com.ahu.ahutong.data.AHURepository { *; }
+-keepclassmembers,allowoptimization class com.ahu.ahutong.data.repository.** { <fields>; }
 
 # Evaluation
--keep class com.ahu.ahutong.data.EvaluationRepository { *; }
 -keep interface com.ahu.ahutong.data.crawler.api.jwxt.EvaluationApi { *; }

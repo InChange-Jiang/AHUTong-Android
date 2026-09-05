@@ -1,5 +1,6 @@
 package com.ahu.ahutong.personalization.bootstrap
 
+import com.ahu.ahutong.personalization.journey.JourneyTrainingLabelPolicy
 import com.ahu.ahutong.personalization.action.AppActionCatalog
 import com.ahu.ahutong.personalization.context.FeatureExtractor
 import com.ahu.ahutong.personalization.journey.JourneyGoalCatalog
@@ -228,8 +229,9 @@ const val MAX_EXAMPLES_PER_BATCH = 256
 internal val LOWER_SHA256 = Regex("^[0-9a-f]{64}$")
 private val FEEDBACK_WEIGHTS = mapOf(
     "ORGANIC_ACTION" to 1f,
-    "INTERVENTION_FREE_TIMEOUT" to 1f,
-    "ORGANIC_JOURNEY" to 1f,
+    JourneyTrainingLabelPolicy.INTERVENTION_FREE_TIMEOUT to 1f,
+    JourneyTrainingLabelPolicy.INTERVENTION_FREE_MAX_STEPS to 1f,
+    JourneyTrainingLabelPolicy.ORGANIC_JOURNEY to 1f,
     "NATURAL_COMMIT" to 1f,
     "SUGGESTION_ACCEPTED" to 0.25f,
     "ASSISTED_QUERY_CONFIRMED" to 0.20f,
@@ -237,7 +239,7 @@ private val FEEDBACK_WEIGHTS = mapOf(
     "ASSISTED_REMOVED" to 0.10f
 )
 private val NEXT_ACTION_FEEDBACK = setOf("ORGANIC_ACTION", "INTERVENTION_FREE_TIMEOUT", "SUGGESTION_ACCEPTED")
-private val JOURNEY_FEEDBACK = setOf("ORGANIC_JOURNEY", "INTERVENTION_FREE_TIMEOUT")
+private val JOURNEY_FEEDBACK = JourneyTrainingLabelPolicy.supportedSources
 private val PRESET_FEEDBACK = setOf(
     "NATURAL_COMMIT", "ASSISTED_QUERY_CONFIRMED", "ASSISTED_REPLACED", "ASSISTED_REMOVED"
 )

@@ -474,7 +474,11 @@ class CrawlerDataSource : BaseDataSource {
     }
 
     override suspend fun getBathRooms(): AHUResponse<List<BathRoom>> {
-        return AHUResponse<List<BathRoom>>()
+        return AHUResponse<List<BathRoom>>().apply {
+            code = -1
+            msg = "浴室开放状态服务暂不可用"
+            data = emptyList()
+        }
     }
 
     override suspend fun getExamInfo(
@@ -657,7 +661,7 @@ class CrawlerDataSource : BaseDataSource {
             .build()
 
 
-        val res = YcardApi.API.getFeeItemThirdData(formBody)
+        val res = YcardApi.authorizedCall { getFeeItemThirdData(formBody) }
 
         if (res.isSuccessful) {
             val responseBody = res.body()
@@ -683,26 +687,33 @@ class CrawlerDataSource : BaseDataSource {
     }
 
     override suspend fun getCardInfo(): AHUResponse<CardInfo> {
-
         val response = AHUResponse<CardInfo>()
-
-        response.data = YcardApi.API.loadCardRecharge()
-        response.code = 0
-
+        val result = YcardApi.authorizedCall { loadCardRecharge() }
+        val body = result.body()
+        if (result.isSuccessful && body != null) {
+            response.data = body
+            response.code = 0
+            response.msg = "success"
+        } else {
+            response.code = result.code().takeIf { it != 0 } ?: -1
+            response.msg = "校园卡信息加载失败：${result.message()}"
+        }
         return response
     }
 
     override suspend fun getOrderThirdData(request: RequestBody): AHUResponse<Response<ResponseBody>> {
         val response = AHUResponse<Response<ResponseBody>>()
-        response.data = YcardApi.API.getOrderThirdData(request.toFormBody())
-        response.code = 0;
+        response.data = YcardApi.authorizedCall { getOrderThirdData(request.toFormBody()) }
+        response.code = if (response.data?.isSuccessful == true) 0 else -1
+        response.msg = response.data?.message().orEmpty()
         return response
     }
 
     override suspend fun pay(request: RequestBody): AHUResponse<Response<ResponseBody>> {
         val response = AHUResponse<Response<ResponseBody>>()
-        response.data = YcardApi.API.pay(request.toFormBody())
-        response.code = 0;
+        response.data = YcardApi.authorizedCall { pay(request.toFormBody()) }
+        response.code = if (response.data?.isSuccessful == true) 0 else -1
+        response.msg = response.data?.message().orEmpty()
         return response
     }
 

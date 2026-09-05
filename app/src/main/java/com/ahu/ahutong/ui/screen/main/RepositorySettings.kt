@@ -16,10 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,8 +33,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.repository.RepositoryAccelerationSource
 import com.ahu.ahutong.data.repository.RepositoryManager
+import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.appLiquidGlassSurface
+import com.ahu.ahutong.ui.components.AppPageHeader
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -53,26 +55,12 @@ fun RepositorySettings(
         modifier = Modifier
             .fillMaxSize()
             .systemBarsPadding()
-            .background(96.n1 withNight 10.n1)
+            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { navController.popBackStack() }) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "返回"
-                )
-            }
-            Text(
-                text = "学习资料设置",
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f)
-            )
-        }
+        AppPageHeader(
+            title = "学习资料设置",
+            onBack = { navController.popBackStack() }
+        )
 
         Column(
             modifier = Modifier
@@ -90,8 +78,11 @@ fun RepositorySettings(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(SmoothRoundedCornerShape(24.dp))
-                    .background(cardColor),
+                    .appLiquidGlassSurface(
+                        shape = SmoothRoundedCornerShape(24.dp),
+                        fallbackColor = cardColor,
+                        level = LiquidGlassSurfaceLevel.Panel
+                    ),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 RepositoryManager.accelerationSources.forEach { source ->

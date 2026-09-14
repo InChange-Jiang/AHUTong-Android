@@ -77,6 +77,7 @@ import com.ahu.ahutong.ui.components.liquidGlassTint
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import java.util.Locale
+import com.ahu.ahutong.data.session.SessionStore
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -85,6 +86,7 @@ fun CampusCard(
     transitionBalance: Double,
     onRefreshBalance: () -> Unit,
     navController: NavController,
+    isHomeActive: Boolean,
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -102,12 +104,16 @@ fun CampusCard(
             BehaviorRuntimeEntryPoint::class.java
         ).behaviorPredictionRuntime()
     }
-
     val pref by preferencesManager.showQRCode.collectAsState(initial = false)
     val behaviorDiagnostics by behaviorRuntime.diagnostics.collectAsState()
 
     var isQrcode by remember { mutableStateOf(false) }
     val paymentQrCommand by paymentQrCommands.command.collectAsState()
+
+    PaymentQrNfcGuard(
+        isHomeActive = isHomeActive,
+        isPaymentQrVisible = isQrcode
+    )
 
     LaunchedEffect(pref) {
         if (!pref) isQrcode = false
@@ -125,7 +131,7 @@ fun CampusCard(
     }
 
     LaunchedEffect(isQrcode) {
-        if (AHUCache.isLogin() && isQrcode) {
+        if (SessionStore.isLoggedIn() && isQrcode) {
             onRefreshBalance()
         }
     }
@@ -327,6 +333,14 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
             BehaviorRuntimeEntryPoint::class.java
         ).behaviorPredictionRuntime()
     }
+    val retryPaymentQr = {
+        behaviorRuntime.recordActionIntentAsync(
+            AppActionId.REFRESH_PAYMENT_QR,
+            ActionSource.ORGANIC
+        )
+        discoveryViewModel.loadQrCode(forceRefresh = true)
+        discoveryViewModel.refreshCardBalance()
+    }
 
     DisposableEffect(activity) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
@@ -341,7 +355,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> discoveryViewModel.clearQrCode()
-                Lifecycle.Event.ON_START -> if (AHUCache.isLogin()) discoveryViewModel.loadQrCode()
+                Lifecycle.Event.ON_START -> if (SessionStore.isLoggedIn()) discoveryViewModel.loadQrCode()
                 else -> Unit
             }
         }
@@ -352,7 +366,7 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
         }
     }
 
-    if (AHUCache.isLogin()) {
+    if (SessionStore.isLoggedIn()) {
         LaunchedEffect(Unit) {
             discoveryViewModel.loadQrCode()
         }
@@ -444,15 +458,13 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                         contentDescription = "QR Code",
                         modifier = Modifier
                             .fillMaxSize()
-                            .clickable {
-                                behaviorRuntime.recordActionIntentAsync(AppActionId.REFRESH_PAYMENT_QR, ActionSource.ORGANIC)
-                                discoveryViewModel.loadQrCode(forceRefresh = true)
-                                discoveryViewModel.refreshCardBalance()
-                            }
+                            .clickable(onClick = retryPaymentQr)
                             .padding(8.dp)
                     )
                 } ?: Text(
-                    text = "加载失败"
+                    text = "加载失败，点击重试",
+                    color = Color.DarkGray,
+                    modifier = Modifier.clickable(onClick = retryPaymentQr)
                 )
             } else {
                 AppCircularProgressIndicator()
@@ -481,35 +493,31 @@ private fun QRcodeView(balance: Double, onBack: () -> Unit) {
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    qrcodeBitmap?.let {
-                        Box(
-                            modifier = Modifier
-                                .size(360.dp)
-                                .clip(
-                                    SmoothRoundedCornerShape(
-                                        24.dp
-                                    )
-                                )
-                                .background(Color.White)
-                                .border(
-                                    1.dp,
-                                    Color.Gray,
-                                    SmoothRoundedCornerShape(24.dp)
-                                )
-                                .clickable {
-                                    behaviorRuntime.recordActionIntentAsync(AppActionId.REFRESH_PAYMENT_QR, ActionSource.ORGANIC)
-                                    discoveryViewModel.loadQrCode(forceRefresh = true)
-                                    discoveryViewModel.refreshCardBalance()
-                                }
-                                .padding(20.dp)
-                        ) {
+                    Box(
+                        modifier = Modifier
+                            .size(360.dp)
+                            .clip(SmoothRoundedCornerShape(24.dp))
+                            .background(Color.White)
+                            .border(1.dp, Color.Gray, SmoothRoundedCornerShape(24.dp))
+                            .padding(20.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        qrcodeBitmap?.let {
                             Image(
                                 bitmap = it.asImageBitmap(),
-                                contentDescription =
-                                    "Full QR Code",
-                                modifier =
-                                    Modifier.fillMaxSize()
+                                contentDescription = "Full QR Code",
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable(onClick = retryPaymentQr)
                             )
+                        } ?: if (finished) {
+                            Text(
+                                text = "加载失败，点击重试",
+                                color = Color.DarkGray,
+                                modifier = Modifier.clickable(onClick = retryPaymentQr)
+                            )
+                        } else {
+                            AppCircularProgressIndicator()
                         }
                     }
                 }

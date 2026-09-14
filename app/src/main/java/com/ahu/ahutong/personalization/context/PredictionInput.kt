@@ -47,7 +47,6 @@ enum class DayType { WEEKDAY, WEEKEND }
 
 enum class BalanceBucket { UNKNOWN, ZERO_TO_FIVE, FIVE_TO_TEN, TEN_TO_TWENTY, TWENTY_TO_FIFTY, FIFTY_PLUS }
 
-enum class ExamDistanceBucket { UNKNOWN, NONE, WITHIN_ONE_DAY, WITHIN_THREE_DAYS, WITHIN_SEVEN_DAYS, LATER }
 
 data class ContextSnapshot(
     val epochDay: Long,

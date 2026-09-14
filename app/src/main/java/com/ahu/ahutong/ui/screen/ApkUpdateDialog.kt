@@ -1,7 +1,5 @@
 package com.ahu.ahutong.ui.component
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,9 +21,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,7 +28,6 @@ import androidx.compose.ui.window.DialogProperties
 import com.ahu.ahutong.data.server.model.ApkUpdateInfo
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
-import com.ahu.ahutong.ui.state.ApkDownloadSegment
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
@@ -44,8 +38,6 @@ fun ApkUpdateDialog(
     info: ApkUpdateInfo,
     downloading: Boolean,
     progress: Float? = null,
-    activeRangeCount: Int? = null,
-    downloadSegments: List<ApkDownloadSegment> = emptyList(),
     downloadElapsedText: String? = null,
     errorText: String? = null,
     apkLocalReady: Boolean = false,
@@ -60,7 +52,6 @@ fun ApkUpdateDialog(
     val containerColor = 100.n1 withNight 20.n1
     val progressColor = 70.a1 withNight 80.a1
     val progressTrackColor = 92.n1 withNight 30.n1
-    val activeSegmentColor = 80.a1.copy(alpha = 0.45f) withNight 55.a1.copy(alpha = 0.65f)
     val dialogShape = SmoothRoundedCornerShape(32.dp)
 
     AlertDialog(
@@ -133,41 +124,18 @@ fun ApkUpdateDialog(
                             trackColor = progressTrackColor
                         )
                     } else {
-                        if (downloadSegments.isEmpty()) {
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = progressColor,
-                                trackColor = progressTrackColor
-                            )
-                        } else {
-                            SegmentedApkProgressIndicator(
-                                segments = downloadSegments,
-                                trackColor = progressTrackColor,
-                                completedColor = progressColor,
-                                activeColor = activeSegmentColor
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Row(
+                        LinearProgressIndicator(
+                            progress = { progress },
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "下载进度：${(progress * 100).toInt()}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = contentColor
-                            )
-                            if (activeRangeCount != null) {
-                                Spacer(Modifier.width(12.dp))
-                                Text(
-                                    text = "活跃分片：${activeRangeCount}片",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = contentColor
-                                )
-                            }
-                        }
+                            color = progressColor,
+                            trackColor = progressTrackColor
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "下载进度：${(progress * 100).toInt()}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = contentColor
+                        )
                     }
                 }
 
@@ -311,46 +279,4 @@ fun ApkMirrorSourceDialog(
             }
         }
     )
-}
-
-@Composable
-private fun SegmentedApkProgressIndicator(
-    segments: List<ApkDownloadSegment>,
-    trackColor: Color,
-    completedColor: Color,
-    activeColor: Color
-) {
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(6.dp)
-    ) {
-        val radius = size.height / 2f
-        val corner = CornerRadius(radius, radius)
-        drawRoundRect(
-            color = trackColor,
-            cornerRadius = corner,
-            size = size
-        )
-
-        fun drawSegment(startFraction: Float, endFraction: Float, color: Color) {
-            val startX = (startFraction.coerceIn(0f, 1f) * size.width).coerceIn(0f, size.width)
-            val endX = (endFraction.coerceIn(0f, 1f) * size.width).coerceIn(0f, size.width)
-            val width = endX - startX
-            if (width <= 0f) return
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(startX, 0f),
-                size = Size(width, size.height),
-                cornerRadius = corner
-            )
-        }
-
-        segments.filter { it.running }.forEach { segment ->
-            drawSegment(segment.startFraction, segment.endFraction, activeColor)
-        }
-        segments.forEach { segment ->
-            drawSegment(segment.startFraction, segment.downloadedEndFraction, completedColor)
-        }
-    }
 }

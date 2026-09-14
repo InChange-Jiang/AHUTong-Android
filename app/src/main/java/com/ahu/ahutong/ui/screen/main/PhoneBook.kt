@@ -54,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.ahu.ahutong.R
+import com.ahu.ahutong.core.designsystem.R as DesignSystemR
 import com.ahu.ahutong.data.model.Tel
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.AppSearchHeader
@@ -185,7 +186,7 @@ fun PhoneBook(onBack: (() -> Unit)? = null) {
             ),
             trailingContent = {
                 PhoneBookTitleButton(
-                    icon = R.drawable.ic_find,
+                    icon = DesignSystemR.drawable.ic_find,
                     contentDescription = "搜索",
                     onClick = { isSearchActive = true }
                 )
@@ -282,22 +283,25 @@ private fun TelItem(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Tel 已迁到 :core:model，跨模块声明的属性无法智能转换，先取局部变量。
+            val primaryTel = tel.tel
+            val secondaryTel = tel.tel2
             when {
-                tel.tel != null && tel.tel2 != null && tel.tel == tel.tel2 -> {
-                    Tel(tel = tel.tel)
+                primaryTel != null && secondaryTel != null && primaryTel == secondaryTel -> {
+                    Tel(tel = primaryTel)
                 }
 
-                tel.tel != null && tel.tel2 == null -> {
-                    Tel(tel = tel.tel, campus = "磬苑")
+                primaryTel != null && secondaryTel == null -> {
+                    Tel(tel = primaryTel, campus = "磬苑")
                 }
 
-                tel.tel == null && tel.tel2 != null -> {
-                    Tel(tel = tel.tel2, campus = "龙河")
+                primaryTel == null && secondaryTel != null -> {
+                    Tel(tel = secondaryTel, campus = "龙河")
                 }
 
-                tel.tel != null && tel.tel2 != null && tel.tel != tel.tel2 -> {
-                    Tel(tel = tel.tel, campus = "磬苑")
-                    Tel(tel = tel.tel2, campus = "龙河")
+                primaryTel != null && secondaryTel != null && primaryTel != secondaryTel -> {
+                    Tel(tel = primaryTel, campus = "磬苑")
+                    Tel(tel = secondaryTel, campus = "龙河")
                 }
             }
         }
@@ -366,22 +370,25 @@ private fun Telephones(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // 同上：模型跨模块后改为局部变量再做判断。
+                    val primaryTel = it.tel
+                    val secondaryTel = it.tel2
                     when {
-                        it.tel != null && it.tel2 != null && it.tel == it.tel2 -> {
-                            Tel(tel = it.tel)
+                        primaryTel != null && secondaryTel != null && primaryTel == secondaryTel -> {
+                            Tel(tel = primaryTel)
                         }
 
-                        it.tel != null && it.tel2 == null -> {
-                            Tel(tel = it.tel, campus = "磬苑")
+                        primaryTel != null && secondaryTel == null -> {
+                            Tel(tel = primaryTel, campus = "磬苑")
                         }
 
-                        it.tel == null && it.tel2 != null -> {
-                            Tel(tel = it.tel2, campus = "龙河")
+                        primaryTel == null && secondaryTel != null -> {
+                            Tel(tel = secondaryTel, campus = "龙河")
                         }
 
-                        it.tel != null && it.tel2 != null && it.tel != it.tel2 -> {
-                            Tel(tel = it.tel, campus = "磬苑")
-                            Tel(tel = it.tel2, campus = "龙河")
+                        primaryTel != null && secondaryTel != null && primaryTel != secondaryTel -> {
+                            Tel(tel = primaryTel, campus = "磬苑")
+                            Tel(tel = secondaryTel, campus = "龙河")
                         }
                     }
                 }

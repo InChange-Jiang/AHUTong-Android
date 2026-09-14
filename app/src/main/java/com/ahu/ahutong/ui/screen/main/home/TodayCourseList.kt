@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -86,10 +87,10 @@ fun TodayCourseList(
     }
 
     val activeCourseIndex = todayCourses.indexOfFirst {
-        currentMinutes in ScheduleViewModel.getCourseTimeRangeInMinutes(it)
+        currentMinutes in ScheduleSectionTimes.getCourseTimeRangeInMinutes(it)
     }
     val timelineProgressIndex = todayCourses.indexOfLast {
-        val range = ScheduleViewModel.getCourseTimeRangeInMinutes(it)
+        val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(it)
         currentMinutes >= range.first
     }
     Column(
@@ -177,7 +178,7 @@ fun TodayCourseList(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         todayCourses.forEach { course ->
-            val isOngoing = currentMinutes in ScheduleViewModel.getCourseTimeRangeInMinutes(course)
+            val isOngoing = currentMinutes in ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

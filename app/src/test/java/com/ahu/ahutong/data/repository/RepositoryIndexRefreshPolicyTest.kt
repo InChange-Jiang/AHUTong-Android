@@ -61,23 +61,36 @@ class RepositoryIndexRefreshPolicyTest {
 
     @Test
     fun `repository cache parsing stays off the composition thread`() {
-        val source = File(
-            repositoryRoot(),
-            "app/src/main/java/com/ahu/ahutong/ui/state/RepositoryViewModel.kt"
-        ).readText()
+        val source = moduleSource("com/ahu/ahutong/ui/state/RepositoryViewModel.kt")
         val stateGetter = source.substring(
             source.indexOf("fun getInitialDirectoryState"),
             source.indexOf("fun getSharedState")
         )
 
         assertFalse(stateGetter.contains("RepositoryManager.getCachedContents"))
-        assertTrue(source.contains("withContext(Dispatchers.IO) { refreshDownloadedSet() }"))
-        assertTrue(source.contains("val resolvedState = withContext(Dispatchers.IO)"))
+        // 调度器现在由构造参数注入（测试可以换成测试调度器），但"离开组合线程"这条不变。
+        assertTrue(source.contains("withContext(ioDispatcher) { refreshDownloadedSet() }"))
+        assertTrue(source.contains("val resolvedState = withContext(ioDispatcher)"))
     }
 
     private fun repositoryRoot(): File {
         val userDirectory = requireNotNull(System.getProperty("user.dir"))
         return generateSequence(File(userDirectory)) { it.parentFile }
             .first { File(it, "app/src/main/java").isDirectory }
+    }
+
+    /** ViewModel 已随 feature 抽到 :feature:repository-index，按源集根逐个查找。 */
+    private fun moduleSource(relativePath: String): String {
+        val root = repositoryRoot()
+        val file = SOURCE_ROOTS.map { File(root, it + relativePath) }.firstOrNull { it.isFile }
+            ?: error("找不到源文件：$relativePath")
+        return file.readText()
+    }
+
+    private companion object {
+        val SOURCE_ROOTS = listOf(
+            "app/src/main/java/",
+            "feature/repository-index/src/main/java/"
+        )
     }
 }

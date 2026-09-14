@@ -32,6 +32,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
+import com.ahu.ahutong.core.common.map
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
+import com.ahu.ahutong.data.toAhuError
+import com.ahu.ahutong.data.toAhuResult
+import com.ahu.ahutong.data.session.SessionStore
 
 enum class PrefetchState { IDLE, RUNNING, SUCCEEDED, FAILED, CANCELLED, CONSUMED }
 
@@ -51,7 +57,7 @@ class PrefetchCoordinator @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
-    private val inFlight = ConcurrentHashMap<String, Deferred<Result<Unit>>>()
+    private val inFlight = ConcurrentHashMap<String, Deferred<AhuResult<Unit>>>()
     private val networkStarts = ArrayDeque<Long>()
     private val networkSlots = Semaphore(1)
     private val localSlots = Semaphore(2)
@@ -154,7 +160,7 @@ class PrefetchCoordinator @Inject constructor(
                     inFlight.remove(key)
                     throw cancelled
                 } catch (error: Throwable) {
-                    Result.failure(error)
+                    AhuResult.Failure(error.toAhuError())
                 }
                 val finished = SystemClock.elapsedRealtime()
                 if (result.isFailure &&
@@ -169,7 +175,7 @@ class PrefetchCoordinator @Inject constructor(
                         if (result.isSuccess) PrefetchState.SUCCEEDED else PrefetchState.FAILED,
                         started,
                         finished,
-                        result.exceptionOrNull()?.javaClass?.simpleName
+                        result.errorOrNull()?.let { it::class.java.simpleName }
                     )
                 )
                 inFlight.remove(key)
@@ -179,37 +185,38 @@ class PrefetchCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun execute(action: AppActionId): Result<Unit> = when (action) {
+    private suspend fun execute(action: AppActionId): AhuResult<Unit> = when (action) {
         AppActionId.VIEW_SCHEDULE -> AHURepository.getSchedule(false).map { Unit }
         AppActionId.VIEW_GRADES -> AHURepository.getGrade(false).map { Unit }
         AppActionId.VIEW_EXAM_ROOM -> {
-            val user = AHUCache.getCurrentUser()
+            val user = SessionStore.currentUser()
             val studentId = AHUCache.getJwxtStudentId() ?: user?.xh
             val name = user?.name
             if (studentId.isNullOrBlank() || name.isNullOrBlank()) {
-                Result.failure(IllegalStateException("exam identity is not ready"))
+                AhuResult.Failure(AhuError.ProtocolChanged("exam identity is not ready"))
             } else {
                 AHURepository.getExamInfo(false, studentId, name).map { Unit }
             }
         }
         AppActionId.VIEW_SCHOOL_CALENDAR -> runCatching {
             val result = AHURepository.getSchoolCalendar()
-            check(result.isSuccessful) { "calendar prefetch rejected" }
-            val response = checkNotNull(result.data) { "calendar response is missing" }
+            check(result.isSuccess) { "calendar prefetch rejected" }
+            val response = checkNotNull(result.valueOrNull()) { "calendar response is missing" }
             check(response.isSuccessful) { "calendar download failed" }
             val body = checkNotNull(response.body()) { "calendar body is missing" }
             val file = FileUtils.saveResponseBodyToFile(context, body, "xiaoli.jpg")
             check(file != null && file.length() > 0L) { "calendar cache write failed" }
-        }
+        }.toAhuResult()
         AppActionId.OPEN_LOST_FOUND -> runCatching {
             val result = AHURepository.getLostFoundList(1, 20, 1)
-            check(result.isSuccessful) { "lost-found prefetch rejected" }
-            val response = checkNotNull(result.data) { "lost-found response is missing" }
-            check(response.code == 0) { "lost-found response failed" }
+            check(result.isSuccess) { "lost-found prefetch rejected" }
+            val response = checkNotNull(result.valueOrNull()) { "lost-found response is missing" }
             AHUCache.saveLostFoundList(1, response.data.list)
-        }
-        AppActionId.OPEN_PAYMENT_QR -> paymentQrRepository.prefetchPredictively()
-        else -> Result.failure(IllegalStateException("no audited prefetcher for ${action.stableId}"))
+        }.toAhuResult()
+        AppActionId.OPEN_PAYMENT_QR -> paymentQrRepository.prefetchPredictively().toAhuResult()
+        else -> AhuResult.Failure(
+            AhuError.ProtocolChanged("no audited prefetcher for ${action.stableId}")
+        )
     }
 
     private fun threshold(policy: PrefetchPolicy): Float = when (policy) {

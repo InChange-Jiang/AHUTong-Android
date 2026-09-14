@@ -1,7 +1,7 @@
 package com.ahu.ahutong.data.mock
 
 import android.content.Context
-import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.google.gson.GsonBuilder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +30,7 @@ object MockScenarioStore {
     }
 
     private fun prefs() =
-        AHUApplication.getApp().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        AppEnvironmentHolder.context().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }
 
 object MockScenarioController {

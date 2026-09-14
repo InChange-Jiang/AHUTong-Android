@@ -204,7 +204,7 @@ object CurrentWeekResolver {
     }
 
     private suspend fun getOfficialStartDate(semesterKey: SemesterKey): LocalDate? {
-        val semester = fetchCurrentSemester()
+        val semester = fetchCurrentSemester(JwxtApi.API)
         val officialKey = sequenceOf(semester.name, semester.code, semester.nameZh)
             .mapNotNull(::parseSemesterKey)
             .firstOrNull {

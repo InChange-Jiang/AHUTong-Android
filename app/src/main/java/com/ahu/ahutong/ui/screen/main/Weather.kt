@@ -61,6 +61,7 @@ import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 import top.yukonga.miuix.kmp.icon.icons.useful.Search
 import top.yukonga.miuix.kmp.icon.icons.useful.Settings
+import com.ahu.ahutong.core.designsystem.R as DesignSystemR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,15 +183,15 @@ fun Weather(
             title = weatherViewModel.locationName.ifBlank { "天气" },
             actions = listOf(
                 TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_find),
+                    ImageVector.vectorResource(DesignSystemR.drawable.ic_find),
                     "搜索城市"
                 ) { showSearch = true },
                 TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_config),
+                    ImageVector.vectorResource(DesignSystemR.drawable.ic_config),
                     "设置"
                 ) { showSettings = true },
                 TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_refresh),
+                    ImageVector.vectorResource(DesignSystemR.drawable.ic_refresh),
                     "刷新"
                 ) {
                     weatherViewModel.refresh()

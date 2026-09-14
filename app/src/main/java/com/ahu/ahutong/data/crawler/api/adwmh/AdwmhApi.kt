@@ -1,7 +1,7 @@
 package com.ahu.ahutong.data.crawler.api.adwmh
 
-import com.ahu.ahutong.BuildConfig
-import com.ahu.ahutong.data.AHUResponse
+import com.ahu.ahutong.data.network.NetworkLogging
+import com.ahu.ahutong.data.crawler.model.adwnh.AdwmhApiResponse
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
@@ -10,16 +10,17 @@ import com.ahu.ahutong.data.crawler.model.adwnh.Captcha
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.crawler.model.adwnh.QRcode
-import com.ahu.ahutong.data.crawler.net.AutoLoginInterceptor
-import com.ahu.ahutong.data.crawler.net.TokenAuthenticator
+import com.ahu.ahutong.data.network.campusAutoLogin
+import com.ahu.ahutong.data.network.campusCookies
+import com.ahu.ahutong.data.network.campusSessionRefresh
+import com.ahu.ahutong.data.network.withoutCampusSessionRefresh
+import com.ahu.ahutong.data.session.RepositorySessionExpiryHook
 import okhttp3.MultipartBody
 import okhttp3.Authenticator
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
-import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -28,6 +29,11 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Query
 import retrofit2.http.Url
+import com.ahu.ahutong.data.network.AhuHttp
+
+/** 同 [createJwxtApi]：顶层函数，契约测试无需触发伴随对象初始化。 */
+fun createAdwmhApi(client: OkHttpClient, baseUrl: String): AdwmhApi =
+    retrofit(baseUrl, client).create(AdwmhApi::class.java)
 
 interface AdwmhApi {
     @GET("/remind/authcode")
@@ -66,13 +72,13 @@ interface AdwmhApi {
     @POST("lostfound/saveupdate")
     suspend fun publishLostFound(
         @Body request: LostFoundPublishRequest
-    ): AHUResponse<Any>
+    ): AdwmhApiResponse<Any>
 
     @FormUrlEncoded
     @POST("lostfound/delete")
     suspend fun deleteLostFound(
         @Field("id") id: String
-    ): AHUResponse<Any>
+    ): AdwmhApiResponse<Any>
 
     @POST
     @Multipart
@@ -81,13 +87,7 @@ interface AdwmhApi {
 
 
     companion object {
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            redactHeader("Authorization")
-            redactHeader("Synjones-Auth")
-            redactHeader("Cookie")
-            redactHeader("Set-Cookie")
-            level = HttpLoggingInterceptor.Level.HEADERS
-        }
+        val loggingInterceptor = NetworkLogging.debugInterceptor()
 
         private val cookieJar = CookieManager.cookieJar
 //        val cookieJar = PersistentCookieJar(
@@ -100,42 +100,28 @@ interface AdwmhApi {
         val BASE_URL = "https://adwmh.ahu.edu.cn/"
 
 
-        val okHttpClient = OkHttpClient
-            .Builder()
+        val okHttpClient = AhuHttp.plain()
             .addNetworkInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .addHeader("X-Requested-With", "XMLHttpRequest")
                     .build()
                 chain.proceed(request)
             }
-            .addNetworkInterceptor(AutoLoginInterceptor())
-            .authenticator(TokenAuthenticator())
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .cookieJar(cookieJar)
+            .campusAutoLogin(RepositorySessionExpiryHook())
+            .campusSessionRefresh(RepositorySessionExpiryHook())
+            .campusCookies(CookieManager.cookieJar)
             .apply {
-                if (BuildConfig.DEBUG) addNetworkInterceptor(loggingInterceptor)
+                loggingInterceptor?.let { addNetworkInterceptor(it) }
             }
             .build()
 
         private val loginOkHttpClient = okHttpClient.newBuilder()
-            .authenticator(Authenticator.NONE)
-            .apply {
-                networkInterceptors().removeAll { it is AutoLoginInterceptor }
-            }
+            .withoutCampusSessionRefresh()
             .build()
 
-        val API = Retrofit.Builder()
-            .addConverterFactory(GsonConverterFactory.create())
-            .client(okHttpClient)
-            .baseUrl(BASE_URL)
-            .build().create(AdwmhApi::class.java)
+        val API = createAdwmhApi(okHttpClient, BASE_URL)
 
-        val LOGIN_API = Retrofit.Builder()
-            .addConverterFactory(GsonConverterFactory.create())
-            .client(loginOkHttpClient)
-            .baseUrl(BASE_URL)
-            .build().create(AdwmhApi::class.java)
+        val LOGIN_API = createAdwmhApi(loginOkHttpClient, BASE_URL)
 
     }
 }

@@ -13,14 +13,6 @@ import java.util.Base64
 enum class BootstrapTrainingTask { NEXT_ACTION, JOURNEY_GOAL, PRESET_RANKING }
 enum class BootstrapExampleCompleteness { COMPLETE, LEGACY_PARTIAL }
 
-data class BootstrapContributionStatus(
-    val enabled: Boolean = false,
-    val pendingExamples: Int = 0,
-    val contributedExamples: Long = 0,
-    val lastUploadAtEpochMs: Long? = null,
-    val includeHistorical: Boolean = false
-)
-
 data class BootstrapTrainingExamplePayload(
     val exampleId: String,
     val sequenceNo: Long,

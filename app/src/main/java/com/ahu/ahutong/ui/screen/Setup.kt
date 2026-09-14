@@ -1,12 +1,13 @@
 package com.ahu.ahutong.ui.screen
 
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.rememberNavController
 import com.ahu.ahutong.data.dao.AHUCache
@@ -20,11 +21,12 @@ import com.ahu.ahutong.utils.animatedComposable
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.delay
+import com.ahu.ahutong.data.session.SessionStore
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun Setup(
-    scheduleViewModel: ScheduleViewModel = viewModel(),
+    scheduleViewModel: ScheduleViewModel = hiltViewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
     onSetup: () -> Unit
 ) {
@@ -70,5 +72,5 @@ fun Setup(
         navController.navigate("login")
     }
     // intercept back key if user has NOT logged in
-    BackHandler(enabled = !AHUCache.isLogin()) {}
+    BackHandler(enabled = !SessionStore.isLoggedIn()) {}
 }

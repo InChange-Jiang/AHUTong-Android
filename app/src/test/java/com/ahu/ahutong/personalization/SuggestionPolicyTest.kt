@@ -161,7 +161,7 @@ class SuggestionPolicyTest {
         val sourceRoot = File(repositoryRoot(), "app/src/main/java")
         val host = File(
             sourceRoot,
-            "com/ahu/ahutong/personalization/ui/SmartSuggestionHost.kt"
+            "com/ahu/ahutong/ui/suggestion/SmartSuggestionHost.kt"
         ).readText()
         val main = File(sourceRoot, "com/ahu/ahutong/ui/screen/Main.kt").readText()
         val runtime = File(

@@ -68,6 +68,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 import top.yukonga.miuix.kmp.icon.icons.useful.Search
+import com.ahu.ahutong.core.designsystem.R as DesignSystemR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -549,12 +550,12 @@ fun LostFound(
                 contentEdgeToEdge = true,
                 trailingContent = {
                     LostFoundRadiantTitleButton(
-                        icon = R.drawable.ic_refresh,
+                        icon = DesignSystemR.drawable.ic_refresh,
                         contentDescription = "刷新失物招领",
                         onClick = lostFoundViewModel::refreshList
                     )
                     LostFoundRadiantTitleButton(
-                        icon = if (searchExpanded) null else R.drawable.ic_find,
+                        icon = if (searchExpanded) null else DesignSystemR.drawable.ic_find,
                         imageVector = if (searchExpanded) Icons.Default.Close else null,
                         contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
                         onClick = {

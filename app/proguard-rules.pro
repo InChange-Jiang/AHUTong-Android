@@ -65,9 +65,6 @@
 -dontwarn sun.misc.SignalHandler
 -dontwarn java.lang.instrument.Instrumentation
 -dontwarn sun.misc.Signal
--keep class com.ahu.ahutong.data.AHUResponse{
-    private *;
-}
 -keep class org.jsoup.Connection{*;}
 -keep class com.ahu.ahutong.ui.widget.schedule.bean.**{*;}
 -keepclassmembers class com.ahu.ahutong.data.model.* {

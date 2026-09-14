@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import com.ahu.ahutong.data.network.AhuHttp
 
 /**
  * @Author Yukon
@@ -59,11 +60,11 @@ class LocalServiceClient(
         }
     }
     
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
-        .build()
+    private val client = AhuHttp.plain(
+        connectTimeoutSeconds = 10,
+        readTimeoutSeconds = 30,
+        writeTimeoutSeconds = 30
+    ).build()
     
     private val gson = Gson()
     

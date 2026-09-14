@@ -8,7 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Base64
-import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.google.gson.Gson
 import com.google.gson.JsonArray
@@ -33,6 +33,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import com.ahu.ahutong.data.network.AhuHttp
 
 internal object RepositoryIndexRefreshPolicy {
     const val AUTO_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1_000L
@@ -144,17 +145,15 @@ object RepositoryManager {
 
     private val gson = Gson()
     private val kv: MMKV by lazy {
-        MMKV.initialize(AHUApplication.getApp())
+        MMKV.initialize(AppEnvironmentHolder.context())
         MMKV.mmkvWithID("repository_downloads")
     }
     private val warmUpMutex = Mutex()
 
-    private val downloadClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .followRedirects(true)
-        .build()
+    private val downloadClient = AhuHttp.plain(
+        connectTimeoutSeconds = 10,
+        readTimeoutSeconds = 60
+    ).build()
 
     // === GitHub API ===
 
@@ -310,8 +309,8 @@ object RepositoryManager {
         return withContext(Dispatchers.IO) {
             val resolved = resolveVirtualPath(path)
                 ?: throw IllegalArgumentException("无效的 Markdown 路径")
-            val urls = getDownloadUrls(path, AHUApplication.getApp())
-            val selectedAccelerationSource = getSelectedAccelerationSource(AHUApplication.getApp())
+            val urls = getDownloadUrls(path, AppEnvironmentHolder.context())
+            val selectedAccelerationSource = getSelectedAccelerationSource(AppEnvironmentHolder.context())
             var lastError: Exception? = null
             for (url in urls) {
                 try {
@@ -690,7 +689,7 @@ object RepositoryManager {
             DownloadRecord(
                 path = path,
                 localName = localName,
-                localPath = File(getLegacyDownloadDir(AHUApplication.getApp()), localName).absolutePath
+                localPath = File(getLegacyDownloadDir(AppEnvironmentHolder.context()), localName).absolutePath
             )
         }
     }
@@ -1066,7 +1065,7 @@ object RepositoryManager {
 
         private fun querySize(uri: Uri): Long {
             return runCatching {
-                val context = AHUApplication.getApp()
+                val context = AppEnvironmentHolder.context()
                 context.contentResolver.query(
                     uri,
                     arrayOf(OpenableColumns.SIZE),

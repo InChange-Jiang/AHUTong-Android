@@ -5,6 +5,7 @@
 .DS_Store
 /build
 app/build/
+build/
 *.apk
 *.aab
 *.keystore
@@ -21,6 +22,7 @@ app/map.txt
 .gradle_user_home/
 .trae/
 *.txt
+!docs/architecture/boundary-allowlist.txt
 .vscode/settings.json
 star.md
 .agents/skills/yukon-auto-update-release/config.local.json

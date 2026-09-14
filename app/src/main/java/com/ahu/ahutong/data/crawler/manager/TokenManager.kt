@@ -5,6 +5,8 @@ import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.crawler.api.ycard.YcardApi
 import com.ahu.ahutong.data.crawler.net.SessionRefreshCoordinator
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.session.SecureCredentialVault
+import com.ahu.ahutong.data.session.AhuSessionState
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +14,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.net.URLDecoder
+import com.ahu.ahutong.data.session.SessionStore
 
 object TokenManager {
 
@@ -132,10 +135,10 @@ object TokenManager {
     private suspend fun refreshStoredSession(
         observedGeneration: Long,
         casLoginUrl: String?
-    ): Boolean =
-        SessionRefreshCoordinator.refreshIfNeeded(observedGeneration) {
-            val user = AHUCache.getCurrentUser() ?: return@refreshIfNeeded false
-            val password = AHUCache.getWisdomPassword()?.takeIf { it.isNotBlank() }
+    ): Boolean {
+        val refreshed = SessionRefreshCoordinator.refreshIfNeeded(observedGeneration) {
+            val user = SessionStore.currentUser() ?: return@refreshIfNeeded false
+            val password = SecureCredentialVault.wisdomPassword()?.takeIf { it.isNotBlank() }
                 ?: return@refreshIfNeeded false
 
             val serviceLoginUrl = casLoginUrl ?: return@refreshIfNeeded false
@@ -147,6 +150,24 @@ object TokenManager {
                 casLoginUrl = serviceLoginUrl
             )
         }
+        // 与 RepositoryAhuSession 同一约定：续期成功由会话层写登录态。
+        if (refreshed) {
+            SessionRefreshCoordinator.commitIfCurrent(observedGeneration + 1) {
+                if (AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
+                    AhuSessionState.markAuthenticated()
+                }
+            }
+        } else {
+            SessionRefreshCoordinator.commitIfCurrent(observedGeneration) {
+                // 续期失败（含超时）：登录态不能还停在「已认证」。若手动登录已推进代号，
+                // 这个旧失败不会进入提交块，也就不能覆盖新会话。
+                if (AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
+                    AhuSessionState.markExpired()
+                }
+            }
+        }
+        return refreshed
+    }
 
     private fun isCasLoginUrl(url: String): Boolean =
         url.contains("one.ahu.edu.cn/cas/login", ignoreCase = true)

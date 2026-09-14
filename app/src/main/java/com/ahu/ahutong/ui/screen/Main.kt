@@ -72,6 +72,8 @@ import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen
 import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
 import com.ahu.ahutong.ui.screen.settings.License
+import com.ahu.ahutong.R
+import androidx.compose.ui.res.stringResource
 import com.ahu.ahutong.ui.screen.settings.Preferences
 import com.ahu.ahutong.ui.screen.setup.Info
 import com.ahu.ahutong.ui.screen.setup.Login
@@ -100,21 +102,37 @@ import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
 import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
-import com.ahu.ahutong.personalization.ui.SmartSuggestionHost
+import com.ahu.ahutong.personalization.recorder.BehaviorRecorder
+import com.ahu.ahutong.ui.suggestion.SmartSuggestionHost
 import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.xuexiaotong.ChaoxingSession
+import dagger.hilt.EntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 
 private val primaryDestinationRoutes = listOf("home", "schedule", "tools", "settings")
+
+internal fun settingsParentRoute(uiTheme: AppUiTheme): String =
+    if (uiTheme == AppUiTheme.RADIANT) "settings" else "home"
+
+internal fun shouldNormalizePreferencesParent(
+    uiTheme: AppUiTheme,
+    previousRoute: String?
+): Boolean = previousRoute != settingsParentRoute(uiTheme)
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun Main(
     navController: NavHostController,
-    mainViewModel: MainViewModel = viewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
     loginViewModel: LoginViewModel = viewModel(),
     discoveryViewModel: DiscoveryViewModel = viewModel(),
-    scheduleViewModel: ScheduleViewModel = viewModel(),
+    scheduleViewModel: ScheduleViewModel = hiltViewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
     behaviorRuntime: BehaviorPredictionRuntime,
+    behaviorRecorder: BehaviorRecorder,
     diagnosticsContribution: DiagnosticsContribution,
     paymentQrCommands: PaymentQrOpenCommandStore,
     isReLoginShown: Boolean,
@@ -144,6 +162,10 @@ fun Main(
         appUiTheme,
         primaryDestinationRoutes[primaryPagerState.settledPage]
     )
+    val isHomeActive = currentRoute == "home" && (
+        appUiTheme == AppUiTheme.RADIANT ||
+            primaryPagerState.settledPage == 0 && !primaryPagerState.isScrollInProgress
+        )
 
     fun cancelSelection(token: Long) {
         if (navigationPolicy.cancelSelection(token)) {
@@ -198,6 +220,22 @@ fun Main(
         scope.launch { selectPrimaryDestination("home") }
     }
 
+    fun navigateBackFromPreferences() {
+        if (appUiTheme == AppUiTheme.RADIANT) {
+            if (!navController.popBackStack("settings", inclusive = false)) {
+                navController.navigate("settings") {
+                    popUpTo("home") { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        } else {
+            scope.launch { primaryPagerState.scrollToPage(3) }
+            if (!navController.popBackStack("home", inclusive = false)) {
+                navController.navigate("home") { launchSingleTop = true }
+            }
+        }
+    }
+
     LaunchedEffect(currentRoute) {
         if (currentRoute == "home") {
             delay(1_500L)
@@ -206,10 +244,34 @@ fun Main(
     }
 
     LaunchedEffect(appUiTheme) {
-        if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
-            navController.navigate("home") {
-                popUpTo("home") { inclusive = false }
-                launchSingleTop = true
+        if (appUiTheme != AppUiTheme.RADIANT) {
+            if (currentRoute == "preferences") {
+                primaryPagerState.scrollToPage(3)
+            }
+            if (currentRoute == "xuexiaotong") {
+                navController.navigate("home") {
+                    popUpTo("home") { inclusive = false }
+                    launchSingleTop = true
+                }
+            }
+        }
+        if (
+            currentRoute == "preferences" &&
+            shouldNormalizePreferencesParent(
+                appUiTheme,
+                navController.previousBackStackEntry?.destination?.route
+            )
+        ) {
+            if (appUiTheme == AppUiTheme.RADIANT) {
+                navController.navigate("settings") {
+                    popUpTo("home") { inclusive = false }
+                }
+                navController.navigate("preferences") { launchSingleTop = true }
+            } else {
+                navController.navigate("preferences") {
+                    popUpTo("home") { inclusive = false }
+                    launchSingleTop = true
+                }
             }
         }
     }
@@ -258,6 +320,7 @@ fun Main(
                         scheduleViewModel = scheduleViewModel,
                         navController = navController,
                         behaviorRuntime = behaviorRuntime,
+                        isActive = isHomeActive,
                         onOpenSchedule = {
                             scope.launch { selectPrimaryDestination("schedule") }
                         },
@@ -290,6 +353,7 @@ fun Main(
                                 scheduleViewModel = scheduleViewModel,
                                 navController = navController,
                                 behaviorRuntime = behaviorRuntime,
+                                isActive = isHomeActive,
                                 onOpenSchedule = {
                                     scope.launch { selectPrimaryDestination("schedule") }
                                 },
@@ -299,21 +363,20 @@ fun Main(
                                     shouldEnterHomeEdit = false
                                 }
                             )
-                            1 -> Schedule(
+                           1 -> Schedule(
                                 scheduleViewModel = scheduleViewModel,
-                                behaviorRuntime = behaviorRuntime
+                                behaviorRecorder = behaviorRecorder,
+                                isActive = primaryPagerState.settledPage == 1
                             )
                             2 -> Tools(
                                 navController = navController,
                                 homeEditEnabled = homeEditGrayState.enabled,
                                 onEditHome = ::requestHomeEdit
                             )
-                            3 -> Settings(
+                            3 -> SettingsHub(
                                 navController = navController,
                                 mainViewModel = mainViewModel,
-                                aboutViewModel = aboutViewModel,
-                                scheduleViewModel = scheduleViewModel,
-                                behaviorRuntime = behaviorRuntime
+                                scheduleViewModel = scheduleViewModel
                             )
                         }
                     }
@@ -346,7 +409,7 @@ fun Main(
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
                             primaryPagerState.scrollToPage(0)
-                            com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
+                            com.ahu.ahutong.data.session.SessionStore.currentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
                                 behaviorRuntime.startProfile(it)
                             }
                             homeEditGrayState = GrayReleaseManager.state(
@@ -371,7 +434,7 @@ fun Main(
                 // 返回转场竞态；非 RADIANT 主题下独立展示课表页可正常用系统返回
                 Schedule(
                     scheduleViewModel = scheduleViewModel,
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(appUiThemeState, "tools") {
@@ -430,7 +493,7 @@ fun Main(
                 Repository(
                     navController = navController,
                     path = "",
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(
@@ -447,7 +510,7 @@ fun Main(
                 Repository(
                     navController = navController,
                     path = backStackEntry.arguments?.getString(REPOSITORY_PATH_ARG).orEmpty(),
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(appUiThemeState, "repository_downloads") {
@@ -459,23 +522,27 @@ fun Main(
             animatedComposable(appUiThemeState, "settings") {
                 // 无条件渲染：切换主题后 pop 回此路由时不能落入空白重定向页，
                 // 否则 pop 转场与 redirect 的二次 pop 竞态会导致白屏/卡死
-                Settings(
+                SettingsHub(
                     navController = navController,
                     mainViewModel = mainViewModel,
-                    aboutViewModel = aboutViewModel,
-                    scheduleViewModel = scheduleViewModel,
-                    behaviorRuntime = behaviorRuntime
+                    scheduleViewModel = scheduleViewModel
                 )
             }
             animatedComposable(appUiThemeState, "settings__license") {
-                License(onBack = { navController.popBackStack() })
+                License(
+                    title = stringResource(R.string.license),
+                    onBack = { navController.popBackStack() }
+                )
             }
             animatedComposable(appUiThemeState, "settings__contributors") {
-                Contributors(onBack = { navController.popBackStack() })
+                Contributors(
+                    title = stringResource(R.string.contributors),
+                    onBack = { navController.popBackStack() }
+                )
             }
 
             animatedComposable(appUiThemeState, "preferences") {
-                Preferences(onBack = { navController.popBackStack() })
+                Preferences(onBack = ::navigateBackFromPreferences)
             }
 
             animatedComposable(appUiThemeState, "electricity_pay") {
@@ -514,8 +581,7 @@ fun Main(
             }
 
             animatedComposable(appUiThemeState, "xuexiaotong") {
-                val api = remember { com.ahu.ahutong.data.xuexiaotong.ChaoxingApi(context) }
-                XuexiaotongScreen(api = api)
+                XuexiaotongScreen()
             }
 
             if (BuildConfig.DEBUG) {

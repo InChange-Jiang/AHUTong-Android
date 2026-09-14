@@ -6,11 +6,11 @@ import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Header
 import retrofit2.http.POST
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface TelemetryApi {
     @POST("/v1/on-device-model-evaluations/credentials")
@@ -38,15 +38,15 @@ interface TelemetryApi {
             "/v1/on-device-model-evaluations/delete"
         )
 
-        private val client = OkHttpClient.Builder()
+        private val client = AhuHttp.plain(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 20,
+            writeTimeoutSeconds = 20,
+            callTimeoutSeconds = 30,
+            followRedirects = false,
+            followSslRedirects = false
+        )
             .cookieJar(CookieJar.NO_COOKIES)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
-            .writeTimeout(20, TimeUnit.SECONDS)
-            .callTimeout(30, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
             .addInterceptor { chain ->
                 val request = chain.request()
                 check(request.url.isHttps && request.url.host == "openahu.org" && request.url.encodedPath in allowedPaths) {
@@ -62,11 +62,6 @@ interface TelemetryApi {
             }
             .build()
 
-        val API: TelemetryApi = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(TelemetryApi::class.java)
+        val API: TelemetryApi = retrofit(BASE_URL, client).create(TelemetryApi::class.java)
     }
 }

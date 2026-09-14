@@ -64,12 +64,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.ahu.ahutong.AHUApplication
 import com.ahu.ahutong.R
-import com.ahu.ahutong.data.crawler.manager.CookieManager
-import com.ahu.ahutong.data.crawler.manager.TokenManager
-import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.state.LoginState
@@ -357,13 +352,6 @@ private fun logIn(
 //            userID = userID,
 //            wisdomPassword = password
 //        )
-        AHUApplication.sessionExpired = true
-        AHUCache.clearAll()
-//        RustSDK.initSafe("")
-        CookieManager.cookieJar.clear()
-        TokenManager.clear()
-
-
         loginViewModel.loginWithCrawler(userID = userID, password = password)
 
     }

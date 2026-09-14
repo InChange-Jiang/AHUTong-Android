@@ -75,14 +75,30 @@ class LiquidGlassArchitectureTest {
         assertTrue(tab.contains("selected = selected"))
     }
 
-    private fun source(relativePath: String): String = File(
-        repositoryRoot(),
-        "app/src/main/java/$relativePath"
-    ).readText()
+    /**
+     * 主题、组件与动效工具已移入 :core:designsystem，因此按源集根逐个查找，
+     * 而不是写死 app 的路径——写死路径的断言会在文件搬家时以"文件不存在"的形式失效。
+     */
+    private fun source(relativePath: String): String {
+        val root = repositoryRoot()
+        val file = SOURCE_ROOTS
+            .map { File(root, it + relativePath) }
+            .firstOrNull { it.isFile }
+            ?: error("找不到源文件：$relativePath（已查找 $SOURCE_ROOTS）")
+        return file.readText()
+    }
 
     private fun repositoryRoot(): File {
         val userDirectory = requireNotNull(System.getProperty("user.dir"))
         return generateSequence(File(userDirectory)) { it.parentFile }
             .first { File(it, "app/src/main/java").isDirectory }
+    }
+
+    private companion object {
+        val SOURCE_ROOTS = listOf(
+            "app/src/main/java/",
+            "core/designsystem/src/main/java/",
+            "feature/settings/src/main/java/"
+        )
     }
 }

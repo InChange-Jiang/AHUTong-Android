@@ -20,11 +20,15 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.journeyapps.barcodescanner.BarcodeEncoder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.ahu.ahutong.core.common.onSuccess
 
 /**
  * @Author Simon
@@ -45,8 +49,9 @@ class DiscoveryViewModel @Inject constructor(
     var balance by mutableStateOf(0.0)
     var transitionBalance by mutableStateOf(0.0)
 
-    var qrcode = MutableStateFlow<Bitmap?>(null)
-    var state = MutableStateFlow<Boolean>(false);
+    val qrcode = MutableStateFlow<Bitmap?>(null)
+    val state = MutableStateFlow(false)
+    private var qrLoadJob: Job? = null
 
     fun loadActivityBean() {
         // 优先加载缓存
@@ -106,37 +111,43 @@ class DiscoveryViewModel @Inject constructor(
     }
 
     fun loadQrCode(forceRefresh: Boolean = false) {
-        viewModelScope.launchSafe {
-            withContext(Dispatchers.IO){
-                state.value = false
-                try {
-                    val response = paymentQrRepository.getForDisplay(forceRefresh = forceRefresh)
-                    if (response.isSuccess) {
-                        val hints = HashMap<EncodeHintType, Any>()
+        if (!forceRefresh && qrLoadJob?.isActive == true) return
 
-                        hints[EncodeHintType.ERROR_CORRECTION] = ErrorCorrectionLevel.L
-                        hints[EncodeHintType.MARGIN] = 1
-                        val encoder = BarcodeEncoder()
-                        qrcode.value = encoder.encodeBitmap(
-                            response.getOrThrow(),
-                            BarcodeFormat.QR_CODE,
-                            400,
-                            400,
-                            hints
-                        )
-                    } else {
-                        Log.e("QR", "付款码加载失败")
-                    }
-                } catch (e: Exception) {
-                    Log.e("QR", "付款码加载异常")
+        qrLoadJob?.cancel()
+        state.value = false
+        qrLoadJob = viewModelScope.launchSafe {
+            try {
+                val bitmap = withContext(Dispatchers.IO) {
+                    val response = paymentQrRepository.getForDisplay(forceRefresh = forceRefresh)
+                    val hints = hashMapOf<EncodeHintType, Any>(
+                        EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.L,
+                        EncodeHintType.MARGIN to 1
+                    )
+                    BarcodeEncoder().encodeBitmap(
+                        response.getOrThrow(),
+                        BarcodeFormat.QR_CODE,
+                        400,
+                        400,
+                        hints
+                    )
                 }
+                if (!isActive) return@launchSafe
+                qrcode.value = bitmap
+                state.value = true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (!isActive) return@launchSafe
+                Log.e("QR", "付款码加载异常")
+                qrcode.value = null
                 state.value = true
             }
         }
-
     }
 
     fun clearQrCode() {
+        qrLoadJob?.cancel()
+        qrLoadJob = null
         qrcode.value = null
         state.value = false
     }

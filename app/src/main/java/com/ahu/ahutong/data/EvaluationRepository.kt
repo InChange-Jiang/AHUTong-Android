@@ -1,10 +1,11 @@
 package com.ahu.ahutong.data
 
+import com.ahu.ahutong.core.common.toUserMessage
 import android.net.Uri
 import android.util.Log
 import com.ahu.ahutong.data.crawler.api.jwxt.EvaluationApi
 import com.ahu.ahutong.data.crawler.manager.CookieManager
-import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.core.common.AhuResult
 import com.ahu.ahutong.data.model.EvalApiResponse
 import com.ahu.ahutong.data.model.EvalCheckParam
 import com.ahu.ahutong.data.model.EvalQuestion
@@ -20,6 +21,10 @@ import com.google.gson.JsonElement
 import com.google.gson.reflect.TypeToken
 import retrofit2.HttpException
 import java.net.URLDecoder
+import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.session.DefaultAhuSession
+import com.ahu.ahutong.data.crawler.net.SessionRefreshCoordinator
+import kotlinx.coroutines.CancellationException
 
 object EvaluationRepository {
 
@@ -27,7 +32,7 @@ object EvaluationRepository {
     private const val EVALUATION_SERVICE_URL =
         "https://jw.ahu.edu.cn/eams5-evaluation-service/"
 
-    private val api = EvaluationApi.API
+    private val api by lazy { EvaluationApi.API }
     private val gson = Gson()
 
     @Volatile
@@ -36,7 +41,9 @@ object EvaluationRepository {
     @Volatile
     private var currentSemesterId: String = ""
 
-    suspend fun getSemesters(): Result<List<EvalSemester>> = runCatching {
+    private val sessionGate = EvaluationSessionGate()
+
+    suspend fun getSemesters(): AhuResult<List<EvalSemester>> = evalResult {
         requestWithSession { api.getSemesters() }.requireData().orEmpty().map { semester ->
             semester.copy(
                 id = semester.id.orEmpty(),
@@ -50,12 +57,29 @@ object EvaluationRepository {
 
     fun getCurrentSemesterId(): String = currentSemesterId
 
+    /** 登出或切换账号时同时清掉内存、请求头、持久副本与评教域 Cookie。 */
+    suspend fun clearSession() {
+        sessionGate.withSession {
+            clearSessionState("session cleared")
+        }
+    }
+
+    private fun clearSessionState(reason: String) {
+        token = ""
+        currentSemesterId = ""
+        EvaluationApi.setAuthorizationToken("")
+        runCatching { SessionStore.saveEvalToken("") }
+            .onFailure { Log.w(TAG, "failed to clear persisted evaluation token", it) }
+        runCatching { clearEvaluationServiceCookies(reason) }
+            .onFailure { Log.w(TAG, "failed to clear evaluation cookies", it) }
+    }
+
     suspend fun getEvaluationList(
         semesterId: String,
         evaluated: Boolean = false,
         page: Int = 1,
         pageSize: Int = 50
-    ): Result<List<EvalTaskItem>> = runCatching {
+    ): AhuResult<List<EvalTaskItem>> = evalResult {
         requestWithSession {
             api.getEvaluationList(
                 page = "$page,$pageSize",
@@ -65,7 +89,7 @@ object EvaluationRepository {
         }.requireData().items.orEmpty().map(EvalTaskItem::sanitized)
     }
 
-    suspend fun getQuestions(questionnaireId: String): Result<EvalQuestionnaireForm> = runCatching {
+    suspend fun getQuestions(questionnaireId: String): AhuResult<EvalQuestionnaireForm> = evalResult {
         val questionnaire = requestWithSession {
             api.getQuestionnaire(questionnaireId)
         }.requireData()
@@ -85,24 +109,26 @@ object EvaluationRepository {
         EvalQuestionnaireForm(sanitizedQuestionnaire, questions)
     }
 
-    suspend fun checkParam(stdSumTaskId: String): Result<EvalCheckParam> = runCatching {
+    suspend fun checkParam(stdSumTaskId: String): AhuResult<EvalCheckParam> = evalResult {
         requestWithSession { api.checkParam(stdSumTaskId) }.requireData()
     }
 
-    suspend fun checkSubmit(request: EvalSubmitRequest): Result<String> = runCatching {
+    suspend fun checkSubmit(request: EvalSubmitRequest): AhuResult<String> = evalResult {
         val response = requestWithSession { api.checkSubmit(request) }
         check(response.code == 0) { response.msg.orEmpty().ifBlank { "提交检查失败" } }
         response.data.orEmpty()
     }
 
-    suspend fun submit(request: EvalSubmitRequest): Result<Unit> = runCatching {
+    suspend fun submit(request: EvalSubmitRequest): AhuResult<Unit> = evalResult {
         val response = requestWithSession { api.submit(request) }
         check(response.code == 0) { response.msg.orEmpty().ifBlank { "提交失败" } }
     }
 
     private suspend fun <T> requestWithSession(
         block: suspend () -> EvalApiResponse<T>
-    ): EvalApiResponse<T> {
+    ): EvalApiResponse<T> = sessionGate.withSession {
+        // ponytail: one serialized evaluation session; move tokens onto each request if parallel
+        // evaluation calls ever become a measured requirement.
         ensureToken(forceRefresh = false)
         val first = try {
             block()
@@ -111,29 +137,29 @@ object EvaluationRepository {
                 throw IllegalStateException("评教接口请求失败（HTTP ${e.code()}）", e)
             }
             ensureToken(forceRefresh = true)
-            return callEvaluationApi("评教接口请求失败") { block() }
+            return@withSession callEvaluationApi("评教接口请求失败") { block() }
         }
-        if (first.code == 0) return first
+        if (first.code == 0) return@withSession first
 
         // Business validation errors are final responses, not evidence of an expired login.
         // Retrying every non-zero response forced a complete token bootstrap and made the
         // evaluation page look broken or extremely slow.
-        if (!first.indicatesExpiredSession()) return first
+        if (!first.indicatesExpiredSession()) return@withSession first
 
         ensureToken(forceRefresh = true)
-        return callEvaluationApi("评教接口请求失败") { block() }
+        callEvaluationApi("评教接口请求失败") { block() }
     }
 
     private suspend fun ensureToken(forceRefresh: Boolean): String {
         if (!forceRefresh && token.isNotBlank()) return token
 
         if (!forceRefresh) {
-            val cached = AHUCache.getEvalToken().orEmpty()
+            val cached = SessionStore.evalToken().orEmpty()
             if (cached.isNotBlank()) {
                 val renewed = renewToken(cached)
                 renewed.getOrNull()?.let { return it }
                 Log.i(TAG, "cached eval token is not reusable (details suppressed)")
-                AHUCache.saveEvalToken("")
+                SessionStore.saveEvalToken("")
             }
         }
 
@@ -158,7 +184,7 @@ object EvaluationRepository {
             api.getAccount(renewed)
         }
         check(account.code == 0) { account.msg.orEmpty().ifBlank { "评教身份初始化失败" } }
-        currentSemesterId = account.data?.currentSemesterId.orEmpty()
+        val renewedSemesterId = account.data?.currentSemesterId.orEmpty()
         val identity = account.data?.currentIdentity
             ?.takeIf { it.isNotBlank() }
             ?: "STUDENT"
@@ -171,8 +197,10 @@ object EvaluationRepository {
         val menu = getHomeMenuWithCookieRetry(identity)
         check(menu.code == 0) { menu.msg.orEmpty().ifBlank { "评教菜单初始化失败" } }
         Log.i(TAG, "eval menu initialized")
+        SessionStore.saveEvalToken(renewed)
+        currentSemesterId = renewedSemesterId
         token = renewed
-        AHUCache.saveEvalToken(renewed)
+        EvaluationApi.setAuthorizationToken(renewed)
         renewed
     }
 
@@ -239,21 +267,11 @@ object EvaluationRepository {
     }
 
     private suspend fun refreshJwxtSession(reason: String) {
-        val username = AHUCache.getCurrentUser()?.xh?.toString().orEmpty()
-        val password = AHUCache.getWisdomPassword().orEmpty()
-        check(username.isNotBlank() && password.isNotBlank()) {
-            "教务登录态已失效，请重新登录后再试"
-        }
-
         Log.i(TAG, "refresh jwxt session for evaluation: $reason")
-        token = ""
-        currentSemesterId = ""
-        AHUCache.saveEvalToken("")
-        EvaluationApi.setAuthorizationToken("")
-        val loginResponse = AHURepository.loginWithCrawler(username, password)
-        check(loginResponse.isSuccessful) {
-            loginResponse.msg?.ifBlank { "教务静默登录失败，请重新登录后再试" }
-                ?: "教务静默登录失败，请重新登录后再试"
+        val observedGeneration = SessionRefreshCoordinator.currentGeneration()
+        clearSessionState("before jwxt session refresh")
+        check(DefaultAhuSession.ensureFresh(observedGeneration)) {
+            "教务静默登录失败，请重新登录后再试"
         }
         Log.i(TAG, "jwxt session refreshed for evaluation")
     }
@@ -289,9 +307,25 @@ object EvaluationRepository {
             .take(300)
     }
 
+    /**
+     * 统一出口：内部仍以异常表达失败（`check` / `requireData` / 网络异常），但**不跨模块边界**——
+     * 对外只有 [AhuResult]（ADR 0001 规则 1），分类走唯一的 `toAhuError()`。
+     *
+     * 比 `runCatching` 多做一件事：取消原样抛出。否则界面已经关闭，请求仍会继续跑完并把错误提示写回去。
+     */
+    private inline fun <T> evalResult(block: () -> T): AhuResult<T> = try {
+        AhuResult.Success(block())
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        AhuResult.Failure(e.toAhuError())
+    }
+
     private fun <T> EvalApiResponse<T>.requireData(): T {
-        check(code == 0 && data != null) { msg.orEmpty().ifBlank { "评教接口返回异常" } }
-        return data
+        // EvalApiResponse 已迁到 :core:model，跨模块属性无法智能转换，先取局部变量。
+        val payload = data
+        check(code == 0 && payload != null) { msg.orEmpty().ifBlank { "评教接口返回异常" } }
+        return payload
     }
 
     private fun EvalApiResponse<*>.indicatesExpiredSession(): Boolean {

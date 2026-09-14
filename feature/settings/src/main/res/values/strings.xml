@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        贡献名单与开源许可页面自己用的文案。入口标题（R.string.contributors / R.string.license）
+        由宿主传入：枢纽页也用它，字符串仍留在 :app。
+    -->
+    <string name="mine_tv_developer">开发者</string>
+    <string name="mine_tv_partner">加入我们</string>
+    <string name="close">关闭</string>
+    <string name="view_source">查看源代码</string>
+    <string name="license_load_failed">无法读取许可证资源：%1$s</string>
+    <!-- 设置枢纽页自己的文案。应用名、图标与许可/贡献入口标题由宿主传入：它们属于 :app。 -->
+    <string name="setting">设置</string>
+    <string name="preferences">偏好设置</string>
+    <string name="check_update">检查更新</string>
+    <string name="mine_tv_feedback">意见反馈</string>
+    <string name="update_intro">更新日志</string>
+    <string name="setting_clear">清除数据</string>
+</resources>

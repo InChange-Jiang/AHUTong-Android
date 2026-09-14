@@ -2,7 +2,9 @@ package com.ahu.ahutong.data.crawler.api.jwxt
 
 import android.util.Log
 import com.ahu.ahutong.data.crawler.manager.CookieManager
-import com.ahu.ahutong.data.crawler.net.AutoLoginInterceptor
+import com.ahu.ahutong.data.network.campusAutoLogin
+import com.ahu.ahutong.data.network.campusCookies
+import com.ahu.ahutong.data.session.RepositorySessionExpiryHook
 import com.ahu.ahutong.data.model.EvalAccount
 import com.ahu.ahutong.data.model.EvalApiResponse
 import com.ahu.ahutong.data.model.EvalCheckParam
@@ -18,14 +20,14 @@ import okhttp3.Request
 import okhttp3.ResponseBody
 import okio.Buffer
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface EvaluationApi {
 
@@ -90,11 +92,17 @@ interface EvaluationApi {
         @Volatile
         private var authorizationToken: String = ""
 
-        private val client = OkHttpClient.Builder()
-            .cookieJar(CookieManager.cookieJar)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .addNetworkInterceptor(AutoLoginInterceptor())
+        private val client by lazy { AhuHttp.plain(
+            connectTimeoutSeconds = 15,
+            readTimeoutSeconds = 30,
+            writeTimeoutSeconds = 15
+        )
+            .campusCookies(
+                cookieJar = CookieManager.cookieJar,
+                followRedirects = false,
+                followSslRedirects = false
+            )
+            .campusAutoLogin(RepositorySessionExpiryHook())
             .addNetworkInterceptor { chain ->
                 val response = chain.proceed(chain.request())
                 if (response.code == 401 && response.request.url.encodedPath
@@ -139,17 +147,10 @@ interface EvaluationApi {
                 }
                 chain.proceed(builder.build())
             }
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
             .build()
+        }
 
-        val API: EvaluationApi = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(EvaluationApi::class.java)
+        val API: EvaluationApi by lazy { retrofit(BASE_URL, client).create(EvaluationApi::class.java) }
 
         fun setAuthorizationToken(token: String) {
             authorizationToken = token

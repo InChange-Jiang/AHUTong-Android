@@ -8,6 +8,7 @@ import com.ahu.ahutong.data.server.AhuTong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+import com.ahu.ahutong.data.session.SessionStore
 
 enum class GrayOverride(
     val storageValue: String,
@@ -167,7 +168,7 @@ object GrayReleaseManager {
     }
 
     private fun subjectKey(context: Context): String {
-        AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let { userId ->
+        SessionStore.currentUser()?.xh?.takeIf { it.isNotBlank() }?.let { userId ->
             return sha256("user:$userId")
         }
 

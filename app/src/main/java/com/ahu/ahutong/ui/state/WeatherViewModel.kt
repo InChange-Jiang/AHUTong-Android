@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 import javax.inject.Inject
+import com.ahu.ahutong.data.session.SessionStore
 
 enum class WeatherHomeMode(val cacheValue: String) {
     Detailed("detailed"),
@@ -54,7 +55,7 @@ data class WeatherHomeConfig(
         AHUCache.saveWeatherHomeShowWeather(showWeather)
         AHUCache.saveWeatherHomeShowAqi(showAqi)
         AHUCache.saveWeatherHomeShowLocation(showLocation)
-        cachedConfig = CachedWeatherHomeConfig(AHUCache.getCurrentUser()?.xh, this)
+        cachedConfig = CachedWeatherHomeConfig(SessionStore.currentUser()?.xh, this)
     }
 
     companion object {
@@ -67,7 +68,7 @@ data class WeatherHomeConfig(
         private var cachedConfig: CachedWeatherHomeConfig? = null
 
         fun fromCache(): WeatherHomeConfig {
-            val userId = AHUCache.getCurrentUser()?.xh
+            val userId = SessionStore.currentUser()?.xh
             cachedConfig
                 ?.takeIf { it.userId == userId }
                 ?.let { return it.config }

@@ -1,12 +1,12 @@
 package com.ahu.ahutong.data.repository
 
 import okhttp3.OkHttpClient
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Path
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface GitHubApi {
 
@@ -30,11 +30,11 @@ interface GitHubApi {
         private const val BASE_URL = "https://api.github.com/"
 
         val instance: GitHubApi by lazy {
-            val client = OkHttpClient.Builder()
-                .connectTimeout(8, TimeUnit.SECONDS)
-                .readTimeout(12, TimeUnit.SECONDS)
-                .callTimeout(18, TimeUnit.SECONDS)
-                .retryOnConnectionFailure(true)
+            val client = AhuHttp.plain(
+                connectTimeoutSeconds = 8,
+                readTimeoutSeconds = 12,
+                callTimeoutSeconds = 18
+            )
                 .addInterceptor { chain ->
                     val request = chain.request().newBuilder()
                         .header("Accept", "application/vnd.github.v3+json")
@@ -45,12 +45,7 @@ interface GitHubApi {
                 }
                 .build()
 
-            Retrofit.Builder()
-                .baseUrl(BASE_URL)
-                .client(client)
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
-                .create(GitHubApi::class.java)
+            retrofit(BASE_URL, client).create(GitHubApi::class.java)
         }
     }
 }

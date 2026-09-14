@@ -86,7 +86,7 @@ jobs:
           cargo clippy --manifest-path sdk/Cargo.toml --all-targets -- --allow clippy::invalid_regex
 
       - name: Test and build debug Android
-        run: ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" -Pkotlin.compiler.execution.strategy=in-process :app:testDebugUnitTest :app:assembleDebug --stacktrace
+        run: ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" -Pkotlin.compiler.execution.strategy=in-process testDebugUnitTest :app:assembleDebug --stacktrace
 
       - name: Lint release Android
         run: ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" -Pkotlin.compiler.execution.strategy=in-process :app:lintRelease --stacktrace
@@ -94,6 +94,28 @@ jobs:
       - name: Build release Android
         run: ./gradlew --no-daemon -Dorg.gradle.jvmargs="-Xmx4096m -Dfile.encoding=UTF-8" -Pkotlin.compiler.execution.strategy=in-process :app:assembleRelease --stacktrace
 
+
+      - name: Secret scan
+        run: |
+          set -euo pipefail
+          fail=0
+          # 客户端公开标识也不该散落在源码里：它们在 buildConfigField 中，可由属性或环境变量覆盖。
+          if grep -rn "2c2ccadcad" --include="*.kt" --include="*.java" app core data feature background; then
+            echo "::error::Bugly appid 出现在源码里，应放在 buildConfigField"
+            fail=1
+          fi
+          # 本地凭据文件绝不允许进仓库。
+          for f in keystore.properties local.properties; do
+            if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+              echo "::error::$f 被提交进仓库"
+              fail=1
+            fi
+          done
+          if git ls-files | grep -E '\.(jks|keystore)$'; then
+            echo "::error::密钥库文件被提交进仓库"
+            fail=1
+          fi
+          exit $fail
       - name: Upload debug APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

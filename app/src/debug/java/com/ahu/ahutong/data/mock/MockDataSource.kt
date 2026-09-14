@@ -1,6 +1,7 @@
 package com.ahu.ahutong.data.mock
 
-import com.ahu.ahutong.data.AHUResponse
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
 import com.ahu.ahutong.data.base.BaseDataSource
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
@@ -19,6 +20,7 @@ import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.model.Exam
 import com.ahu.ahutong.data.model.GpaRankInfo
 import com.ahu.ahutong.data.model.Grade
+import com.ahu.ahutong.data.server.model.SchoolCalendarYearsResponse
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import okhttp3.MediaType.Companion.toMediaType
@@ -36,31 +38,31 @@ class MockDataSource : BaseDataSource {
     override suspend fun getSchedule(
         schoolYear: String,
         schoolTerm: String
-    ): AHUResponse<List<Course>> =
+    ): AhuResult<List<Course>> =
         scenarioResponse(
             endpoint = MockEditableEndpoint.CurrentSchedule,
             type = object : TypeToken<List<Course>>() {}.type
         ) { it.academic.currentSchedule }
 
-    override suspend fun getSchedule(): AHUResponse<List<Course>> =
+    override suspend fun getSchedule(): AhuResult<List<Course>> =
         scenarioResponse(
             endpoint = MockEditableEndpoint.CurrentSchedule,
             type = object : TypeToken<List<Course>>() {}.type
         ) { it.academic.currentSchedule }
 
-    override suspend fun getNextSchedule(): AHUResponse<List<Course>> =
+    override suspend fun getNextSchedule(): AhuResult<List<Course>> =
         scenarioResponse(
             endpoint = MockEditableEndpoint.NextSchedule,
             type = object : TypeToken<List<Course>>() {}.type
         ) { it.academic.nextSchedule }
 
-    override suspend fun getGrade(): AHUResponse<Grade> =
+    override suspend fun getGrade(): AhuResult<Grade> =
         scenarioResponse(MockEditableEndpoint.Grade, Grade::class.java) { it.academic.grade }
 
-    override suspend fun getCardMoney(): AHUResponse<Card> =
+    override suspend fun getCardMoney(): AhuResult<Card> =
         scenarioResponse(MockEditableEndpoint.CardMoney, Card::class.java) { it.payment.cardMoney }
 
-    override suspend fun getBathRooms(): AHUResponse<List<BathRoom>> =
+    override suspend fun getBathRooms(): AhuResult<List<BathRoom>> =
         scenarioResponse(
             endpoint = MockEditableEndpoint.Bathrooms,
             type = object : TypeToken<List<BathRoom>>() {}.type
@@ -69,7 +71,7 @@ class MockDataSource : BaseDataSource {
     override suspend fun getExamInfo(
         studentID: String,
         studentName: String
-    ): AHUResponse<List<Exam>> =
+    ): AhuResult<List<Exam>> =
         scenarioResponse(
             endpoint = MockEditableEndpoint.Exams,
             type = object : TypeToken<List<Exam>>() {}.type
@@ -78,7 +80,7 @@ class MockDataSource : BaseDataSource {
     override suspend fun getBathroomTelInfo(
         bathroom: String,
         tel: String
-    ): AHUResponse<BathroomTelInfo> {
+    ): AhuResult<BathroomTelInfo> {
         val scenario = MockScenarioController.activeScenario()
         activeBehavior(scenario).failureOrNull<BathroomTelInfo>()?.let { return it }
         val accounts = overrideValue<Map<String, BathroomTelInfo>>(
@@ -102,12 +104,12 @@ class MockDataSource : BaseDataSource {
         )
     }
 
-    override suspend fun getCardInfo(): AHUResponse<CardInfo> =
+    override suspend fun getCardInfo(): AhuResult<CardInfo> =
         scenarioResponse(MockEditableEndpoint.CardInfo, CardInfo::class.java) { it.payment.cardInfo }
 
     override suspend fun getOrderThirdData(
         request: RequestBody
-    ): AHUResponse<Response<ResponseBody>> {
+    ): AhuResult<Response<ResponseBody>> {
         val scenario = MockScenarioController.activeScenario()
         val behavior = activeBehavior(scenario)
         behavior.failureOrNull<Response<ResponseBody>>()?.let { return it }
@@ -130,7 +132,7 @@ class MockDataSource : BaseDataSource {
 
     override suspend fun pay(
         request: RequestBody
-    ): AHUResponse<Response<ResponseBody>> {
+    ): AhuResult<Response<ResponseBody>> {
         val scenario = MockScenarioController.activeScenario()
         val behavior = activeBehavior(scenario)
         behavior.failureOrNull<Response<ResponseBody>>()?.let { return it }
@@ -150,15 +152,15 @@ class MockDataSource : BaseDataSource {
         return success(mockResponse(body, orderId))
     }
 
-    override suspend fun getGpaRankFromHtml(studentId: String): AHUResponse<GpaRankInfo> =
+    override suspend fun getGpaRankFromHtml(studentId: String): AhuResult<GpaRankInfo> =
         scenarioResponse(MockEditableEndpoint.GpaRank, GpaRankInfo::class.java) { it.academic.gpaRankInfo }
 
-    override suspend fun getAllCampus(): AHUResponse<AllCampus> =
+    override suspend fun getAllCampus(): AhuResult<AllCampus> =
         scenarioResponse(MockEditableEndpoint.LostFoundCampuses, AllCampus::class.java) {
             it.discovery.lostFoundCampuses
         }
 
-    override suspend fun getAllLostFoundType(): AHUResponse<AllLostFoundType> =
+    override suspend fun getAllLostFoundType(): AhuResult<AllLostFoundType> =
         scenarioResponse(MockEditableEndpoint.LostFoundTypes, AllLostFoundType::class.java) {
             it.discovery.lostFoundTypes
         }
@@ -167,7 +169,7 @@ class MockDataSource : BaseDataSource {
         pageNo: Int,
         pageSize: Int,
         state: Int
-    ): AHUResponse<LostFoundResponse> {
+    ): AhuResult<LostFoundResponse> {
         val scenario = MockScenarioController.activeScenario()
         activeBehavior(scenario).failureOrNull<LostFoundResponse>()?.let { return it }
         val items = overrideValue<List<LostFoundItem>>(
@@ -196,7 +198,7 @@ class MockDataSource : BaseDataSource {
         )
     }
 
-    override suspend fun getSchoolCalendar(): AHUResponse<Response<ResponseBody>> =
+    override suspend fun getSchoolCalendar(): AhuResult<Response<ResponseBody>> =
         scenarioResponse { scenario ->
             Response.success(
                 Base64.getDecoder()
@@ -205,14 +207,25 @@ class MockDataSource : BaseDataSource {
             )
         }
 
+    override suspend fun getSchoolCalendarYears(): AhuResult<SchoolCalendarYearsResponse> =
+        scenarioResponse {
+            SchoolCalendarYearsResponse(
+                years = listOf("2026-2027", "2025-2026", "2024-2025"),
+                latestYear = "2026-2027"
+            )
+        }
+
+    override suspend fun getSchoolCalendar(year: String): AhuResult<Response<ResponseBody>> =
+        getSchoolCalendar()
+
     override suspend fun publishLostFound(
         request: LostFoundPublishRequest
-    ): AHUResponse<Any> =
+    ): AhuResult<Any> =
         scenarioResponse { Any() }
 
     override suspend fun deleteLostFound(
         id: String
-    ): AHUResponse<Any> =
+    ): AhuResult<Any> =
         scenarioResponse { Any() }
 
     private fun mockResponse(json: String, orderId: String): Response<ResponseBody> {
@@ -233,13 +246,13 @@ class MockDataSource : BaseDataSource {
         endpoint: MockEditableEndpoint,
         type: java.lang.reflect.Type,
         block: (MockScenario) -> T
-    ): AHUResponse<T> {
+    ): AhuResult<T> {
         val scenario = MockScenarioController.activeScenario()
         activeBehavior(scenario).failureOrNull<T>()?.let { return it }
         return success(overrideValue(endpoint, type) ?: block(scenario))
     }
 
-    private fun <T> scenarioResponse(block: (MockScenario) -> T): AHUResponse<T> {
+    private fun <T> scenarioResponse(block: (MockScenario) -> T): AhuResult<T> {
         val scenario = MockScenarioController.activeScenario()
         activeBehavior(scenario).failureOrNull<T>()?.let { return it }
         return success(block(scenario))
@@ -267,22 +280,15 @@ class MockDataSource : BaseDataSource {
             runCatching { gson.fromJson(raw, type) }.getOrNull()
         }
 
-    private fun <T> MockBehavior.failureOrNull(): AHUResponse<T>? =
+    private fun <T> MockBehavior.failureOrNull(): AhuResult<T>? =
         if (shouldFail) failure(errorMessage) else null
 
-    private fun <T> success(data: T, msg: String = "success"): AHUResponse<T> =
-        AHUResponse<T>().apply {
-            code = 0
-            this.msg = msg
-            this.data = data
-        }
+    /** msg 参数保留以兼容既有调用点；统一错误模型下成功结果不再携带文案。 */
+    @Suppress("UNUSED_PARAMETER")
+    private fun <T> success(data: T, msg: String = "success"): AhuResult<T> = AhuResult.Success(data)
 
-    private fun <T> failure(msg: String): AHUResponse<T> =
-        AHUResponse<T>().apply {
-            code = -1
-            this.msg = msg
-            data = null
-        }
+    private fun <T> failure(msg: String): AhuResult<T> =
+        AhuResult.Failure(AhuError.Server(-1, msg))
 }
 
 object MockCampusData {

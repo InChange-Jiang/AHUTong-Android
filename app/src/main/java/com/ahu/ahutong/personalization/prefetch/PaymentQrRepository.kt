@@ -8,6 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -31,7 +32,11 @@ class SensitiveQrEnvelope internal constructor(
 }
 
 @Singleton
-class PaymentQrRepository @Inject constructor() {
+class PaymentQrRepository internal constructor(
+    private val firstPartyRequest: suspend () -> Result<String>
+) {
+    @Inject constructor() : this(firstPartyRequest = ::requestPaymentQrFirstParty)
+
     private val mutex = Mutex()
     private val requestGeneration = AtomicLong(0)
     @Volatile private var profileKey: String? = null
@@ -52,6 +57,14 @@ class PaymentQrRepository @Inject constructor() {
     }
 
     suspend fun getForDisplay(forceRefresh: Boolean = false): Result<String> {
+        if (!forceRefresh) {
+            consumeFreshForDisplay()?.let { return Result.success(it) }
+        }
+        // The foreground payment flow must remain available while the optional prediction
+        // profile is still starting. Without a profile there is nothing safe to cache, so
+        // request the same audited first-party endpoint and return the value directly.
+        if (profileKey == null) return firstPartyRequest()
+
         val result = fetch(forceRefresh = forceRefresh, predictive = false)
         return result.map(SensitiveQrEnvelope::value)
     }
@@ -121,21 +134,18 @@ class PaymentQrRepository @Inject constructor() {
         val expectedProfileGeneration = profileGeneration
         val expectedLoginGeneration = loginGeneration
         val generation = requestGeneration.incrementAndGet()
-        val response = AdwmhApi.API.getQrcode()
-        if (response.code != 10000 || response.`object`.isBlank()) {
-            return@withContext Result.failure(IllegalStateException("payment QR request rejected"))
-        }
+        val value = firstPartyRequest().getOrElse { return@withContext Result.failure(it) }
         if (activeProfile != profileKey || expectedProfileGeneration != profileGeneration || expectedLoginGeneration != loginGeneration) {
             return@withContext Result.failure(IllegalStateException("profile generation changed"))
         }
         val nowElapsed = SystemClock.elapsedRealtime()
-        val serverExpiryEpochMs = parseServerExpiryEpochMs(response.`object`)
+        val serverExpiryEpochMs = parseServerExpiryEpochMs(value)
         val serverRemaining = serverExpiryEpochMs?.minus(System.currentTimeMillis())
         val verified = serverRemaining != null && serverRemaining in 1..MAX_REASONABLE_SERVER_TTL_MS
         val clientTtl = if (verified) minOf(CLIENT_MAX_TTL_MS, serverRemaining!!) else CLIENT_MAX_TTL_MS
         Result.success(
             SensitiveQrEnvelope(
-                response.`object`,
+                value,
                 activeProfile,
                 expectedProfileGeneration,
                 expectedLoginGeneration,
@@ -171,4 +181,17 @@ class PaymentQrRepository @Inject constructor() {
         // Flip only after the first-party API contract exposes and documents a verifiable expiry.
         const val PREDICTIVE_PROTOCOL_EXPIRY_VERIFIED = false
     }
+}
+
+private suspend fun requestPaymentQrFirstParty(): Result<String> = try {
+    val response = AdwmhApi.API.getQrcode()
+    if (response.code == 10000 && response.`object`.isNotBlank()) {
+        Result.success(response.`object`)
+    } else {
+        Result.failure(IllegalStateException("payment QR request rejected"))
+    }
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (error: Throwable) {
+    Result.failure(error)
 }

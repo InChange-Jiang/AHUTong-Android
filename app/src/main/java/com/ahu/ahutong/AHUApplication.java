@@ -9,13 +9,16 @@ import android.widget.Toast;
 import com.ahu.ahutong.sdk.LocalServiceClient;
 import com.ahu.ahutong.sdk.RustSDK;
 import com.tencent.bugly.crashreport.CrashReport;
+import io.sentry.android.core.SentryAndroid;
 import com.ahu.ahutong.data.AHURepository;
 import com.ahu.ahutong.data.dao.AHUCache;
+import com.ahu.ahutong.core.common.AppEnvironmentHolder;
+import com.ahu.ahutong.core.common.UserNoticeHolder;
+import com.ahu.ahutong.data.debug.DebugTimeSourceHolder;
 import com.ahu.ahutong.data.xuexiaotong.Store;
 import com.ahu.ahutong.reminder.ReminderScheduler;
 import com.ahu.ahutong.notification.CourseReminderScheduler;
 
-import org.json.JSONObject;
 
 import java.util.HashSet;
 
@@ -30,23 +33,25 @@ import dagger.hilt.android.HiltAndroidApp;
 public class AHUApplication extends Application {
     private static final String TAG = "AHUApplication";
 
-    private static Application app;
-    {
-        app = this;
-    }
-
-    public volatile static Boolean sessionExpired = true;
-    public volatile static Object reLoginMutex = new Object();
-
-    public static Application getApp() {
-        return app;
-    }
-
     @Override
     public void onCreate() {
         super.onCreate();
 
-        CrashReport.initCrashReport(this, "2c2ccadcad", BuildConfig.DEBUG);
+        // 应用级环境的安装点：必须早于任何用到 Context 的非 UI 代码
+        // （MMKV 初始化、SecureStorage、Cookie 持久化都依赖它）。
+        AppEnvironmentHolder.INSTANCE.install(new AndroidAppEnvironment(this));
+        DebugTimeSourceHolder.INSTANCE.install(CacheDebugTimeSource.INSTANCE);
+        UserNoticeHolder.INSTANCE.install(ToastUserNotice.INSTANCE);
+
+        CrashReport.initCrashReport(this, BuildConfig.BUGLY_APP_ID, BuildConfig.DEBUG);
+
+        SentryAndroid.init(this, options -> {
+            options.setDsn(BuildConfig.SENTRY_DSN);
+            options.setEnvironment(BuildConfig.DEBUG ? "debug" : "release");
+            // 线上按比例采样，避免性能数据占满额度；Debug 全量便于排查。
+            options.setTracesSampleRate(BuildConfig.DEBUG ? 1.0 : 0.1);
+            options.setDebug(BuildConfig.DEBUG);
+        });
 
         // 学习通日历初始化
         Store.INSTANCE.init(this);
@@ -81,39 +86,6 @@ public class AHUApplication extends Application {
         }
     }
 
-    /**
-     * 启动 Rust 本地 HTTP 服务
-     */
-    private void startLocalService() {
-        // 确保 native library 已加载
-        if (!RustSDK.INSTANCE.isNativeLoaded()) {
-            Log.w(TAG, "Native library not loaded yet, skipping local service start");
-            return;
-        }
-
-        try {
-            // 启动服务，端口 0 表示随机分配
-            String result = RustSDK.INSTANCE.startServer(0);
-            Log.i(TAG, "Local service startup completed (credentials suppressed)");
-
-            if (result.contains("\"error\"")) {
-                Log.e(TAG, "Failed to start local server (response body suppressed)");
-                return;
-            }
-
-            // 解析返回的 port 和 token
-            JSONObject json = new JSONObject(result);
-            int port = json.getInt("port");
-            String token = json.getString("token");
-
-            // 初始化 LocalServiceClient 单例
-            LocalServiceClient.Companion.initialize(port, token);
-
-            Log.i(TAG, "Local service started successfully on port: " + port);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start local service", e);
-        }
-    }
 
     @Override
     public void onTerminate() {

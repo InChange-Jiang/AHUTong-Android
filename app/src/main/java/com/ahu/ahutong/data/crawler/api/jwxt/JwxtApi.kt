@@ -1,6 +1,6 @@
 package com.ahu.ahutong.data.crawler.api.jwxt
 
-import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.data.network.NetworkLogging
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.model.jwxt.CourseTable
 import com.ahu.ahutong.data.crawler.model.jwxt.CurrentTeachWeek
@@ -9,15 +9,16 @@ import com.ahu.ahutong.data.crawler.model.jwxt.GetFreeRoomsRequest
 import com.ahu.ahutong.data.crawler.model.jwxt.GetFreeRoomsResponse
 import com.ahu.ahutong.data.crawler.model.jwxt.GetRoomsResponse
 import com.ahu.ahutong.data.crawler.model.jwxt.GradeResponse
-import com.ahu.ahutong.data.crawler.net.AutoLoginInterceptor
-import com.ahu.ahutong.data.crawler.net.TokenAuthenticator
+import com.ahu.ahutong.data.network.campusAutoLogin
+import com.ahu.ahutong.data.network.campusCookies
+import com.ahu.ahutong.data.network.campusSessionRefresh
+import com.ahu.ahutong.data.network.withoutCampusSessionRefresh
+import com.ahu.ahutong.data.session.RepositorySessionExpiryHook
 import okhttp3.OkHttpClient
 import okhttp3.Authenticator
 import okhttp3.ResponseBody
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Body
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -26,6 +27,14 @@ import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
+import com.ahu.ahutong.data.network.AhuHttp
+
+/**
+ * 用指定传输层与 baseUrl 构造接口实例（顶层函数，**不触发伴随对象初始化**，
+ * 因此契约测试可以在纯 JVM 环境里使用；生产的 [JwxtApi.API] 仍走同一实现）。
+ */
+fun createJwxtApi(client: OkHttpClient, baseUrl: String): JwxtApi =
+    retrofit(baseUrl, client).create(JwxtApi::class.java)
 
 interface JwxtApi {
 
@@ -117,18 +126,15 @@ interface JwxtApi {
             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
-        val loggingInterceptor = HttpLoggingInterceptor().apply {
-            redactHeader("Authorization")
-            redactHeader("Synjones-Auth")
-            redactHeader("Cookie")
-            redactHeader("Set-Cookie")
-            level = HttpLoggingInterceptor.Level.HEADERS
-        }
+        val loggingInterceptor = NetworkLogging.debugInterceptor()
 
         private val cookieJar = CookieManager.cookieJar
 
-        val okHttpClient = OkHttpClient.Builder()
-            .cookieJar(cookieJar)
+        val okHttpClient = AhuHttp.plain(
+            connectTimeoutSeconds = 15,
+            readTimeoutSeconds = 30,
+            writeTimeoutSeconds = 15
+        )
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request()
@@ -137,36 +143,21 @@ interface JwxtApi {
                         .build()
                 )
             }
-            .addNetworkInterceptor(AutoLoginInterceptor())
-            .authenticator(TokenAuthenticator())
-            .followRedirects(true)
-            .followSslRedirects(true)
-            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .campusAutoLogin(RepositorySessionExpiryHook())
+            .campusSessionRefresh(RepositorySessionExpiryHook())
+            .campusCookies(CookieManager.cookieJar)
             .apply {
-                if (BuildConfig.DEBUG) addNetworkInterceptor(loggingInterceptor)
+                loggingInterceptor?.let { addNetworkInterceptor(it) }
             }
             .build()
 
         private val loginOkHttpClient = okHttpClient.newBuilder()
-            .authenticator(Authenticator.NONE)
-            .apply {
-                networkInterceptors().removeAll { it is AutoLoginInterceptor }
-            }
+            .withoutCampusSessionRefresh()
             .build()
 
 
-        val API = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build().create(JwxtApi::class.java)
+        val API = createJwxtApi(okHttpClient, BASE_URL)
 
-        val LOGIN_API = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(loginOkHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build().create(JwxtApi::class.java)
+        val LOGIN_API = createJwxtApi(loginOkHttpClient, BASE_URL)
     }
 }

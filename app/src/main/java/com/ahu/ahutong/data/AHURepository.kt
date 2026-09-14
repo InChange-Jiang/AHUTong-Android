@@ -1,5 +1,9 @@
 package com.ahu.ahutong.data
 
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
+import com.ahu.ahutong.core.common.map
+import com.ahu.ahutong.data.model.LoginOutcome
 import android.util.Log
 import com.ahu.ahutong.data.base.BaseDataSource
 import com.ahu.ahutong.data.crawler.CrawlerDataSource
@@ -7,6 +11,9 @@ import com.ahu.ahutong.data.crawler.SdkDataSource
 import com.ahu.ahutong.data.crawler.api.adwmh.AdwmhApi
 import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
 import com.ahu.ahutong.data.crawler.configs.Constants
+import com.ahu.ahutong.data.crawler.login.AhuTongCaptchaSolver
+import com.ahu.ahutong.data.crawler.login.CrawlerLoginFlow
+import com.ahu.ahutong.data.crawler.login.CrawlerLoginOutcome
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
@@ -18,27 +25,26 @@ import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.BathroomTelInfo
 import com.ahu.ahutong.data.model.Course
-import com.ahu.ahutong.data.model.User
+import com.ahu.ahutong.data.schedule.ScheduleRefreshResult
+import com.ahu.ahutong.data.schedule.ScheduleSnapshotComparator
 import com.ahu.ahutong.data.mock.MockDataSource
 import com.ahu.ahutong.data.model.GpaRankInfo
 import com.ahu.ahutong.data.model.Grade
 import com.ahu.ahutong.data.model.GradeStudentProfile
 import com.ahu.ahutong.data.server.AhuTong
+import com.ahu.ahutong.data.server.model.SchoolCalendarYearsResponse
 import com.ahu.ahutong.sdk.LocalServiceClient
 import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.utils.DES
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import org.jsoup.Jsoup
 import retrofit2.Response
+import com.ahu.ahutong.data.session.SessionStore
 /**
  * @Author: SinkDev
  * @Date: 2021/7/31-下午9:12
@@ -47,6 +53,14 @@ import retrofit2.Response
 object AHURepository {
 
     val TAG = this::class.java.simpleName
+
+    /**
+     * 教务 WebView 与协议请求共用的浏览器标识。
+     *
+     * 登录页要让 WebView 与协议侧**看起来是同一个浏览器**，因此这个值由数据层给出，
+     * 界面不再 import 协议客户端（R2）。
+     */
+    val jwxtBrowserUserAgent: String get() = com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi.BROWSER_USER_AGENT
     const val WEB_VERIFICATION_REQUIRED_CODE = 412
 
     private enum class JwxtLoginResult {
@@ -66,11 +80,8 @@ object AHURepository {
         return !TokenManager.awaitToken().isNullOrBlank()
     }
 
-    private fun <T> ycardCredentialNotReadyResponse(): AHUResponse<T> =
-        AHUResponse<T>().apply {
-            code = -1
-            msg = "校园卡登录凭证暂未就绪，请稍后重试"
-        }
+    private fun <T> ycardCredentialNotReadyResponse(): AhuResult<T> =
+        AhuResult.Failure(AhuError.Server(-1, "校园卡登录凭证暂未就绪，请稍后重试"))
     
     /**
      * 获取 HTTP 客户端
@@ -82,53 +93,87 @@ object AHURepository {
      * @param isRefresh 是否强制刷新
      * @param isRetry 是否为重试（静默重登录后），防止无限循环
      */
-    suspend fun getSchedule(isRefresh: Boolean = false): Result<List<Course>> = withContext(Dispatchers.IO) {
+    suspend fun getSchedule(isRefresh: Boolean = false): AhuResult<List<Course>> = withContext(Dispatchers.IO) {
 
-        if (!isRefresh && !AHUCache.getMockData()) {
+        if (isRefresh) {
+            return@withContext refreshScheduleCache().map { it.schedule }
+        }
+
+        if (!AHUCache.getMockData()) {
             AHUCache.getSchoolTerm()?.let{
                 AHUCache.getSchedule(it)?.let{
                     Log.e(TAG, "getSchedule: 本地获取", )
-                    return@withContext Result.success(it)
+                    return@withContext AhuResult.Success(it)
                 }
             }
         }
 
         try {
-            val response = dataSource.getSchedule()
-            val schedule = response.data
-            if (response.isSuccessful && schedule != null) {
-                AHUCache.getSchoolTerm()?.let { AHUCache.saveSchedule(it, schedule) }
-                Result.success(schedule)
-
-            } else {
-                Result.failure(IllegalStateException(response.msg.ifBlank { "课表响应缺少数据" }))
+            when (val result = dataSource.getSchedule()) {
+                is AhuResult.Failure -> result
+                is AhuResult.Success -> {
+                    AHUCache.getSchoolTerm()?.let { AHUCache.saveSchedule(it, result.value) }
+                    result
+                }
             }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 
-    suspend fun getNextSchedule(isRefresh: Boolean = false): Result<List<Course>> = withContext(Dispatchers.IO) {
+    fun getCachedSchedule(): List<Course>? {
+        val semesterKey = AHUCache.getSchoolTerm() ?: return null
+        return AHUCache.getSchedule(semesterKey)
+    }
+
+    fun getScheduleFetchedAt(): Long? {
+        val semesterKey = AHUCache.getSchoolTerm() ?: return null
+        return AHUCache.getScheduleFetchedAt(semesterKey)
+    }
+
+    suspend fun refreshScheduleCache(
+        fetchedAt: Long = System.currentTimeMillis()
+    ): AhuResult<ScheduleRefreshResult> = withContext(Dispatchers.IO) {
+        try {
+            val semesterKey = AHUCache.getSchoolTerm()
+            val cached = semesterKey?.let(AHUCache::getSchedule)
+            val latest = when (val scheduleResult = dataSource.getSchedule()) {
+                is AhuResult.Failure -> return@withContext scheduleResult
+                is AhuResult.Success -> scheduleResult.value
+            }
+
+            val changed = ScheduleSnapshotComparator.hasChanged(cached, latest)
+            if (semesterKey != null) {
+                if (changed) AHUCache.saveSchedule(semesterKey, latest)
+                AHUCache.saveScheduleFetchedAt(semesterKey, fetchedAt)
+            }
+            AhuResult.Success(ScheduleRefreshResult(latest, changed, fetchedAt))
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            AhuResult.Failure(e.toAhuError())
+        }
+    }
+
+    suspend fun getNextSchedule(isRefresh: Boolean = false): AhuResult<List<Course>> = withContext(Dispatchers.IO) {
         if (!isRefresh && !AHUCache.getMockData()) {
             AHUCache.getNextSchedule()?.let {
                 Log.e(TAG, "getNextSchedule: 本地获取")
-                return@withContext Result.success(it)
+                return@withContext AhuResult.Success(it)
             }
         }
 
         try {
-            val response = dataSource.getNextSchedule()
-            val schedule = response.data
-            if (response.isSuccessful && schedule != null) {
-                AHUCache.saveNextSchedule(schedule)
-                Result.success(schedule)
-            } else {
-                Result.failure(IllegalStateException(response.msg.ifBlank { "下学期课表响应缺少数据" }))
+            when (val result = dataSource.getNextSchedule()) {
+                is AhuResult.Failure -> result
+                is AhuResult.Success -> {
+                    AHUCache.saveNextSchedule(result.value)
+                    result
+                }
             }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 
@@ -147,21 +192,16 @@ object AHURepository {
                 val merged = Grade()
                 merged.termGradeList = allTerms
                 merged.totalGradePointAverage = allTerms.firstOrNull()?.termGradePointAverage ?: "0.0"
-                return@withContext Result.success(merged)
+                return@withContext AhuResult.Success(merged)
             }
             // per-profile 缓存为空 → 走网络获取（同时会自动填充 per-profile 缓存）
         }
         try {
             if (!AHUCache.getMockData()) syncCookies()
-            val response = dataSource.getGrade()
-            if (response.isSuccessful) {
-                Result.success(response.data)
-            } else {
-                Result.failure(Throwable(response.msg))
-            }
+            dataSource.getGrade()
         } catch (e: Exception) {
             e.printStackTrace()
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 
@@ -219,20 +259,19 @@ object AHURepository {
             if (!isRefresh && !AHUCache.getMockData()) {
                 val localData = AHUCache.getExamInfo().orEmpty()
                 if (localData.isNotEmpty()) {
-                    return@withContext Result.success(localData)
+                    return@withContext AhuResult.Success(localData)
                 }
             }
             try {
-                val response = dataSource.getExamInfo(studentID, studentName)
-                if (response.isSuccessful) {
-                    val exams = response.data ?: emptyList()
-                    AHUCache.saveExamInfo(exams)
-                    Result.success(exams)
-                } else {
-                    Result.failure(Throwable(response.msg ?: "获取考试信息失败"))
+                when (val result = dataSource.getExamInfo(studentID, studentName)) {
+                    is AhuResult.Failure -> result
+                    is AhuResult.Success -> {
+                        AHUCache.saveExamInfo(result.value)
+                        result
+                    }
                 }
             } catch (e: Exception) {
-                Result.failure(Throwable("请求错误 $e"))
+                AhuResult.Failure(AhuError.Unknown("请求错误 $e"))
             }
         }
 
@@ -241,27 +280,17 @@ object AHURepository {
      */
     suspend fun getCardMoney() = withContext(Dispatchers.IO) {
         try {
-            val response = dataSource.getCardMoney()
-            if (response.isSuccessful) {
-                Result.success(response.data)
-            } else {
-                Result.failure(Throwable(response.msg))
-            }
+            dataSource.getCardMoney()
         } catch (e: Exception) {
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 
     suspend fun getBathRooms() = withContext(Dispatchers.IO) {
         try {
-            val response = dataSource.getBathRooms()
-            if (response.isSuccessful) {
-                Result.success(response.data)
-            } else {
-                Result.failure(Throwable(response.msg))
-            }
+            dataSource.getBathRooms()
         } catch (e: Exception) {
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 
@@ -273,24 +302,19 @@ object AHURepository {
         username: String,
         password: String,
         preferNative: Boolean = true
-    ): AHUResponse<User> =
+    ): AhuResult<LoginOutcome> =
         withContext(Dispatchers.IO) {
             if (preferNative) getHttpClient()?.let { httpClient ->
-                val result = AHUResponse<User>()
                 try {
                     httpClient.init("")
-                    AHUCache.saveRustCookies("")
+                    SessionStore.saveRustCookies("")
 
                     val loginResult = httpClient.login(username, password)
                     if (loginResult.isSuccess) {
                         val user = loginResult.getOrThrow()
-                        result.code = 0
-                        result.data = user
-                        result.msg = "登录成功"
-
                         persistRustCookies(httpClient)
                         syncCookies()
-                        return@withContext result
+                        return@withContext AhuResult.Success(LoginOutcome.Success(user))
                     }
 
                     Log.w(TAG, "Rust login failed, fallback to Android crawler", loginResult.exceptionOrNull())
@@ -301,21 +325,16 @@ object AHURepository {
             }
 
             if (preferNative && RustSDK.isNativeLoaded()) {
-                val result = AHUResponse<User>()
                 try {
                     RustSDK.initSafe("")
-                    AHUCache.saveRustCookies("")
+                    SessionStore.saveRustCookies("")
 
                     val loginResult = RustSDK.loginSafe(username, password)
                     if (loginResult.isSuccess) {
                         val user = loginResult.getOrThrow()
-                        result.code = 0
-                        result.data = user
-                        result.msg = "登录成功"
-
                         persistRustCookiesFromNative()
                         syncCookies()
-                        return@withContext result
+                        return@withContext AhuResult.Success(LoginOutcome.Success(user))
                     }
 
                     Log.w(TAG, "Rust JNI login failed, fallback to Android crawler", loginResult.exceptionOrNull())
@@ -325,133 +344,27 @@ object AHURepository {
                 }
             }
 
-            val adwmhLogin = async(Dispatchers.IO) {
-                try {
-                    var failedTimes = 0
-                    var info: Info? = null
-                    // Captcha recognition is fallible, so retry without letting one malformed
-                    // response cancel the parallel JWXT session refresh.
-                    while (failedTimes < 5) {
-                        Log.e(TAG, "loginWithCrawler: ${failedTimes + 1} 登录")
-                        val captchaBytes = AdwmhApi.LOGIN_API.getAuthCode().bytes()
-                        val captchaPart = MultipartBody.Part.createFormData(
-                            "captcha", "img.jpg",
-                            captchaBytes.toRequestBody("image/jpg".toMediaType())
-                        )
-                        val captcha = AhuTong.API
-                            .getCaptchaResult(captchaPart)
-                            .result
-
-                        info = AdwmhApi.LOGIN_API.loginWithCaptcha(
-                            username,
-                            password,
-                            0,
-                            captcha
-                        ).use { body ->
-                            Gson().fromJson(body.string(), Info::class.java)
-                        }
-
-                        if (info?.code == 10000) {
-                            Log.i(TAG, "Android crawler login succeeded")
-                            return@async info
-                        }
-                        failedTimes++
-                    }
-                    info
-                } catch (e: Throwable) {
-                    if (e is CancellationException) throw e
-                    Log.w(TAG, "Android crawler login failed without cancelling JWXT refresh", e)
-                    null
+            val flow = CrawlerLoginFlow(
+                jwxt = JwxtApi.LOGIN_API,
+                adwmh = AdwmhApi.LOGIN_API,
+                captchaSolver = AhuTongCaptchaSolver
+            )
+            when (val outcome = flow.login(username, password)) {
+                is CrawlerLoginOutcome.Succeeded -> {
+                    syncAndroidCookiesToRust()
+                    AhuResult.Success(LoginOutcome.Success(outcome.user))
                 }
+                is CrawlerLoginOutcome.WebVerificationRequired ->
+                    AhuResult.Success(LoginOutcome.JwxtWebVerificationRequired(outcome.user))
+                CrawlerLoginOutcome.CredentialsRejected ->
+                    AhuResult.Failure(AhuError.Unauthorized("用户名或密码错误，请重新输入"))
+                is CrawlerLoginOutcome.ProtocolChanged ->
+                    AhuResult.Failure(AhuError.ProtocolChanged(outcome.detail))
+                is CrawlerLoginOutcome.Upstream ->
+                    AhuResult.Failure(AhuError.Server(outcome.code, outcome.message))
+                is CrawlerLoginOutcome.TransportFailure ->
+                    AhuResult.Failure(outcome.error)
             }
-
-            val jwxtLogin = async {
-                val loginPage = JwxtApi.LOGIN_API.fetchLoginInfo()
-                val finalUrl = loginPage.raw().request.url.toString()
-
-                if (loginPage.code() == WEB_VERIFICATION_REQUIRED_CODE) {
-                    loginPage.errorBody()?.close()
-                    Log.w(TAG, "JWXT browser verification required")
-                    return@async JwxtLoginResult.WebVerificationRequired
-                }
-
-                if (!loginPage.isSuccessful) {
-                    loginPage.errorBody()?.close()
-                    Log.w(TAG, "JWXT login page failed with HTTP ${loginPage.code()}")
-                    return@async JwxtLoginResult.Failed
-                }
-
-                val loginBody = loginPage.body()
-                if (loginBody == null) {
-                    Log.w(TAG, "JWXT login page returned an empty body")
-                    return@async JwxtLoginResult.Failed
-                }
-
-                val document = Jsoup.parse(loginBody.use { it.string() })
-                val lt = document.selectFirst("input[name=lt]")?.attr("value")
-
-                lt?.let {
-                    val cipher = DES().strEnc(username + password + lt, "1", "2", "3")
-
-                    val res = JwxtApi.LOGIN_API.device(
-                        "https://one.ahu.edu.cn/cas/device",
-                        username.length,
-                        password.length,
-                        cipher
-                    )
-                    Log.d(TAG, "JWXT device handshake completed with HTTP ${res.code()}")
-
-                    val jwxtLoginUrl = "https://one.ahu.edu.cn/cas/login" +
-                            "?service=https%3A%2F%2Fjw.ahu.edu.cn%2Fstudent%2Fsso%2Flogin"
-
-                    val jwxtResponse = JwxtApi.LOGIN_API.login(
-                        jwxtLoginUrl,
-                        cipher,
-                        username.length,
-                        password.length,
-                        lt
-                    )
-
-                    if (jwxtResponse.raw().request.url.toString().endsWith(Constants.JWXT_HOME)) {
-                        return@async JwxtLoginResult.Succeeded
-                    }
-
-                } ?: run {
-                    if (finalUrl.endsWith(Constants.JWXT_HOME)) {
-                        return@async JwxtLoginResult.Succeeded
-                    } else {
-                        return@async JwxtLoginResult.Failed
-                    }
-                }
-
-                return@async JwxtLoginResult.Failed
-            }
-
-            val crawlerResult = adwmhLogin.await()
-            val jwxtLoginResult = jwxtLogin.await()
-
-            val result = AHUResponse<User>()
-            val user = crawlerResult
-                ?.takeIf { it.code == 10000 }
-                ?.let { User(it.`object`.user.userName, it.`object`.user.idNumber) }
-
-            if (user != null && jwxtLoginResult == JwxtLoginResult.WebVerificationRequired) {
-                result.code = WEB_VERIFICATION_REQUIRED_CODE
-                result.data = user
-                result.msg = "需要完成教务安全验证"
-                return@withContext result
-            }
-
-            if (user != null && jwxtLoginResult == JwxtLoginResult.Succeeded) {
-                syncAndroidCookiesToRust()
-                result.code = 0
-                result.data = user
-                result.msg = "登录成功"
-                return@withContext result
-            }
-            result.code = -1;
-            result.msg = "登录失败"
-            return@withContext result
         }
 
     /**
@@ -575,7 +488,7 @@ object AHURepository {
                     )
                 }
         )
-        AHUCache.saveRustCookies(cookiesJson)
+        SessionStore.saveRustCookies(cookiesJson)
 
         val localServiceImported = getHttpClient()
             ?.init(cookiesJson)
@@ -586,7 +499,7 @@ object AHURepository {
         }
     }
 
-    suspend fun importWebLoginCookies(cookiesJson: String): Result<Unit> =
+    suspend fun importWebLoginCookies(cookiesJson: String): AhuResult<Unit> =
         withContext(Dispatchers.IO) {
             try {
                 require(cookiesJson.isNotBlank() && cookiesJson != "[]") {
@@ -595,7 +508,7 @@ object AHURepository {
 
                 syncCookiesFromJson(cookiesJson)
                 verifyImportedJwxtSession()
-                AHUCache.saveRustCookies(cookiesJson)
+                SessionStore.saveRustCookies(cookiesJson)
 
                 getHttpClient()?.init(cookiesJson)?.onFailure {
                     Log.w(TAG, "Failed to import WebView cookies into local service", it)
@@ -604,11 +517,11 @@ object AHURepository {
                     RustSDK.initSafe(cookiesJson)
                 }
 
-                Result.success(Unit)
+                AhuResult.Success(Unit)
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
                 Log.w(TAG, "Failed to import WebView login cookies", e)
-                Result.failure(e)
+                AhuResult.Failure(e.toAhuError())
             }
         }
 
@@ -628,7 +541,7 @@ object AHURepository {
             Log.w(TAG, "Failed to persist Rust cookies", it)
             return
         }
-        AHUCache.saveRustCookies(cookies)
+        SessionStore.saveRustCookies(cookies)
         Log.d(TAG, "Persisted Rust cookies: ${cookies.length} bytes")
     }
 
@@ -636,7 +549,7 @@ object AHURepository {
         if (!RustSDK.isNativeLoaded()) return
         try {
             val cookies = RustSDK.dumpCookies().orEmpty()
-            AHUCache.saveRustCookies(cookies)
+            SessionStore.saveRustCookies(cookies)
             Log.d(TAG, "Persisted Rust JNI cookies: ${cookies.length} bytes")
         } catch (t: Throwable) {
             if (t is CancellationException) throw t
@@ -695,7 +608,7 @@ object AHURepository {
     }
 
 
-    suspend fun getBathroomInfo(bathroom: String, tel: String): AHUResponse<BathroomTelInfo> =
+    suspend fun getBathroomInfo(bathroom: String, tel: String): AhuResult<BathroomTelInfo> =
         withContext(Dispatchers.IO) {
             if (!ensureYcardCredential()) {
                 return@withContext ycardCredentialNotReadyResponse()
@@ -704,7 +617,7 @@ object AHURepository {
         }
 
 
-    suspend fun getCardInfo(): AHUResponse<CardInfo> =
+    suspend fun getCardInfo(): AhuResult<CardInfo> =
         withContext(Dispatchers.IO) {
             if (!ensureYcardCredential()) {
                 return@withContext ycardCredentialNotReadyResponse()
@@ -713,7 +626,7 @@ object AHURepository {
         }
 
 
-    suspend fun getOrderThirdData(request: RequestBody): AHUResponse<Response<ResponseBody>> =
+    suspend fun getOrderThirdData(request: RequestBody): AhuResult<Response<ResponseBody>> =
         withContext(Dispatchers.IO){
             if (!ensureYcardCredential()) {
                 return@withContext ycardCredentialNotReadyResponse()
@@ -721,7 +634,7 @@ object AHURepository {
             dataSource.getOrderThirdData(request)
         }
 
-    suspend fun pay(request: RequestBody):AHUResponse<Response<ResponseBody>> =
+    suspend fun pay(request: RequestBody): AhuResult<Response<ResponseBody>> =
         withContext(Dispatchers.IO){
             if (!ensureYcardCredential()) {
                 return@withContext ycardCredentialNotReadyResponse()
@@ -730,30 +643,40 @@ object AHURepository {
         }
 
 
-    suspend fun getSchoolCalendar(): AHUResponse<Response<ResponseBody>> =
+    suspend fun getSchoolCalendar(): AhuResult<Response<ResponseBody>> =
         withContext(Dispatchers.IO) {
             dataSource.getSchoolCalendar()
         }
 
-    suspend fun getGpaRankInfo(studentId: String): AHUResponse<GpaRankInfo> =
+    suspend fun getSchoolCalendarYears(): AhuResult<SchoolCalendarYearsResponse> =
+        withContext(Dispatchers.IO) {
+            dataSource.getSchoolCalendarYears()
+        }
+
+    suspend fun getSchoolCalendar(year: String): AhuResult<Response<ResponseBody>> =
+        withContext(Dispatchers.IO) {
+            dataSource.getSchoolCalendar(year)
+        }
+
+    suspend fun getGpaRankInfo(studentId: String): AhuResult<GpaRankInfo> =
         withContext(Dispatchers.IO) {
             Log.i(TAG, "getGpaRankInfo start studentId=${studentId.maskStudentId()}")
             syncCookies()
-            val response = dataSource.getGpaRankFromHtml(studentId)
+            val result = dataSource.getGpaRankFromHtml(studentId)
             Log.i(
                 TAG,
-                "getGpaRankInfo finish code=${response.code} hasData=${response.data != null} " +
-                    "msg=${response.msg.orEmpty().take(120)}"
+                "getGpaRankInfo finish ok=${result.isSuccess} " +
+                    "error=${result.errorOrNull()?.let { it::class.java.simpleName }.orEmpty()}"
             )
-            response
+            result
         }
 
-    suspend fun getAllCampus(): AHUResponse<AllCampus> =
+    suspend fun getAllCampus(): AhuResult<AllCampus> =
         withContext(Dispatchers.IO) {
             dataSource.getAllCampus()
         }
 
-    suspend fun getAllLostFoundType(): AHUResponse<AllLostFoundType> =
+    suspend fun getAllLostFoundType(): AhuResult<AllLostFoundType> =
         withContext(Dispatchers.IO) {
             dataSource.getAllLostFoundType()
         }
@@ -762,7 +685,7 @@ object AHURepository {
         pageNo: Int,
         pageSize: Int,
         state: Int
-    ): AHUResponse<LostFoundResponse> =
+    ): AhuResult<LostFoundResponse> =
         withContext(Dispatchers.IO) {
 
             dataSource.getLostFoundList(
@@ -774,19 +697,19 @@ object AHURepository {
 
     suspend fun publishLostFound(
         request: LostFoundPublishRequest
-    ): AHUResponse<Any> =
+    ): AhuResult<Any> =
         withContext(Dispatchers.IO) {
             dataSource.publishLostFound(request)
         }
 
     suspend fun deleteLostFound(
         id: String
-    ): AHUResponse<Any> =
+    ): AhuResult<Any> =
         withContext(Dispatchers.IO) {
             dataSource.deleteLostFound(id)
         }
 
-    suspend fun getQrcode(): Result<String> =
+    suspend fun getQrcode(): AhuResult<String> =
         withContext(Dispatchers.IO) {
             getHttpClient()?.let { httpClient ->
                 val httpResult = httpClient.getQrcode()
@@ -798,37 +721,37 @@ object AHURepository {
 
             val jniResult = RustSDK.getQrcodeSafe()
             if (jniResult.isSuccess) {
-                return@withContext jniResult
+                return@withContext AhuResult.Success(jniResult.getOrThrow())
             }
 
             Log.w(TAG, "Rust JNI qrcode failed, fallback to Android crawler (details suppressed)")
             try {
                 val response = AdwmhApi.API.getQrcode()
                 if (response.code == 10000 && response.`object`.isNotEmpty()) {
-                    Result.success(response.`object`)
+                    AhuResult.Success(response.`object`)
                 } else {
-                    Result.failure(Throwable(response.msg))
+                    AhuResult.Failure(AhuError.Unknown(response.msg))
                 }
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
-                Result.failure(e)
+                AhuResult.Failure(e.toAhuError())
             }
         }
 
-    private fun parseQrcodeResponse(json: String): Result<String> {
+    private fun parseQrcodeResponse(json: String): AhuResult<String> {
         return try {
             val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
             val code = obj.get("code")?.asInt ?: -1
             val msg = obj.get("msg")?.asString ?: "获取二维码失败"
             val value = obj.get("object")?.asString.orEmpty()
             if (code == 10000 && value.isNotEmpty()) {
-                Result.success(value)
+                AhuResult.Success(value)
             } else {
-                Result.failure(Throwable(msg))
+                AhuResult.Failure(AhuError.Unknown(msg))
             }
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
-            Result.failure(e)
+            AhuResult.Failure(e.toAhuError())
         }
     }
 

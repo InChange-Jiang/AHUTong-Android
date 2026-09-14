@@ -21,12 +21,16 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
@@ -69,10 +73,9 @@ import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppPageLayout
-import com.ahu.ahutong.ui.components.AppSelectField
-import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.utils.FileUtils
 import com.kyant.monet.n1
@@ -87,6 +90,7 @@ import kotlinx.coroutines.withContext
 fun SchoolCalendar(navController: NavHostController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val yearListState = rememberLazyListState()
 
     var calendarYears by remember { mutableStateOf<List<String>>(emptyList()) }
     var selectedYear by remember { mutableStateOf<String?>(null) }
@@ -159,7 +163,7 @@ fun SchoolCalendar(navController: NavHostController) {
                 errorMessage = null
             }
 
-            val catalog = AHURepository.getSchoolCalendarYears().valueOrNull()
+            val catalog = runCatching { AHURepository.getSchoolCalendarYears() }.getOrNull()?.valueOrNull()
             val years = if (catalog != null) {
                 SchoolCalendarYearPolicy.normalize(catalog.years)
             } else {
@@ -240,6 +244,11 @@ fun SchoolCalendar(navController: NavHostController) {
         }
     }
 
+    LaunchedEffect(selectedYear, calendarYears) {
+        val index = calendarYears.indexOf(selectedYear)
+        if (index >= 0) yearListState.animateScrollToItem(index)
+    }
+
     var imageScale by remember(calendarFile) { mutableFloatStateOf(1f) }
     var imageOffset by remember(calendarFile) { mutableStateOf(Offset.Zero) }
     val selectedIndex = calendarYears.indexOf(selectedYear)
@@ -278,17 +287,42 @@ fun SchoolCalendar(navController: NavHostController) {
                 .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            CalendarOverviewCard(
+                displayYear = displayYear,
+                availableCount = calendarYears.size,
+                usingLegacyCalendar = selectedYear == null
+            )
+
             if (calendarYears.isNotEmpty()) {
-                AppSelectField(
-                    label = "选择学年",
-                    selected = selectedYear,
-                    options = calendarYears.map { year ->
-                        AppSelectOption(year, SchoolCalendarYearPolicy.displayName(year))
-                    },
-                    onSelected = ::selectYear,
-                    valueTextAlign = TextAlign.End,
-                    miuixStandalone = true
-                )
+                LazyRow(
+                    state = yearListState,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp)
+                ) {
+                    items(calendarYears, key = { it }) { year ->
+                        val selected = year == selectedYear
+                        AppFilterChip(
+                            selected = selected,
+                            onClick = { selectYear(year) },
+                            label = {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (selected) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Text(year.replace("-", "—"))
+                                }
+                            }
+                        )
+                    }
+                }
             }
 
             AppCard(
@@ -397,6 +431,54 @@ fun SchoolCalendar(navController: NavHostController) {
                 olderYear = olderYear,
                 onSelectYear = ::selectYear
             )
+        }
+    }
+}
+
+@Composable
+private fun CalendarOverviewCard(
+    displayYear: String,
+    availableCount: Int,
+    usingLegacyCalendar: Boolean
+) {
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                modifier = Modifier.size(44.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Rounded.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = displayYear,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = when {
+                        availableCount > 0 -> "$availableCount 个学年可选 · 双击复位，双指缩放"
+                        usingLegacyCalendar -> "兼容模式 · 双击复位，双指缩放"
+                        else -> "正在读取校历列表"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }

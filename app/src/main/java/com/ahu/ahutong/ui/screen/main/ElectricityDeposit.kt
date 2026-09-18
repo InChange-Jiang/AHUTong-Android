@@ -37,6 +37,7 @@ import com.ahu.ahutong.data.model.ElectricityController
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
@@ -49,7 +50,6 @@ import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.CampusDataItem
 import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -128,7 +128,6 @@ fun ElectricityDeposit(
         amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
         !isLoading && payState is PayState.Idle
     // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
-    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         if (errorMessage != null) {
@@ -144,7 +143,6 @@ fun ElectricityDeposit(
             AppButton(
                 onClick = onOpenRecentRooms,
                 modifier = Modifier
-                    .padding(horizontal = horizontalPadding)
                     .fillMaxWidth(),
                 enabled = !isLoading,
                 variant = AppButtonVariant.Secondary
@@ -214,24 +212,7 @@ fun ElectricityDeposit(
                 loading = loadingSelector == ElectricitySelectorLevel.Room
             )
         }
-        if (isRadiantUi) {
-            GlassCard(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = selectorContent
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier.padding(horizontal = horizontalPadding),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                content = selectorContent
-            )
-        }
+        AppSectionCard(content = selectorContent)
 
         roomInfo?.takeIf(String::isNotBlank)?.let { info ->
             val roomContent: @Composable ColumnScope.() -> Unit = {
@@ -246,32 +227,10 @@ fun ElectricityDeposit(
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
-            if (isRadiantUi) {
-                GlassCard(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        content = roomContent
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = horizontalPadding)
-                        .fillMaxWidth()
-                        .appLiquidGlassSurface(
-                            shape = AppComponentTokens.CardShape,
-                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                            level = LiquidGlassSurfaceLevel.Panel
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    content = roomContent
-                )
-            }
+            AppSectionCard(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                content = roomContent
+            )
         }
 
         val amountContent: @Composable ColumnScope.() -> Unit = {
@@ -297,30 +256,10 @@ fun ElectricityDeposit(
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
         }
-        if (isRadiantUi) {
-            GlassCard(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = amountContent
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = horizontalPadding)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                content = amountContent
-            )
-        }
+        AppSectionCard(content = amountContent)
 
         Column(
             modifier = Modifier
-                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

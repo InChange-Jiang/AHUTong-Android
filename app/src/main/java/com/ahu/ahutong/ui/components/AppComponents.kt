@@ -176,6 +176,39 @@ data class AppSelectOption<T>(
     val label: String
 )
 
+/**
+ * AppSectionCard：内容分区卡（阶段④ 模式A 的统一出口）。
+ * 消灭页面层「if (radiant) GlassCard{...} else 裸 Column{...}」结构分叉：
+ * 全主题统一卡片化；卡片质感按主题分发（Radiant 实色 GlassCard / 其他主题 AppCard）。
+ */
+@Composable
+fun AppSectionCard(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(16.dp),
+    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(12.dp),
+    content: @Composable ColumnScope.() -> Unit
+) {
+    if (isRadiantUi) {
+        GlassCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            modifier = modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(contentPadding),
+                verticalArrangement = verticalArrangement,
+                content = content
+            )
+        }
+    } else {
+        AppCard(
+            modifier = modifier.fillMaxWidth(),
+            contentPadding = contentPadding
+        ) {
+            Column(verticalArrangement = verticalArrangement, content = content)
+        }
+    }
+}
+
 /** A theme-native content card without leaking Material ripple or geometry into other themes. */
 @Composable
 fun AppCard(

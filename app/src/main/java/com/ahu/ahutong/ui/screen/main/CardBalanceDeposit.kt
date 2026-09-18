@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -58,7 +60,6 @@ import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsSelectRow
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.CardAccountState
 import com.ahu.ahutong.ui.state.CardBalanceDepositViewModel
 import com.ahu.ahutong.ui.state.PaymentState
@@ -159,7 +160,6 @@ fun CardBalanceDeposit(
         null -> false
     }
     // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
-    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         if (LocalAppUiTheme.current != AppUiTheme.MATERIAL) {
@@ -170,7 +170,7 @@ fun CardBalanceDeposit(
                     AppSelectOption(method, method.displayName)
                 },
                 onSelected = ::selectRechargeBank,
-                modifier = Modifier.padding(horizontal = horizontalPadding),
+                modifier = Modifier,
                 enabled = paymentState != PaymentState.Loading,
                 valueTextAlign = TextAlign.End,
                 miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
@@ -251,26 +251,11 @@ fun CardBalanceDeposit(
             }
         }
 
-        if (isRadiantUi) {
-            GlassCard(
-                containerColor = 100.n1 withNight 20.n1,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(content = accountContent)
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = horizontalPadding)
-                    .fillMaxWidth()
-                    .appLiquidGlassSurface(
-                        shape = AppComponentTokens.CardShape,
-                        fallbackColor = 100.n1 withNight 20.n1,
-                        level = LiquidGlassSurfaceLevel.Panel
-                    ),
-                content = accountContent
-            )
-        }
+        AppSectionCard(
+            contentPadding = PaddingValues(0.dp),
+            verticalArrangement = Arrangement.Top,
+            content = accountContent
+        )
 
         if (selectedRechargeBank != CardRechargeBank.ALIPAY) {
             val amountContent: @Composable ColumnScope.() -> Unit = {
@@ -303,32 +288,11 @@ fun CardBalanceDeposit(
                     )
                 )
             }
-            if (isRadiantUi) {
-                GlassCard(
-                    containerColor = 100.n1 withNight 20.n1,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        content = amountContent
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = horizontalPadding)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = amountContent
-                )
-            }
+            AppSectionCard(content = amountContent)
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = horizontalPadding),
+            modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (selectedRechargeBank == CardRechargeBank.ALIPAY) {

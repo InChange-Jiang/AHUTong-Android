@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +39,7 @@ import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.Grade
 import com.ahu.ahutong.data.model.GradeStudentProfile
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppFilterChip
@@ -52,7 +54,6 @@ import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.components.SecondarySearchState
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.GradeViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -147,7 +148,6 @@ fun Grade(
         }
         .orEmpty()
 
-    val radiant = isRadiantUi
     val allTerms = gradeViewModel.grade?.termGradeList
         ?.sortedWith(
             compareByDescending<Grade.TermGradeListBean> {
@@ -190,7 +190,7 @@ fun Grade(
 
         // 学期选择已统一到头部漏斗菜单（GradeTermMenuButton），全主题一致
 
-        if (radiant && !searchExpanded) {
+        if (!searchExpanded) {
                 gradeViewModel.presetCandidates.firstOrNull()?.let { candidate ->
                     LaunchedEffect(candidate.opportunityId, candidate.presetId) {
                         gradeViewModel.onPresetCandidateVisible(candidate)
@@ -215,7 +215,6 @@ fun Grade(
                     if (gpaRankInfo == null && !rankMsg.isNullOrBlank()) {
                         Text(
                             text = rankMsg,
-                            modifier = if (radiant) Modifier else Modifier.padding(horizontal = 24.dp),
                             style = MaterialTheme.typography.titleMedium,
                             color = 50.n1 withNight 70.n1
                         )
@@ -228,9 +227,7 @@ fun Grade(
                         "最后更新时间" to (gpaRankInfo?.updatedDateTimeStr ?: "暂无")
                     ).forEach { (title, value) ->
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .then(if (radiant) Modifier else Modifier.padding(horizontal = 24.dp)),
+                            modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -239,23 +236,11 @@ fun Grade(
                         }
                     }
                 }
-                if (radiant) {
-                    GlassCard(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        containerColor = 100.n1 withNight 20.n1
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            content = summary
-                        )
-                    }
-                } else {
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        content = summary
-                    )
-                }
+                AppSectionCard(
+                    contentPadding = PaddingValues(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = summary
+                )
             }
 
             if (searchExpanded && trimmedQuery.isNotBlank()) {
@@ -283,7 +268,7 @@ fun Grade(
             } else if (!searchExpanded && gradeData != null && gradeData.gradeList.isNotEmpty()) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(if (radiant) 8.dp else 2.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     gradeData.gradeList.forEach {
                         GradeCard(
@@ -393,7 +378,7 @@ private fun GradeCard(
     AppCard(
         modifier = Modifier
             .fillMaxWidth(),
-        shape = SmoothRoundedCornerShape(if (isRadiantUi) 16.dp else 20.dp),
+        shape = SmoothRoundedCornerShape(16.dp),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp)
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

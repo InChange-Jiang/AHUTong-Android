@@ -1,6 +1,7 @@
 package com.ahu.ahutong.ui.screen.main
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -38,6 +39,7 @@ import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
@@ -49,7 +51,6 @@ import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.BathroomDepositViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
@@ -129,7 +130,6 @@ fun BathroomDeposit(
     val canSubmit = amount.toDoubleOrNull()?.let { it > 0.0 } == true && accountData != null &&
         payState !is PayState.InProgress
     // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
-    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         val lookupContent: @Composable ColumnScope.() -> Unit = {
@@ -141,7 +141,7 @@ fun BathroomDeposit(
                 bathroom = selected
                 viewmodel.clearBathroomInfo()
             },
-            modifier = Modifier.padding(horizontal = horizontalPadding),
+            modifier = Modifier,
             miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
                 start = 12.dp,
                 top = 16.dp,
@@ -155,7 +155,6 @@ fun BathroomDeposit(
 
         Column(
             modifier = Modifier
-                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -211,23 +210,7 @@ fun BathroomDeposit(
         }
 
         }
-        if (isRadiantUi) {
-            GlassCard(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = lookupContent
-                )
-            }
-        } else {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = lookupContent
-            )
-        }
+        AppSectionCard(content = lookupContent)
 
         AnimatedVisibility(visible = isQuerying || info != null || queryError != null) {
             val accountContent: @Composable ColumnScope.() -> Unit = {
@@ -261,32 +244,11 @@ fun BathroomDeposit(
                     )
                 }
             }
-            if (isRadiantUi) {
-                GlassCard(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        content = accountContent
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = horizontalPadding)
-                        .fillMaxWidth()
-                        .appLiquidGlassSurface(
-                            shape = AppComponentTokens.CardShape,
-                            fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            level = LiquidGlassSurfaceLevel.Control
-                        )
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    content = accountContent
-                )
-            }
+            AppSectionCard(
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                content = accountContent
+            )
         }
 
         val amountContent: @Composable ColumnScope.() -> Unit = {
@@ -311,30 +273,10 @@ fun BathroomDeposit(
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() })
             )
         }
-        if (isRadiantUi) {
-            GlassCard(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = amountContent
-                )
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = horizontalPadding)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                content = amountContent
-            )
-        }
+        AppSectionCard(content = amountContent)
 
         Column(
             modifier = Modifier
-                .padding(horizontal = horizontalPadding)
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

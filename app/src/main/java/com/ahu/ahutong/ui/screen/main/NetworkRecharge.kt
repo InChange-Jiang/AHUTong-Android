@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen.main
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.data.crawler.PayState
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppButton
@@ -43,7 +45,6 @@ import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
 import com.ahu.ahutong.ui.state.NetworkRechargePageState
@@ -197,24 +198,9 @@ private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L
 private fun NetworkAccountCard(
     data: NetworkRechargeUiData
 ) {
-    if (isRadiantUi) {
-        GlassCard(
-            containerColor = 100.n1 withNight 20.n1,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            NetworkAccountContent(data = data)
-        }
-        return
-    }
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(24.dp),
-                fallbackColor = 100.n1 withNight 20.n1,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
+    AppSectionCard(
+        contentPadding = PaddingValues(0.dp),
+        verticalArrangement = Arrangement.Top
     ) {
         NetworkAccountContent(data = data)
     }
@@ -274,32 +260,9 @@ private fun AmountCard(
     onQuickAmountClick: (String) -> Unit,
     onDone: () -> Unit
 ) {
-    if (isRadiantUi) {
-        GlassCard(
-            containerColor = 100.n1 withNight 20.n1,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            AmountCardContent(
-                amount = amount,
-                amountError = amountError,
-                quickAmounts = quickAmounts,
-                maxAmount = maxAmount,
-                onAmountChange = onAmountChange,
-                onQuickAmountClick = onQuickAmountClick,
-                onDone = onDone
-            )
-        }
-        return
-    }
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(24.dp),
-                fallbackColor = 100.n1 withNight 20.n1,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
+    AppSectionCard(
+        contentPadding = PaddingValues(0.dp),
+        verticalArrangement = Arrangement.Top
     ) {
         AmountCardContent(
             amount = amount,

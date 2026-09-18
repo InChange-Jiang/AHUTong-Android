@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.License as LicenseItem
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
@@ -131,53 +134,37 @@ fun License(
                 .joinToString("\n\n")
         }
 
-        val dialogShape = SmoothRoundedCornerShape(28.dp)
-        AlertDialog(
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = dialogShape,
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
+        AppDialog(
+            title = license.name,
+            onDismiss = { selectedLicense = null },
+            contentScrollable = true,
+            contentSpacing = 12.dp,
+            actions = listOf(
+                AppDialogAction(
+                    stringResource(R.string.close),
+                    onClick = { selectedLicense = null }
+                ),
+                AppDialogAction(
+                    stringResource(R.string.view_source),
+                    onClick = { openSource(license) },
+                    style = AppDialogActionStyle.Primary
+                )
             ),
-            onDismissRequest = { selectedLicense = null },
-            shape = dialogShape,
-            containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            tonalElevation = 0.dp,
-            title = {
-                Text(text = license.name)
-            },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+            content = {
+                Text(
+                    text = license.author,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = license.license,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                SelectionContainer {
                     Text(
-                        text = license.author,
-                        style = MaterialTheme.typography.bodyMedium
+                        text = licenseText,
+                        style = MaterialTheme.typography.bodySmall
                     )
-                    Text(
-                        text = license.license,
-                        fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    SelectionContainer {
-                        Text(
-                            text = licenseText,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { openSource(license) }) {
-                    Text(text = stringResource(R.string.view_source))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { selectedLicense = null }) {
-                    Text(text = stringResource(R.string.close))
                 }
             }
         )

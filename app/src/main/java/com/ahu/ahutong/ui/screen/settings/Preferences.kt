@@ -55,6 +55,9 @@ import com.ahu.ahutong.ui.components.SettingsActionRow
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
@@ -349,41 +352,35 @@ fun Preferences(onBack: () -> Unit = {}) {
 
     if (showEnableTrainingContribution) {
         var includeHistorical by remember { mutableStateOf(false) }
-        val dialogShape = SmoothRoundedCornerShape(28.dp)
-        AlertDialog(
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = dialogShape,
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
+        AppDialog(
+            title = "贡献通用模型训练数据",
+            onDismiss = { showEnableTrainingContribution = false },
+            contentSpacing = 12.dp,
+            actions = listOf(
+                AppDialogAction(
+                    "取消",
+                    onClick = { showEnableTrainingContribution = false }
+                ),
+                AppDialogAction(
+                    "同意开启",
+                    onClick = {
+                        viewModel.setBootstrapTrainingContribution(true, includeHistorical)
+                        showEnableTrainingContribution = false
+                    },
+                    style = AppDialogActionStyle.Primary
+                )
             ),
-            onDismissRequest = { showEnableTrainingContribution = false },
-            shape = dialogShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            title = { Text("贡献通用模型训练数据") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "将上传下一步/多跳预测的数值特征、候选可用性和目标标签，以及参数排序的 16 维候选特征与分级反馈。不会上传账号、设备标识、原始轨迹、完整旅程、设置值、参数内容、presetId 或指纹。随机参与者编号仅用于用户级数据集切分；关闭后会请求删除。"
+            content = {
+                Text(
+                    "将上传下一步/多跳预测的数值特征、候选可用性和目标标签，以及参数排序的 16 维候选特征与分级反馈。不会上传账号、设备标识、原始轨迹、完整旅程、设置值、参数内容、presetId 或指纹。随机参与者编号仅用于用户级数据集切分；关闭后会请求删除。"
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = includeHistorical,
+                        onCheckedChange = { includeHistorical = it }
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = includeHistorical,
-                            onCheckedChange = { includeHistorical = it }
-                        )
-                        Text("同时贡献最近 30 天已有兼容样本（默认关闭）")
-                    }
+                    Text("同时贡献最近 30 天已有兼容样本（默认关闭）")
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    viewModel.setBootstrapTrainingContribution(true, includeHistorical)
-                    showEnableTrainingContribution = false
-                }) { Text("同意开启") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEnableTrainingContribution = false }) { Text("取消") }
             }
         )
     }
@@ -542,20 +539,19 @@ private fun CustomThemeColorDialog(
     val valid = remember(value) {
         runCatching { android.graphics.Color.parseColor(value) }.isSuccess
     }
-    val dialogShape = SmoothRoundedCornerShape(28.dp)
-    AlertDialog(
-        modifier = Modifier.appLiquidGlassSurface(
-            shape = dialogShape,
-            fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            level = LiquidGlassSurfaceLevel.Floating,
-            backdropSamplingEnabled = false
+    AppDialog(
+        title = "自定义主题色",
+        onDismiss = onDismiss,
+        actions = listOf(
+            AppDialogAction("取消", onClick = onDismiss),
+            AppDialogAction(
+                "应用",
+                enabled = valid,
+                style = AppDialogActionStyle.Primary,
+                onClick = { onConfirm(value) }
+            )
         ),
-        onDismissRequest = onDismiss,
-        shape = dialogShape,
-        containerColor = Color.Transparent,
-        tonalElevation = 0.dp,
-        title = { Text("自定义主题色") },
-        text = {
+        content = {
             OutlinedTextField(
                 value = value,
                 onValueChange = { value = it },
@@ -574,17 +570,6 @@ private fun CustomThemeColorDialog(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-        },
-        confirmButton = {
-            TextButton(
-                enabled = valid,
-                onClick = { onConfirm(value) }
-            ) {
-                Text("应用")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }

@@ -141,48 +141,28 @@ fun SettingsConfirmationDialog(
     onDismiss: () -> Unit,
     destructive: Boolean = false
 ) {
-    SettingsDialogSurface(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text(
-                text = title,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Medium
+    // 统一走 AppDialog（弹窗族收敛）；保留原 API 以兼容既有调用点
+    AppDialog(
+        title = title,
+        onDismiss = onDismiss,
+        titleStyle = MaterialTheme.typography.headlineSmall,
+        titleFontWeight = FontWeight.Medium,
+        actions = listOf(
+            AppDialogAction("取消", onClick = onDismiss),
+            AppDialogAction(
+                confirmLabel,
+                onClick = onConfirm,
+                style = if (destructive) AppDialogActionStyle.Danger else AppDialogActionStyle.Primary
             )
+        ),
+        content = {
             Text(
                 text = message,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodyMedium
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-            ) {
-                Row(
-                    modifier = Modifier.align(Alignment.CenterEnd),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onDismiss) {
-                        Text("取消", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    TextButton(onClick = onConfirm) {
-                        Text(
-                            confirmLabel,
-                            color = if (destructive) {
-                                MaterialTheme.colorScheme.error
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            }
-                        )
-                    }
-                }
-            }
         }
-    }
+    )
 }
 
 @Composable

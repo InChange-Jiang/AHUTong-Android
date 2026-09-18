@@ -76,6 +76,9 @@ import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
@@ -167,49 +170,25 @@ private fun EvaluationListScreen(
         )
     }
     if (confirmBulkSubmitShown) {
-        val dialogShape = SmoothRoundedCornerShape(28.dp)
-        AlertDialog(
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = dialogShape,
-                fallbackColor = 100.n1 withNight 20.n1,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
-            ),
-            onDismissRequest = { confirmBulkSubmitShown = false },
-            shape = dialogShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            titleContentColor = 0.n1 withNight 100.n1,
-            textContentColor = 30.n1 withNight 90.n1,
-            title = { Text("确认批量评教") },
-            text = {
-                Text(
-                    text = "将按当前预设提交 $presetTargetCount 项评教，提交后通常不能撤回。",
-                    color = 0.n1 withNight 100.n1
-                )
-            },
-            confirmButton = {
-                TextButton(
+        AppDialog(
+            title = "确认批量评教",
+            onDismiss = { confirmBulkSubmitShown = false },
+            actions = listOf(
+                AppDialogAction("取消", onClick = { confirmBulkSubmitShown = false }),
+                AppDialogAction(
+                    "确认提交",
                     onClick = {
                         confirmBulkSubmitShown = false
                         viewModel.submitAllWithPreset()
                     },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = 40.a1 withNight 80.a1
-                    )
-                ) {
-                    Text("确认提交")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { confirmBulkSubmitShown = false },
-                    colors = ButtonDefaults.textButtonColors(
-                        contentColor = 40.a1 withNight 80.a1
-                    )
-                ) {
-                    Text("取消")
-                }
+                    style = AppDialogActionStyle.Primary
+                )
+            ),
+            content = {
+                Text(
+                    text = "将按当前预设提交 $presetTargetCount 项评教，提交后通常不能撤回。",
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
         )
     }
@@ -602,90 +581,16 @@ private fun EvaluationPresetDialog(
         viewModel.loadPresetQuestions()
     }
 
-    val dialogShape = SmoothRoundedCornerShape(28.dp)
-    AlertDialog(
-        modifier = Modifier.appLiquidGlassSurface(
-            shape = dialogShape,
-            fallbackColor = 100.n1 withNight 20.n1,
-            level = LiquidGlassSurfaceLevel.Floating,
-            backdropSamplingEnabled = false
-        ),
-        onDismissRequest = onDismiss,
-        shape = dialogShape,
-        containerColor = Color.Transparent,
-        tonalElevation = 0.dp,
-        titleContentColor = 0.n1 withNight 100.n1,
-        textContentColor = 30.n1 withNight 90.n1,
-        title = {
-            Text("评教预设")
-        },
-        text = {
-            Column(
-                modifier = Modifier.heightIn(max = 460.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "匿名提交",
-                        color = 0.n1 withNight 100.n1,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    AppToggle(
-                        checked = anonymous,
-                        onCheckedChange = { anonymous = it },
-                        contentDescription = "匿名提交"
-                    )
-                }
-
-                when {
-                    isPresetLoading -> {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            AppCircularProgressIndicator()
-                        }
-                    }
-                    presetQuestions.isEmpty() -> {
-                        Text(
-                            text = "暂无可编辑的评教题目",
-                            color = 50.n1 withNight 80.n1,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                    }
-                    else -> {
-                        Column(
-                            modifier = Modifier.verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            presetQuestions.forEach { question ->
-                                val questionId = question.attribute.id.toString()
-                                PresetQuestionEditor(
-                                    question = question,
-                                    selectedOptionIndex = radioIndexes[questionId],
-                                    textAnswer = presetTextAnswers[questionId].orEmpty(),
-                                    onOptionIndexChange = { optionIndex ->
-                                        radioIndexes = radioIndexes + (questionId to optionIndex)
-                                    },
-                                    onTextChange = { text ->
-                                        presetTextAnswers = presetTextAnswers + (questionId to text)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
+    AppDialog(
+        title = "评教预设",
+        onDismiss = onDismiss,
+        contentSpacing = 14.dp,
+        actions = listOf(
+            AppDialogAction("取消", onClick = onDismiss),
+            AppDialogAction(
+                "保存",
                 enabled = presetQuestions.isNotEmpty(),
+                style = AppDialogActionStyle.Primary,
                 onClick = {
                     viewModel.savePreset(
                         radioOptionIndexes = radioIndexes,
@@ -693,23 +598,68 @@ private fun EvaluationPresetDialog(
                         anonymous = anonymous
                     )
                     onDismiss()
-                },
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = 40.a1 withNight 80.a1,
-                    disabledContentColor = 60.n1 withNight 50.n1
-                )
+                }
+            )
+        ),
+        content = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("保存")
+                Text(
+                    text = "匿名提交",
+                    color = 0.n1 withNight 100.n1,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                AppToggle(
+                    checked = anonymous,
+                    onCheckedChange = { anonymous = it },
+                    contentDescription = "匿名提交"
+                )
             }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = 40.a1 withNight 80.a1
-                )
-            ) {
-                Text("取消")
+
+            when {
+                isPresetLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AppCircularProgressIndicator()
+                    }
+                }
+                presetQuestions.isEmpty() -> {
+                    Text(
+                        text = "暂无可编辑的评教题目",
+                        color = 50.n1 withNight 80.n1,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                else -> {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 380.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        presetQuestions.forEach { question ->
+                            val questionId = question.attribute.id.toString()
+                            PresetQuestionEditor(
+                                question = question,
+                                selectedOptionIndex = radioIndexes[questionId],
+                                textAnswer = presetTextAnswers[questionId].orEmpty(),
+                                onOptionIndexChange = { optionIndex ->
+                                    radioIndexes = radioIndexes + (questionId to optionIndex)
+                                },
+                                onTextChange = { text ->
+                                    presetTextAnswers = presetTextAnswers + (questionId to text)
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     )

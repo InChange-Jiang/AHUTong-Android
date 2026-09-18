@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -38,7 +39,8 @@ enum class AppDialogActionStyle { Neutral, Primary, Danger }
 data class AppDialogAction(
     val label: String,
     val onClick: () -> Unit,
-    val style: AppDialogActionStyle = AppDialogActionStyle.Neutral
+    val style: AppDialogActionStyle = AppDialogActionStyle.Neutral,
+    val enabled: Boolean = true
 )
 
 /**
@@ -59,11 +61,12 @@ fun AppDialog(
     titleMaxLines: Int = Int.MAX_VALUE,
     contentScrollable: Boolean = false,
     contentSpacing: Dp = 14.dp,
+    properties: DialogProperties = DialogProperties(),
     actions: List<AppDialogAction> = emptyList(),
     headerContent: (@Composable ColumnScope.() -> Unit)? = null,
     content: (@Composable ColumnScope.() -> Unit)? = null
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = onDismiss, properties = properties) {
         Column(
             modifier = modifier
                 .clip(SmoothRoundedCornerShape(32.dp))
@@ -148,14 +151,14 @@ private fun RowScope.AppDialogCapsuleButton(action: AppDialogAction) {
             .weight(1f)
             .height(40.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(container)
-            .clickable(onClick = action.onClick),
+            .background(if (action.enabled) container else scheme.onSurface.copy(alpha = 0.05f))
+            .clickable(enabled = action.enabled, onClick = action.onClick),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = action.label,
             fontSize = 13.sp,
-            color = labelColor,
+            color = if (action.enabled) labelColor else scheme.onSurfaceVariant.copy(alpha = 0.5f),
             fontWeight = FontWeight.Medium
         )
     }

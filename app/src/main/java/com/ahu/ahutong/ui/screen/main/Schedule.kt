@@ -85,6 +85,9 @@ import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppToggle
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
@@ -600,7 +603,6 @@ fun Schedule(
         ScheduleSettingsDialog(
             isOverviewSchedule = isOverviewSchedule,
             isPreviewNextSemester = isPreviewNextSemester,
-            backdropColor = settingsCardColor,
             onOverviewChange = { enabled ->
                 val oldValue = isOverviewSchedule
                 isOverviewSchedule = enabled
@@ -844,54 +846,36 @@ private fun scheduleResultBucket(count: Int): ResultCountBucket = when (count) {
 private fun ScheduleSettingsDialog(
         isOverviewSchedule: Boolean,
         isPreviewNextSemester: Boolean,
-        backdropColor: Color,
         onOverviewChange: (Boolean) -> Unit,
         onPreviewNextSemesterChange: (Boolean) -> Unit,
         onDismiss: () -> Unit
     ) {
-        val dialogShape = SmoothRoundedCornerShape(28.dp)
-        AlertDialog(
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = dialogShape,
-                fallbackColor = backdropColor,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
-            ),
-            shape = dialogShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            onDismissRequest = onDismiss,
-            title = {
-                Text(
-                    text = "课表设置",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+        AppDialog(
+            title = "课表设置",
+            titleStyle = MaterialTheme.typography.titleLarge,
+            titleFontWeight = FontWeight.Bold,
+            onDismiss = onDismiss,
+            contentSpacing = 12.dp,
+            actions = listOf(
+                AppDialogAction(
+                    "完成",
+                    onClick = onDismiss,
+                    style = AppDialogActionStyle.Primary
                 )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ScheduleSettingRow(
-                        title = "总览课表",
-                        description = "显示全部周次的课程，重叠课程会平分同一块时间区域",
-                        selected = isOverviewSchedule,
-                        onSelect = onOverviewChange
-                    )
-                    ScheduleSettingRow(
-                        title = "预览下学期课表",
-                        description = "切换到教务系统中的下学期课表",
-                        selected = isPreviewNextSemester,
-                        onSelect = onPreviewNextSemesterChange
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = onDismiss) {
-                    Text(
-                        text = "完成",
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
+            ),
+            content = {
+                ScheduleSettingRow(
+                    title = "总览课表",
+                    description = "显示全部周次的课程，重叠课程会平分同一块时间区域",
+                    selected = isOverviewSchedule,
+                    onSelect = onOverviewChange
+                )
+                ScheduleSettingRow(
+                    title = "预览下学期课表",
+                    description = "切换到教务系统中的下学期课表",
+                    selected = isPreviewNextSemester,
+                    onSelect = onPreviewNextSemesterChange
+                )
             }
         )
     }

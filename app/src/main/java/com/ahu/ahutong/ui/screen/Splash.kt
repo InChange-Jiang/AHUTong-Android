@@ -30,6 +30,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.SplashViewModel
 import com.ahu.ahutong.ui.state.BootstrapTrainingOnboardingState
@@ -145,8 +148,7 @@ private fun UnifiedPrivacyPolicyDialog(
         confirmText = "同意并继续",
         dismissText = "拒绝",
         onConfirm = onAgree,
-        onDismiss = onDisagree,
-        buttonWidth = 120.dp
+        onDismiss = onDisagree
     )
 }
 
@@ -158,65 +160,24 @@ private fun OnboardingDialogTemplate(
     dismissText: String,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    onDismissRequest: () -> Unit = {},
-    buttonWidth: androidx.compose.ui.unit.Dp = 88.dp
+    onDismissRequest: () -> Unit = {}
 ) {
-    val dialogShape = SmoothRoundedCornerShape(32.dp)
-    AlertDialog(
-        modifier = Modifier.appLiquidGlassSurface(
-            shape = dialogShape,
-            fallbackColor = 100.n1 withNight 20.n1,
-            level = LiquidGlassSurfaceLevel.Floating,
-            backdropSamplingEnabled = false
+    AppDialog(
+        title = title,
+        onDismiss = onDismissRequest,
+        titleStyle = MaterialTheme.typography.headlineSmall,
+        titleFontWeight = null,
+        contentScrollable = true,
+        actions = listOf(
+            AppDialogAction(dismissText, onClick = onDismiss),
+            AppDialogAction(confirmText, onClick = onConfirm, style = AppDialogActionStyle.Primary)
         ),
-        onDismissRequest = onDismissRequest,
-        title = {
+        content = {
             Text(
-                text = title,
-                style = MaterialTheme.typography.headlineSmall,
-                color = 10.n1 withNight 90.n1
+                text = body,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 480.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Text(
-                    text = body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = 10.n1 withNight 90.n1
-                )
-            }
-        },
-        shape = dialogShape,
-        confirmButton = {
-            FilledTonalButton(
-                onClick = onConfirm,
-                modifier = Modifier.size(buttonWidth, 56.dp),
-                shape = SmoothRoundedCornerShape(16.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = 90.a1 withNight 85.a1,
-                    contentColor = 0.n1
-                )
-            ) {
-                Text(confirmText)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                modifier = Modifier.size(buttonWidth, 56.dp),
-                shape = SmoothRoundedCornerShape(16.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = 90.a1 withNight 85.a1,
-                    contentColor = 0.n1
-                )
-            ) {
-                Text(dismissText)
-            }
-        },
-        containerColor = Color.Transparent
+        }
     )
 }

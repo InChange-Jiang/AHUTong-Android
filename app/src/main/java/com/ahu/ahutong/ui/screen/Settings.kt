@@ -64,6 +64,9 @@ import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.components.SettingsActionRow
 import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.SettingsBackdropContainer
 import com.ahu.ahutong.ui.components.SettingsInfoRow
 import com.ahu.ahutong.ui.components.SettingsHeroCard
@@ -345,30 +348,22 @@ fun Settings(
     }
 
     if (isUpdateLogDialogShown) {
-        val dialogShape = SmoothRoundedCornerShape(28.dp)
-        AlertDialog(
-            modifier = Modifier.appLiquidGlassSurface(
-                shape = dialogShape,
-                fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                level = LiquidGlassSurfaceLevel.Floating,
-                backdropSamplingEnabled = false
+        AppDialog(
+            title = stringResource(id = R.string.update_intro),
+            onDismiss = { isUpdateLogDialogShown = false },
+            contentScrollable = true,
+            actions = listOf(
+                AppDialogAction(
+                    "完成",
+                    onClick = { isUpdateLogDialogShown = false },
+                    style = AppDialogActionStyle.Primary
+                )
             ),
-            onDismissRequest = { isUpdateLogDialogShown = false },
-            shape = dialogShape,
-            containerColor = Color.Transparent,
-            tonalElevation = 0.dp,
-            title = { Text(stringResource(id = R.string.update_intro)) },
-            text = {
+            content = {
                 Text(
                     text = updateLog,
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            },
-            confirmButton = {
-                TextButton(onClick = { isUpdateLogDialogShown = false }) {
-                    Text("完成")
-                }
             }
         )
     }

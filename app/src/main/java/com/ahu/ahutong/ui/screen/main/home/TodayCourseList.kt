@@ -45,16 +45,10 @@ fun TodayCourseList(
     enabled: Boolean = true
 ) {
     val panelShape = SmoothRoundedCornerShape(32.dp)
-    val panelSurface = if (isRadiantUi) {
-        Modifier
-            .clip(panelShape)
-            .background(100.n1 withNight 20.n1)
-    } else {
-        Modifier.appLiquidGlassSurface(
-            shape = panelShape,
-            fallbackColor = 100.n1 withNight 20.n1
-        )
-    }
+    val panelSurface = Modifier.appLiquidGlassSurface(
+        shape = panelShape,
+        fallbackColor = 100.n1 withNight 20.n1
+    )
     if (todayCourses.isEmpty()) {
         Column(
             modifier = Modifier

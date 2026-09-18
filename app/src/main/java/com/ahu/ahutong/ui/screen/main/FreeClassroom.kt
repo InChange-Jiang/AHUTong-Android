@@ -62,6 +62,7 @@ import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppPageScaffold
+import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppStateCard
@@ -148,24 +149,9 @@ fun FreeClassroom(
         }
 
         item {
-            Column(
-                modifier = if (isRadiantUi) {
-                    Modifier
-                        .padding(horizontal = 16.dp)
-                        .clip(SmoothRoundedCornerShape(32.dp))
-                        .background(100.n1 withNight 20.n1)
-                        .padding(20.dp)
-                } else {
-                    Modifier
-                        .padding(horizontal = 16.dp)
-                        .fillMaxWidth()
-                        .appLiquidGlassSurface(
-                            shape = SmoothRoundedCornerShape(24.dp),
-                            fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                            level = LiquidGlassSurfaceLevel.Panel
-                        )
-                        .padding(16.dp)
-                },
+            AppSectionCard(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
@@ -490,26 +476,10 @@ private fun SupportingText(text: String) {
 
 @Composable
 private fun FreeRoomCard(room: FreeRoom) {
-    Column(
-        modifier = if (isRadiantUi) {
-            Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .clip(SmoothRoundedCornerShape(20.dp))
-                .background(95.n1 withNight 25.n1)
-                .padding(14.dp)
-        } else {
-            Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .appLiquidGlassSurface(
-                    shape = SmoothRoundedCornerShape(20.dp),
-                    fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                    level = LiquidGlassSurfaceLevel.Panel
-                )
-                .padding(horizontal = 18.dp, vertical = 16.dp)
-        },
-        verticalArrangement = Arrangement.spacedBy(if (isRadiantUi) 6.dp else 4.dp)
+    AppSectionCard(
+        modifier = Modifier.padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(room.nameZh, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(

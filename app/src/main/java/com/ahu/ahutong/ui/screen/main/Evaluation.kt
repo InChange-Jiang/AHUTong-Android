@@ -109,7 +109,7 @@ fun Evaluation(
     val presetActionMessage by viewModel.presetActionMessage.collectAsState()
     val currentTask by viewModel.currentTask.collectAsState()
 
-    BackHandler(enabled = isRadiantUi && currentTask != null) {
+    BackHandler(enabled = currentTask != null) {
         viewModel.backToList()
     }
 
@@ -348,7 +348,7 @@ private fun EvaluationCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
-        shape = SmoothRoundedCornerShape(if (isRadiantUi) 16.dp else 20.dp),
+        shape = SmoothRoundedCornerShape(16.dp),
         enabled = !reviewed && task.timeStatus,
         onClick = onClick
     ) {
@@ -767,7 +767,7 @@ private fun QuestionCard(
 
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = SmoothRoundedCornerShape(if (isRadiantUi) 16.dp else 20.dp)
+        shape = SmoothRoundedCornerShape(16.dp)
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(12.dp)

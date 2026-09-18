@@ -149,20 +149,7 @@ fun Exam(
         exam.orEmpty()
     }
 
-    val radiant = isRadiantUi
     val pageContent: @Composable ColumnScope.() -> Unit = {
-        if (!radiant) {
-            AppSearchField(
-                value = searchQuery,
-                onValueChange = {
-                    searchQuery = it
-                    isSearchActive = it.isNotBlank()
-                },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = "搜索课程名称…"
-            )
-        }
-
         if (isLoading != true) {
             if (!filteredExams.isNullOrEmpty()) {
                 val sortedExams = filteredExams.sortedWith(

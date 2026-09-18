@@ -214,25 +214,7 @@ private fun EvaluationListScreen(
         )
     }
 
-    val radiant = isRadiantUi
     val pageContent: LazyListScope.() -> Unit = {
-        if (!radiant) item(key = "semester") {
-            AppSelectField(
-                label = "选择学期",
-                selected = selectedSemesterId,
-                options = semesters.map { semester ->
-                    AppSelectOption(semester.id, semester.nameZh)
-                },
-                onSelected = { semesterId ->
-                    viewModel.selectedSemesterId.value = semesterId
-                    viewModel.loadEvaluationList()
-                },
-                modifier = Modifier.padding(horizontal = 16.dp),
-                enabled = !isLoading && !isSubmitting && !isBulkSubmitting,
-                miuixStandalone = true
-            )
-        }
-
         item(key = "bulk-submit") {
             AppButton(
                 onClick = { confirmBulkSubmitShown = true },
@@ -493,17 +475,7 @@ private fun EvaluationFormScreen(viewModel: EvaluationViewModel) {
         }
     }
 
-    val radiant = isRadiantUi
     val pageContent: LazyListScope.() -> Unit = {
-        if (!radiant) item(key = "teacher") {
-            Text(
-                text = "${currentTeacher?.teacherName.orEmpty()} · $currentLessonName",
-                modifier = Modifier.padding(horizontal = 20.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-        }
-
         if (isLoading && questions.isEmpty()) {
             item(key = "loading") {
                 Box(

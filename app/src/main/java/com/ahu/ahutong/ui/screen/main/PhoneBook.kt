@@ -66,7 +66,6 @@ import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.SecondarySearchState
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.TelDirectoryViewModel
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
@@ -106,23 +105,8 @@ fun PhoneBook(onBack: (() -> Unit)? = null) {
         }
     }
 
-    val radiant = isRadiantUi
-    val toggleSearch = {
-        isSearchActive = !isSearchActive
-        if (!isSearchActive) searchQuery = ""
-    }
     val pageContent: LazyListScope.() -> Unit = {
         if (isSearchActive) {
-            if (!radiant) item(key = "search") {
-                AppSearchField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    placeholder = "搜索电话或部门"
-                )
-            }
             if (searchResults.isEmpty() && searchQuery.isNotEmpty()) {
                 item(key = "empty") {
                     Text(

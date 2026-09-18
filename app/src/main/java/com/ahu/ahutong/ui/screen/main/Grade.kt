@@ -164,17 +164,8 @@ fun Grade(
     } ?: "选择学期"
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
-        if (searchExpanded && !radiant) {
-            AppSearchField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                placeholder = "搜索课程"
-            )
-        }
-
-            // Profile selector - shown when student has multiple profiles (micro-major/minor)
-            if (!searchExpanded && gradeViewModel.studentProfiles.size > 1) {
+        // Profile selector - shown when student has multiple profiles (micro-major/minor)
+        if (!searchExpanded && gradeViewModel.studentProfiles.size > 1) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -197,33 +188,9 @@ fun Grade(
                 }
             }
 
-            // 改成学期下拉选择（替代原来的学年+学期双筛选）
-            if (!searchExpanded && !radiant) {
-                AppSelectField(
-                    label = "选择学期",
-                    selected = gradeViewModel.schoolYear?.let { schoolYear ->
-                        gradeViewModel.schoolTerm?.let { schoolTerm -> schoolYear to schoolTerm }
-                    },
-                    options = allTerms.map { term ->
-                        AppSelectOption(
-                            value = term.schoolYear.orEmpty() to term.term.orEmpty(),
-                            label = "${term.schoolYear} 第${term.term}学期"
-                        )
-                    },
-                    onSelected = { (schoolYear, schoolTerm) ->
-                        gradeViewModel.selectTerm(schoolYear, schoolTerm)
-                    },
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                    valueTextAlign = if (LocalAppUiTheme.current == AppUiTheme.MATERIAL) {
-                        TextAlign.Start
-                    } else {
-                        TextAlign.End
-                    },
-                    miuixStandalone = true
-                )
-            }
+        // 学期选择已统一到头部漏斗菜单（GradeTermMenuButton），全主题一致
 
-            if (radiant && !searchExpanded) {
+        if (radiant && !searchExpanded) {
                 gradeViewModel.presetCandidates.firstOrNull()?.let { candidate ->
                     LaunchedEffect(candidate.opportunityId, candidate.presetId) {
                         gradeViewModel.onPresetCandidateVisible(candidate)

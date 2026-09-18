@@ -36,7 +36,6 @@ import com.ahu.ahutong.data.GradeEvaluationGate
 import com.ahu.ahutong.data.crawler.model.jwxt.CourseGrade
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
-import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.Grade
 import com.ahu.ahutong.data.model.GradeStudentProfile
 import com.ahu.ahutong.ui.components.AppSectionCard

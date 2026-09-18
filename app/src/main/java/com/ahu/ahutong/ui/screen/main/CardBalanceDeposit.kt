@@ -41,7 +41,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.ui.components.AppButton

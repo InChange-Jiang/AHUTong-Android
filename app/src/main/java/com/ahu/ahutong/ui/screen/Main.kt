@@ -173,9 +173,7 @@ fun Main(
         entryId = currentBackStackEntry?.id,
         previousEntryId = navController.previousBackStackEntry?.id,
         uiTheme = appUiTheme,
-        settled = true,
-        diagnostics = diagnosticsRouteVisible,
-        primaryPagerHost = false
+        diagnostics = diagnosticsRouteVisible
     )
     LaunchedEffect(navigationSnapshot, navigationObservationRevision) {
         val observation = navigationPolicy.observe(navigationSnapshot) ?: return@LaunchedEffect

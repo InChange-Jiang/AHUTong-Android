@@ -8,9 +8,7 @@ internal data class NavigationSnapshot(
     val entryId: String?,
     val previousEntryId: String?,
     val uiTheme: AppUiTheme,
-    val settled: Boolean = true,
-    val diagnostics: Boolean = false,
-    val primaryPagerHost: Boolean = false
+    val diagnostics: Boolean = false
 )
 
 internal data class NavigationObservation(
@@ -43,13 +41,6 @@ internal class NavigationObservationPolicy {
     fun observe(snapshot: NavigationSnapshot): NavigationObservation? {
         val route = snapshot.route ?: return null
         val entryId = snapshot.entryId ?: return null
-        // A multi-page animation passes through pages the user did not choose.
-        if (!snapshot.settled) return null
-        // A hidden Pager can need its first layout before animateScrollToPage begins. Do not
-        // observe its old page in that gap when returning from a secondary destination.
-        if (snapshot.primaryPagerHost && requestedRoute?.route?.let { it != route } == true) {
-            return null
-        }
 
         val last = previous
         val returningToObservedEntry = entryId in observedEntryIds

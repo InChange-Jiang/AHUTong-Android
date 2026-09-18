@@ -45,8 +45,6 @@ import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.CardRechargeBank
 import com.ahu.ahutong.data.mock.MockScenarioController
-import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
-import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppPageScaffold
@@ -56,14 +54,12 @@ import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppToggle
-import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.state.CardAccountState
 import com.ahu.ahutong.ui.state.CardBalanceDepositViewModel
 import com.ahu.ahutong.ui.state.PaymentState
-import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter

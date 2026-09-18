@@ -72,14 +72,10 @@ import com.ahu.ahutong.R
 import com.ahu.ahutong.data.repository.GitHubContentItem
 import com.ahu.ahutong.data.repository.RepositoryDirectorySummary
 import com.ahu.ahutong.data.repository.RepositoryManager
-import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
-import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppDialogSurface
-import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.state.RepositoryMarkdownUiState
 import com.ahu.ahutong.ui.state.RepositoryViewModel
-import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -92,7 +88,6 @@ import com.ahu.ahutong.personalization.semantic.ContentStateBucket
 import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
 import com.ahu.ahutong.personalization.semantic.ResultCountBucket
 import com.ahu.ahutong.personalization.semantic.SemanticDomain
-import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 import top.yukonga.miuix.kmp.icon.icons.useful.Save
 import top.yukonga.miuix.kmp.icon.icons.useful.Settings

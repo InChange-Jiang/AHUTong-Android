@@ -17,10 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -67,16 +65,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
-import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
-import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppRefreshButton
 import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppTitleIconButton
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.SecondarySearchState
-import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ExamViewModel
 import com.ahu.ahutong.ui.state.RefreshState
@@ -92,7 +86,6 @@ import java.time.format.DateTimeFormatter
 import com.ahu.ahutong.personalization.ui.rememberBehaviorActionReporter
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket
-import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 
 @OptIn(ExperimentalMaterial3Api::class)

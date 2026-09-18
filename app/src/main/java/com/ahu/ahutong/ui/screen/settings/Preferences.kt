@@ -62,10 +62,8 @@ import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.components.SettingsPageLayout
 import com.ahu.ahutong.ui.components.SettingsSection
 import com.ahu.ahutong.ui.components.SettingsToggleRow
-import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
-import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 
 @Composable
 fun Preferences(onBack: () -> Unit = {}) {

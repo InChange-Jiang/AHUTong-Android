@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,14 +36,11 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.weather.WeatherResponse
-import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.AppButton
-import com.ahu.ahutong.ui.components.AppHeaderIconButton
 import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppModalBottomSheet
-import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.AppFilterChip
@@ -56,7 +52,6 @@ import com.ahu.ahutong.ui.state.WeatherViewModel
 import com.kyant.monet.n1
 import com.kyant.monet.a1
 import com.kyant.monet.withNight
-import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 import top.yukonga.miuix.kmp.icon.icons.useful.Search

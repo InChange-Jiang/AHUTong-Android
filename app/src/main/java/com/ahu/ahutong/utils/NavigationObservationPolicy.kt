@@ -3,16 +3,6 @@ package com.ahu.ahutong.utils
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.personalization.action.ActionSource
 
-internal fun resolveVisibleRoute(
-    navigationRoute: String?,
-    uiTheme: AppUiTheme,
-    primaryRoute: String
-): String? = if (navigationRoute == "home" && uiTheme != AppUiTheme.RADIANT) {
-    primaryRoute
-} else {
-    navigationRoute
-}
-
 internal data class NavigationSnapshot(
     val route: String?,
     val entryId: String?,

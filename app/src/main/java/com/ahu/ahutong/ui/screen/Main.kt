@@ -62,7 +62,6 @@ import com.ahu.ahutong.ui.screen.main.REPOSITORY_DIRECTORY_ROUTE
 import com.ahu.ahutong.ui.screen.main.REPOSITORY_PATH_ARG
 import com.ahu.ahutong.ui.screen.main.REPOSITORY_ROUTE
 import com.ahu.ahutong.ui.screen.main.SchoolCalendar
-import com.ahu.ahutong.ui.screen.main.Tools
 import com.ahu.ahutong.ui.screen.main.RepositorySettings
 import com.ahu.ahutong.ui.screen.main.Weather
 import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen

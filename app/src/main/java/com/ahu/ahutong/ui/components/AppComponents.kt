@@ -124,6 +124,7 @@ import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.backdrop.Backdrop
+import com.ahu.ahutong.ui.theme.pack.LocalComponentPack
 import top.yukonga.miuix.kmp.basic.Button as MiuixButton
 import top.yukonga.miuix.kmp.basic.ButtonColors as MiuixButtonColors
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
@@ -186,92 +187,120 @@ fun AppCard(
     backdrop: Backdrop? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val uiTheme = LocalAppUiTheme.current
+    LocalComponentPack.current.Card(
+        modifier = modifier,
+        shape = shape,
+        contentPadding = contentPadding,
+        enabled = enabled,
+        onClick = onClick,
+        backdrop = backdrop,
+        content = content
+    )
+}
+
+@Composable
+internal fun MiuixCardImpl(
+    modifier: Modifier,
+    contentPadding: PaddingValues,
+    enabled: Boolean,
+    onClick: (() -> Unit)?,
+    content: @Composable ColumnScope.() -> Unit
+) {
     val haptic = LocalHapticFeedback.current
     val action = onClick?.let { click ->
         {
-            if (uiTheme == AppUiTheme.MIUIX) {
-                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            }
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
             click()
         }
     }
+    if (action == null || !enabled) {
+        MiuixCard(
+            modifier = modifier,
+            cornerRadius = 16.dp,
+            insideMargin = contentPadding,
+            content = content
+        )
+    } else {
+        MiuixCard(
+            modifier = modifier,
+            cornerRadius = 16.dp,
+            insideMargin = contentPadding,
+            pressFeedbackType = PressFeedbackType.Sink,
+            onClick = action,
+            content = content
+        )
+    }
+}
 
-    when (uiTheme) {
-        AppUiTheme.MIUIX -> {
-            if (action == null || !enabled) {
-                MiuixCard(
-                    modifier = modifier,
-                    cornerRadius = 16.dp,
-                    insideMargin = contentPadding,
-                    content = content
-                )
-            } else {
-                MiuixCard(
-                    modifier = modifier,
-                    cornerRadius = 16.dp,
-                    insideMargin = contentPadding,
-                    pressFeedbackType = PressFeedbackType.Sink,
-                    onClick = action,
-                    content = content
-                )
-            }
-        }
-
-        AppUiTheme.MATERIAL -> {
-            if (action == null) {
-                MaterialCard(
-                    modifier = modifier,
-                    shape = shape,
-                    colors = MaterialCardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(contentPadding), content = content)
-                }
-            } else {
-                MaterialCard(
-                    onClick = action,
-                    modifier = modifier,
-                    enabled = enabled,
-                    shape = shape,
-                    colors = MaterialCardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer
-                    )
-                ) {
-                    Column(modifier = Modifier.padding(contentPadding), content = content)
-                }
-            }
-        }
-
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> {
-            Column(
-                modifier = modifier
-                    .appLiquidGlassSurface(
-                        shape = shape,
-                        fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
-                        level = LiquidGlassSurfaceLevel.Panel,
-                        backdrop = backdrop,
-                        backdropSamplingEnabled = true
-                    )
-                    .then(
-                        if (action != null) {
-                            Modifier.clickable(
-                                enabled = enabled,
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                role = Role.Button,
-                                onClick = action
-                            )
-                        } else {
-                            Modifier
-                        }
-                    )
-                    .padding(contentPadding),
-                content = content
+@Composable
+internal fun MaterialCardImpl(
+    modifier: Modifier,
+    shape: Shape,
+    contentPadding: PaddingValues,
+    enabled: Boolean,
+    onClick: (() -> Unit)?,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    if (onClick == null) {
+        MaterialCard(
+            modifier = modifier,
+            shape = shape,
+            colors = MaterialCardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
             )
+        ) {
+            Column(modifier = Modifier.padding(contentPadding), content = content)
+        }
+    } else {
+        MaterialCard(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            shape = shape,
+            colors = MaterialCardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            )
+        ) {
+            Column(modifier = Modifier.padding(contentPadding), content = content)
         }
     }
+}
+
+@Composable
+internal fun RadiantCardImpl(
+    modifier: Modifier,
+    shape: Shape,
+    contentPadding: PaddingValues,
+    enabled: Boolean,
+    onClick: (() -> Unit)?,
+    backdrop: Backdrop?,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = modifier
+            .appLiquidGlassSurface(
+                shape = shape,
+                fallbackColor = MaterialTheme.colorScheme.surfaceContainer,
+                level = LiquidGlassSurfaceLevel.Panel,
+                backdrop = backdrop,
+                backdropSamplingEnabled = true
+            )
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        enabled = enabled,
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
+            )
+            .padding(contentPadding),
+        content = content
+    )
 }
 
 @Composable
@@ -284,42 +313,67 @@ fun AppHeaderIconButton(
     backdrop: Backdrop? = null,
     tint: Color? = null
 ) {
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> {
-            val haptic = LocalHapticFeedback.current
-            MiuixIconButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onClick()
-                },
-                modifier = modifier.size(AppComponentTokens.TouchTarget),
-                minWidth = AppComponentTokens.TouchTarget,
-                minHeight = AppComponentTokens.TouchTarget,
-                backgroundColor = MiuixTheme.colorScheme.surfaceContainer
-            ) {
-                MiuixIcon(
-                    imageVector = miuixImageVector,
-                    contentDescription = contentDescription,
-                    tint = tint ?: MiuixTheme.colorScheme.onSurface
-                )
-            }
-            return
-        }
-        AppUiTheme.MATERIAL -> {
-            IconButton(
-                onClick = onClick,
-                modifier = modifier.size(AppComponentTokens.TouchTarget)
-            ) {
-                Icon(
-                    imageVector = imageVector,
-                    contentDescription = contentDescription,
-                    tint = tint ?: MaterialTheme.colorScheme.onSurface
-                )
-            }
-            return
-        }
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> Unit
+    LocalComponentPack.current.HeaderIconButton(
+        imageVector, miuixImageVector, contentDescription, onClick, modifier, backdrop, tint
+    )
+}
+
+@Composable
+internal fun MiuixHeaderIconButtonImpl(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    tint: Color?
+) {
+    val haptic = LocalHapticFeedback.current
+    MiuixIconButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        modifier = modifier.size(AppComponentTokens.TouchTarget),
+        minWidth = AppComponentTokens.TouchTarget,
+        minHeight = AppComponentTokens.TouchTarget,
+        backgroundColor = MiuixTheme.colorScheme.surfaceContainer
+    ) {
+        MiuixIcon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = tint ?: MiuixTheme.colorScheme.onSurface
+        )
     }
+}
+
+@Composable
+internal fun MaterialHeaderIconButtonImpl(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    tint: Color?
+) {
+    IconButton(
+        onClick = onClick,
+        modifier = modifier.size(AppComponentTokens.TouchTarget)
+    ) {
+        Icon(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            tint = tint ?: MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+@Composable
+internal fun RadiantHeaderIconButtonImpl(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    backdrop: Backdrop?,
+    tint: Color?
+) {
     Box(
         modifier = modifier
             .size(AppComponentTokens.TouchTarget)
@@ -350,32 +404,22 @@ fun AppPageHeader(
     verticalPadding: Dp = AppComponentTokens.HeaderVerticalPadding,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        val haptic = LocalHapticFeedback.current
-        MiuixTopAppBar(
-            title = title,
-            largeTitle = title,
-            modifier = modifier,
-            navigationIcon = {
-                onBack?.let { callback ->
-                    MiuixIconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            callback()
-                        }
-                    ) {
-                        MiuixIcon(
-                            imageVector = MiuixIcons.Useful.Back,
-                            contentDescription = "返回",
-                            tint = MiuixTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-            },
-            actions = actions
-        )
-        return
-    }
+    LocalComponentPack.current.PageHeader(
+        title, modifier, onBack, backdrop, horizontalPadding, verticalPadding, actions
+    )
+}
+
+/** 行式页面标题（返回按钮 + 大标题 + 操作位）：Material / Radiant 共用的默认形态。 */
+@Composable
+internal fun RowPageHeaderImpl(
+    title: String,
+    modifier: Modifier,
+    onBack: (() -> Unit)?,
+    backdrop: Backdrop?,
+    horizontalPadding: Dp,
+    verticalPadding: Dp,
+    actions: @Composable RowScope.() -> Unit
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -409,253 +453,39 @@ fun AppPageHeader(
     }
 }
 
-/** Page shell for screens that own their scrolling container. */
+/** Miuix 大标题可折叠顶栏。 */
 @Composable
-fun AppPageLayout(
+internal fun MiuixPageHeaderImpl(
     title: String,
-    modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
-    content: @Composable BoxScope.() -> Unit
+    modifier: Modifier,
+    onBack: (() -> Unit)?,
+    actions: @Composable RowScope.() -> Unit
 ) {
-    if (LocalAppUiTheme.current != AppUiTheme.MIUIX) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-        ) {
-            AppPageHeader(
-                title = title,
-                onBack = onBack,
-                actions = actions
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                content = content
-            )
-        }
-        return
-    }
-
-    val scrollBehavior = MiuixScrollBehavior()
     val haptic = LocalHapticFeedback.current
-    MiuixScaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            MiuixTopAppBar(
-                title = title,
-                largeTitle = title,
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    onBack?.let { callback ->
-                        MiuixIconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                callback()
-                            }
-                        ) {
-                            MiuixIcon(
-                                imageVector = MiuixIcons.Useful.Back,
-                                contentDescription = "返回",
-                                tint = MiuixTheme.colorScheme.onSurface
-                            )
-                        }
+    MiuixTopAppBar(
+        title = title,
+        largeTitle = title,
+        modifier = modifier,
+        navigationIcon = {
+            onBack?.let { callback ->
+                MiuixIconButton(
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        callback()
                     }
-                },
-                actions = actions
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = paddingValues.calculateTopPadding() + 20.dp)
-                .navigationBarsPadding()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .scrollEndHaptic(),
-            content = content
-        )
-    }
-}
-
-/**
- * Shared vertically scrolling page shell. Miuix owns the collapsible title and navigation
- * controls; Material and Liquid Glass retain their own in-content header treatment.
- */
-@Composable
-fun AppScrollablePageLayout(
-    title: String,
-    modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null,
-    backdrop: Backdrop? = null,
-    scrollState: ScrollState = rememberScrollState(),
-    scrollEnabled: Boolean = true,
-    bottomPadding: Dp = 112.dp,
-    actions: @Composable RowScope.() -> Unit = {},
-    content: @Composable ColumnScope.() -> Unit
-) {
-    val uiTheme = LocalAppUiTheme.current
-    if (uiTheme != AppUiTheme.MIUIX) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-        ) {
-            AppPageHeader(
-                title = title,
-                onBack = onBack,
-                backdrop = backdrop,
-                actions = actions
-            )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .verticalScroll(scrollState, enabled = scrollEnabled)
-                    .padding(bottom = bottomPadding),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = content
-            )
-        }
-        return
-    }
-
-    val scrollBehavior = MiuixScrollBehavior()
-    val haptic = LocalHapticFeedback.current
-    MiuixScaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            MiuixTopAppBar(
-                title = title,
-                largeTitle = title,
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    onBack?.let { callback ->
-                        MiuixIconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                callback()
-                            }
-                        ) {
-                            MiuixIcon(
-                                imageVector = MiuixIcons.Useful.Back,
-                                contentDescription = "返回",
-                                tint = MiuixTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                },
-                actions = actions
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .scrollEndHaptic()
-                .verticalScroll(scrollState, enabled = scrollEnabled)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        top = paddingValues.calculateTopPadding() + 20.dp,
-                        bottom = bottomPadding
+                ) {
+                    MiuixIcon(
+                        imageVector = MiuixIcons.Useful.Back,
+                        contentDescription = "返回",
+                        tint = MiuixTheme.colorScheme.onSurface
                     )
-                    .navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = content
-            )
-        }
-    }
+                }
+            }
+        },
+        actions = actions
+    )
 }
 
-/** Lazy counterpart of [AppScrollablePageLayout], avoiding a nested scroll container. */
-@Composable
-fun AppLazyPageLayout(
-    title: String,
-    modifier: Modifier = Modifier,
-    onBack: (() -> Unit)? = null,
-    state: LazyListState = rememberLazyListState(),
-    bottomPadding: Dp = 112.dp,
-    verticalArrangement: Arrangement.Vertical = Arrangement.spacedBy(16.dp),
-    actions: @Composable RowScope.() -> Unit = {},
-    content: LazyListScope.() -> Unit
-) {
-    val uiTheme = LocalAppUiTheme.current
-    if (uiTheme != AppUiTheme.MIUIX) {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .systemBarsPadding()
-        ) {
-            AppPageHeader(title = title, onBack = onBack, actions = actions)
-            LazyColumn(
-                state = state,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                contentPadding = PaddingValues(bottom = bottomPadding),
-                verticalArrangement = verticalArrangement,
-                content = content
-            )
-        }
-        return
-    }
-
-    val scrollBehavior = MiuixScrollBehavior()
-    val haptic = LocalHapticFeedback.current
-    MiuixScaffold(
-        modifier = modifier.fillMaxSize(),
-        containerColor = Color.Transparent,
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = {
-            MiuixTopAppBar(
-                title = title,
-                largeTitle = title,
-                scrollBehavior = scrollBehavior,
-                navigationIcon = {
-                    onBack?.let { callback ->
-                        MiuixIconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                callback()
-                            }
-                        ) {
-                            MiuixIcon(
-                                imageVector = MiuixIcons.Useful.Back,
-                                contentDescription = "返回",
-                                tint = MiuixTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                },
-                actions = actions
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            state = state,
-            modifier = Modifier
-                .fillMaxSize()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .scrollEndHaptic(),
-            contentPadding = PaddingValues(
-                top = paddingValues.calculateTopPadding() + 20.dp,
-                bottom = bottomPadding
-            ),
-            verticalArrangement = verticalArrangement,
-            content = content
-        )
-    }
-}
 
 /** Theme-native indeterminate loading control. */
 @Composable
@@ -666,39 +496,68 @@ fun AppCircularProgressIndicator(
     strokeWidth: Dp = 4.dp,
     color: Color? = null
 ) {
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> MiuixCircularProgressIndicator(
-            progress = progress?.invoke(),
-            modifier = modifier,
-            size = size,
-            strokeWidth = strokeWidth,
-            colors = MiuixProgressIndicatorDefaults.progressIndicatorColors(
-                foregroundColor = color ?: MiuixTheme.colorScheme.primary,
-                backgroundColor = (color ?: MiuixTheme.colorScheme.primary).copy(alpha = 0.16f)
-            )
+    LocalComponentPack.current.CircularProgressIndicator(progress, modifier, size, strokeWidth, color)
+}
+
+@Composable
+internal fun MiuixProgressImpl(
+    progress: (() -> Float)?,
+    modifier: Modifier,
+    size: Dp,
+    strokeWidth: Dp,
+    color: Color?
+) {
+    MiuixCircularProgressIndicator(
+        progress = progress?.invoke(),
+        modifier = modifier,
+        size = size,
+        strokeWidth = strokeWidth,
+        colors = MiuixProgressIndicatorDefaults.progressIndicatorColors(
+            foregroundColor = color ?: MiuixTheme.colorScheme.primary,
+            backgroundColor = (color ?: MiuixTheme.colorScheme.primary).copy(alpha = 0.16f)
         )
-        AppUiTheme.MATERIAL -> if (progress == null) {
-            MaterialCircularProgressIndicator(
-                modifier = modifier.size(size),
-                color = color ?: MaterialTheme.colorScheme.primary,
-                strokeWidth = strokeWidth
-            )
-        } else {
-            MaterialCircularProgressIndicator(
-                progress = progress,
-                modifier = modifier.size(size),
-                color = color ?: MaterialTheme.colorScheme.primary,
-                strokeWidth = strokeWidth
-            )
-        }
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidGlassProgressIndicator(
-            progress = progress?.invoke(),
-            modifier = modifier,
-            size = size,
-            strokeWidth = strokeWidth,
-            color = color ?: MaterialTheme.colorScheme.primary
+    )
+}
+
+@Composable
+internal fun MaterialProgressImpl(
+    progress: (() -> Float)?,
+    modifier: Modifier,
+    size: Dp,
+    strokeWidth: Dp,
+    color: Color?
+) {
+    if (progress == null) {
+        MaterialCircularProgressIndicator(
+            modifier = modifier.size(size),
+            color = color ?: MaterialTheme.colorScheme.primary,
+            strokeWidth = strokeWidth
+        )
+    } else {
+        MaterialCircularProgressIndicator(
+            progress = progress,
+            modifier = modifier.size(size),
+            color = color ?: MaterialTheme.colorScheme.primary,
+            strokeWidth = strokeWidth
         )
     }
+}
+
+@Composable
+internal fun RadiantProgressImpl(
+    progress: (() -> Float)?,
+    modifier: Modifier,
+    size: Dp,
+    strokeWidth: Dp,
+    color: Color?
+) {
+    LiquidGlassProgressIndicator(
+        progress = progress?.invoke(),
+        modifier = modifier,
+        size = size,
+        strokeWidth = strokeWidth,
+        color = color ?: MaterialTheme.colorScheme.primary
+    )
 }
 
 @Composable
@@ -764,31 +623,54 @@ fun AppFloatingActionButton(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> MiuixFloatingActionButton(
-            onClick = onClick,
-            modifier = modifier,
-            content = content
-        )
-        AppUiTheme.MATERIAL -> MaterialFloatingActionButton(
-            onClick = onClick,
-            modifier = modifier,
-            content = content
-        )
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> Box(
-            modifier = modifier
-                .size(60.dp)
-                .appLiquidGlassSurface(
-                    shape = AppComponentTokens.ControlShape,
-                    fallbackColor = MaterialTheme.colorScheme.primaryContainer,
-                    level = LiquidGlassSurfaceLevel.Floating,
-                    backdrop = LocalLiquidGlassAmbientBackdrop.current,
-                    backdropSamplingEnabled = false
-                )
-                .clickable(role = Role.Button, onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) { content() }
-    }
+    LocalComponentPack.current.FloatingActionButton(onClick, modifier, content)
+}
+
+@Composable
+internal fun MiuixFabImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit
+) {
+    MiuixFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        content = content
+    )
+}
+
+@Composable
+internal fun MaterialFabImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit
+) {
+    MaterialFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier,
+        content = content
+    )
+}
+
+@Composable
+internal fun RadiantFabImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(60.dp)
+            .appLiquidGlassSurface(
+                shape = AppComponentTokens.ControlShape,
+                fallbackColor = MaterialTheme.colorScheme.primaryContainer,
+                level = LiquidGlassSurfaceLevel.Floating,
+                backdrop = LocalLiquidGlassAmbientBackdrop.current,
+                backdropSamplingEnabled = false
+            )
+            .clickable(role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { content() }
 }
 
 @Composable
@@ -882,18 +764,37 @@ fun AppSearchField(
     modifier: Modifier = Modifier,
     onSearch: (String) -> Unit = {}
 ) {
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        MiuixSearchInputField(
-            query = value,
-            onQueryChange = onValueChange,
-            label = placeholder,
-            onSearch = onSearch,
-            expanded = true,
-            onExpandedChange = {},
-            modifier = modifier
-        )
-        return
-    }
+    LocalComponentPack.current.SearchField(value, onValueChange, placeholder, modifier, onSearch)
+}
+
+@Composable
+internal fun MiuixSearchFieldImpl(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier,
+    onSearch: (String) -> Unit
+) {
+    MiuixSearchInputField(
+        query = value,
+        onQueryChange = onValueChange,
+        label = placeholder,
+        onSearch = onSearch,
+        expanded = true,
+        onExpandedChange = {},
+        modifier = modifier
+    )
+}
+
+@Composable
+internal fun OutlinedSearchFieldImpl(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    modifier: Modifier,
+    onSearch: (String) -> Unit,
+    liquid: Boolean
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -903,7 +804,7 @@ fun AppSearchField(
         shape = AppComponentTokens.ControlShape,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
         keyboardActions = KeyboardActions(onSearch = { onSearch(value) }),
-        colors = if (LocalAppUiTheme.current.usesLiquidGlass) {
+        colors = if (liquid) {
             OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.28f),
@@ -928,22 +829,51 @@ fun AppTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     visualTransformation: VisualTransformation = VisualTransformation.None
 ) {
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        MiuixTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = modifier,
-            label = label,
-            useLabelAsPlaceholder = true,
-            enabled = enabled,
-            singleLine = singleLine,
-            keyboardOptions = keyboardOptions,
-            keyboardActions = keyboardActions,
-            visualTransformation = visualTransformation
-        )
-        return
-    }
-    val liquid = LocalAppUiTheme.current.usesLiquidGlass
+    LocalComponentPack.current.TextField(
+        value, onValueChange, label, modifier, enabled, singleLine,
+        keyboardOptions, keyboardActions, visualTransformation
+    )
+}
+
+@Composable
+internal fun MiuixTextFieldImpl(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier,
+    enabled: Boolean,
+    singleLine: Boolean,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions,
+    visualTransformation: VisualTransformation
+) {
+    MiuixTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier,
+        label = label,
+        useLabelAsPlaceholder = true,
+        enabled = enabled,
+        singleLine = singleLine,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        visualTransformation = visualTransformation
+    )
+}
+
+@Composable
+internal fun OutlinedTextFieldImpl(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    modifier: Modifier,
+    enabled: Boolean,
+    singleLine: Boolean,
+    keyboardOptions: KeyboardOptions,
+    keyboardActions: KeyboardActions,
+    visualTransformation: VisualTransformation,
+    liquid: Boolean
+) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
@@ -976,6 +906,93 @@ fun AppButton(
     variant: AppButtonVariant = AppButtonVariant.Primary,
     content: @Composable RowScope.() -> Unit
 ) {
+    LocalComponentPack.current.Button(onClick, modifier, enabled, variant, content)
+}
+
+@Composable
+internal fun MiuixButtonImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    variant: AppButtonVariant,
+    content: @Composable RowScope.() -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val haptic = LocalHapticFeedback.current
+    val miuixColor = when (variant) {
+        AppButtonVariant.Primary -> MiuixTheme.colorScheme.primary
+        AppButtonVariant.Secondary -> MiuixTheme.colorScheme.secondaryVariant
+        AppButtonVariant.Destructive -> colors.error
+    }
+    val miuixDisabledColor = when (variant) {
+        AppButtonVariant.Primary -> MiuixTheme.colorScheme.disabledPrimaryButton
+        else -> MiuixTheme.colorScheme.disabledSecondaryVariant
+    }
+    val miuixContentColor = when (variant) {
+        AppButtonVariant.Primary -> MiuixTheme.colorScheme.onPrimary
+        AppButtonVariant.Secondary -> MiuixTheme.colorScheme.onSecondaryVariant
+        AppButtonVariant.Destructive -> colors.onError
+    }
+    MiuixButton(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        modifier = modifier,
+        enabled = enabled,
+        minHeight = AppComponentTokens.TouchTarget,
+        colors = MiuixButtonColors(miuixColor, miuixDisabledColor),
+    ) {
+        CompositionLocalProvider(
+            LocalContentColor provides miuixContentColor.copy(
+                alpha = if (enabled) 1f else 0.60f
+            )
+        ) { content() }
+    }
+}
+
+@Composable
+internal fun MaterialButtonImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    variant: AppButtonVariant,
+    content: @Composable RowScope.() -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val materialModifier = modifier.heightIn(min = AppComponentTokens.TouchTarget)
+    when (variant) {
+        AppButtonVariant.Secondary -> FilledTonalButton(
+            onClick = onClick,
+            modifier = materialModifier,
+            enabled = enabled,
+            content = content
+        )
+        AppButtonVariant.Primary, AppButtonVariant.Destructive -> MaterialButton(
+            onClick = onClick,
+            modifier = materialModifier,
+            enabled = enabled,
+            colors = if (variant == AppButtonVariant.Destructive) {
+                MaterialButtonDefaults.buttonColors(
+                    containerColor = colors.error,
+                    contentColor = colors.onError
+                )
+            } else {
+                MaterialButtonDefaults.buttonColors()
+            },
+            content = content
+        )
+    }
+}
+
+@Composable
+internal fun RadiantButtonImpl(
+    onClick: () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    variant: AppButtonVariant,
+    content: @Composable RowScope.() -> Unit
+) {
     val colors = MaterialTheme.colorScheme
     val surfaceColor = when (variant) {
         AppButtonVariant.Primary -> colors.primaryContainer
@@ -992,81 +1009,20 @@ fun AppButton(
         AppButtonVariant.Secondary -> colors.secondary
         AppButtonVariant.Destructive -> colors.error
     }
-
     val liquidContent: @Composable RowScope.() -> Unit = {
         CompositionLocalProvider(
             LocalContentColor provides contentColor.copy(alpha = if (enabled) 1f else 0.72f)
         ) { content() }
     }
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> {
-            val haptic = LocalHapticFeedback.current
-            val miuixColor = when (variant) {
-                AppButtonVariant.Primary -> MiuixTheme.colorScheme.primary
-                AppButtonVariant.Secondary -> MiuixTheme.colorScheme.secondaryVariant
-                AppButtonVariant.Destructive -> colors.error
-            }
-            val miuixDisabledColor = when (variant) {
-                AppButtonVariant.Primary -> MiuixTheme.colorScheme.disabledPrimaryButton
-                else -> MiuixTheme.colorScheme.disabledSecondaryVariant
-            }
-            val miuixContentColor = when (variant) {
-                AppButtonVariant.Primary -> MiuixTheme.colorScheme.onPrimary
-                AppButtonVariant.Secondary -> MiuixTheme.colorScheme.onSecondaryVariant
-                AppButtonVariant.Destructive -> colors.onError
-            }
-            MiuixButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    onClick()
-                },
-                modifier = modifier,
-                enabled = enabled,
-                minHeight = AppComponentTokens.TouchTarget,
-                colors = MiuixButtonColors(miuixColor, miuixDisabledColor),
-            ) {
-                CompositionLocalProvider(
-                    LocalContentColor provides miuixContentColor.copy(
-                        alpha = if (enabled) 1f else 0.60f
-                    )
-                ) { content() }
-            }
-        }
-        AppUiTheme.MATERIAL -> {
-            val materialModifier = modifier.heightIn(min = AppComponentTokens.TouchTarget)
-            when (variant) {
-                AppButtonVariant.Secondary -> FilledTonalButton(
-                    onClick = onClick,
-                    modifier = materialModifier,
-                    enabled = enabled,
-                    content = content
-                )
-                AppButtonVariant.Primary, AppButtonVariant.Destructive -> MaterialButton(
-                    onClick = onClick,
-                    modifier = materialModifier,
-                    enabled = enabled,
-                    colors = if (variant == AppButtonVariant.Destructive) {
-                        MaterialButtonDefaults.buttonColors(
-                            containerColor = colors.error,
-                            contentColor = colors.onError
-                        )
-                    } else {
-                        MaterialButtonDefaults.buttonColors()
-                    },
-                    content = content
-                )
-            }
-        }
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidButton(
-            onClick = onClick,
-            backdrop = LocalLiquidGlassAmbientBackdrop.current,
-            modifier = modifier.heightIn(min = AppComponentTokens.TouchTarget),
-            enabled = enabled,
-            tint = tint,
-            surfaceColor = surfaceColor,
-            content = liquidContent
-        )
-    }
+    LiquidButton(
+        onClick = onClick,
+        backdrop = LocalLiquidGlassAmbientBackdrop.current,
+        modifier = modifier.heightIn(min = AppComponentTokens.TouchTarget),
+        enabled = enabled,
+        tint = tint,
+        surfaceColor = surfaceColor,
+        content = liquidContent
+    )
 }
 
 @Composable
@@ -1077,33 +1033,60 @@ fun AppToggle(
     enabled: Boolean = true,
     contentDescription: String? = null
 ) {
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> {
-            MiuixSwitch(
-                checked = checked,
-                onCheckedChange = onCheckedChange,
-                modifier = modifier,
-                enabled = enabled
-            )
-        }
-        AppUiTheme.MATERIAL -> MaterialSwitch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            modifier = modifier,
-            enabled = enabled
-        )
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidToggle(
-            selected = { checked },
-            onSelect = onCheckedChange,
-            backdrop = LocalLiquidGlassAmbientBackdrop.current,
-            modifier = modifier,
-            userInputEnabled = enabled,
-            contentDescription = contentDescription
-        )
-    }
+    LocalComponentPack.current.Toggle(checked, onCheckedChange, modifier, enabled, contentDescription)
 }
 
-/** Dispatches to three independent controls so one design system cannot leak into another. */
+@Composable
+internal fun MiuixToggleImpl(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    contentDescription: String? = null
+) {
+    MiuixSwitch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled
+    )
+}
+
+@Composable
+internal fun MaterialToggleImpl(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    contentDescription: String? = null
+) {
+    MaterialSwitch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        modifier = modifier,
+        enabled = enabled
+    )
+}
+
+@Composable
+internal fun RadiantToggleImpl(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier,
+    enabled: Boolean,
+    contentDescription: String? = null
+) {
+    LiquidToggle(
+        selected = { checked },
+        onSelect = onCheckedChange,
+        backdrop = LocalLiquidGlassAmbientBackdrop.current,
+        modifier = modifier,
+        userInputEnabled = enabled,
+        contentDescription = contentDescription
+    )
+}
+
+/** 主题无感的下拉选择：分发到当前 [LocalComponentPack] 的实现。 */
 @Composable
 fun <T> AppSelectField(
     label: String,
@@ -1119,48 +1102,106 @@ fun <T> AppSelectField(
     liquidLabelWeight: Float = 1f,
     liquidValueWeight: Float = 1f
 ) {
-    val selectedIndex = remember(options, selected) {
-        options.indexOfFirst { it.value == selected }
-    }
-    val selectedLabel = options.getOrNull(selectedIndex)?.label ?: placeholder
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> MiuixSelectField(
-            label = label,
-            selectedIndex = selectedIndex,
-            options = options,
-            onSelected = onSelected,
-            modifier = modifier,
-            enabled = enabled,
-            insideMargin = miuixInsideMargin,
-            standalone = miuixStandalone
-        )
-        AppUiTheme.MATERIAL -> MaterialSelectField(
-            label = label,
-            selected = selected,
-            selectedLabel = selectedLabel,
-            options = options,
-            onSelected = onSelected,
-            modifier = modifier,
-            enabled = enabled,
-            valueTextAlign = valueTextAlign
-        )
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> LiquidGlassSelectField(
-            label = label,
-            selected = selected,
-            selectedLabel = selectedLabel,
-            options = options,
-            onSelected = onSelected,
-            modifier = modifier,
-            enabled = enabled,
-            valueTextAlign = valueTextAlign,
-            labelWeight = liquidLabelWeight,
-            valueWeight = liquidValueWeight
-        )
-    }
+    LocalComponentPack.current.SelectField(
+        label = label,
+        selected = selected,
+        options = options,
+        onSelected = onSelected,
+        modifier = modifier,
+        placeholder = placeholder,
+        enabled = enabled,
+        valueTextAlign = valueTextAlign,
+        miuixInsideMargin = miuixInsideMargin,
+        miuixStandalone = miuixStandalone,
+        liquidLabelWeight = liquidLabelWeight,
+        liquidValueWeight = liquidValueWeight
+    )
 }
 
 @Composable
-private fun <T> MiuixSelectField(
+internal fun <T> MiuixSelectFieldImpl(
+    label: String,
+    selected: T?,
+    options: List<AppSelectOption<T>>,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    insideMargin: PaddingValues = PaddingValues(16.dp),
+    standalone: Boolean = false
+) {
+    val selectedIndex = remember(options, selected) {
+        options.indexOfFirst { it.value == selected }
+    }
+    MiuixSelectField(
+        label = label,
+        selectedIndex = selectedIndex,
+        options = options,
+        onSelected = onSelected,
+        modifier = modifier,
+        enabled = enabled,
+        insideMargin = insideMargin,
+        standalone = standalone
+    )
+}
+
+@Composable
+internal fun <T> MaterialSelectFieldImpl(
+    label: String,
+    selected: T?,
+    options: List<AppSelectOption<T>>,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "请选择",
+    enabled: Boolean = true,
+    valueTextAlign: TextAlign = TextAlign.Start
+) {
+    val selectedLabel = remember(options, selected, placeholder) {
+        options.find { it.value == selected }?.label ?: placeholder
+    }
+    MaterialSelectField(
+        label = label,
+        selected = selected,
+        selectedLabel = selectedLabel,
+        options = options,
+        onSelected = onSelected,
+        modifier = modifier,
+        enabled = enabled,
+        valueTextAlign = valueTextAlign
+    )
+}
+
+@Composable
+internal fun <T> RadiantSelectFieldImpl(
+    label: String,
+    selected: T?,
+    options: List<AppSelectOption<T>>,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "请选择",
+    enabled: Boolean = true,
+    valueTextAlign: TextAlign = TextAlign.Start,
+    labelWeight: Float = 1f,
+    valueWeight: Float = 1f
+) {
+    val selectedLabel = remember(options, selected, placeholder) {
+        options.find { it.value == selected }?.label ?: placeholder
+    }
+    LiquidGlassSelectField(
+        label = label,
+        selected = selected,
+        selectedLabel = selectedLabel,
+        options = options,
+        onSelected = onSelected,
+        modifier = modifier,
+        enabled = enabled,
+        valueTextAlign = valueTextAlign,
+        labelWeight = labelWeight,
+        valueWeight = valueWeight
+    )
+}
+
+@Composable
+internal fun <T> MiuixSelectField(
     label: String,
     selectedIndex: Int,
     options: List<AppSelectOption<T>>,
@@ -1204,7 +1245,7 @@ private fun <T> MiuixSelectField(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun <T> MaterialSelectField(
+internal fun <T> MaterialSelectField(
     label: String,
     selected: T?,
     selectedLabel: String,
@@ -1281,7 +1322,7 @@ private fun <T> MaterialSelectField(
 }
 
 @Composable
-private fun <T> LiquidGlassSelectField(
+internal fun <T> LiquidGlassSelectField(
     label: String,
     selected: T?,
     selectedLabel: String,
@@ -1729,34 +1770,52 @@ fun AppFilterChip(
     modifier: Modifier = Modifier,
     enabled: Boolean = true
 ) {
-    val colors = MaterialTheme.colorScheme
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        val containerColor = if (selected) {
-            MiuixTheme.colorScheme.primary
-        } else {
-            MiuixTheme.colorScheme.secondaryVariant
-        }
-        val labelColor = if (selected) {
-            MiuixTheme.colorScheme.onPrimary
-        } else {
-            MiuixTheme.colorScheme.onSecondaryVariant
-        }
-        MiuixSurface(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.heightIn(min = AppComponentTokens.ChipHeight),
-            color = containerColor,
-            shape = SmoothRoundedCornerShape(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CompositionLocalProvider(LocalContentColor provides labelColor, content = label)
-            }
-        }
-        return
+    LocalComponentPack.current.FilterChip(selected, onClick, label, modifier, enabled)
+}
+
+@Composable
+internal fun MiuixFilterChipImpl(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean
+) {
+    val containerColor = if (selected) {
+        MiuixTheme.colorScheme.primary
+    } else {
+        MiuixTheme.colorScheme.secondaryVariant
     }
+    val labelColor = if (selected) {
+        MiuixTheme.colorScheme.onPrimary
+    } else {
+        MiuixTheme.colorScheme.onSecondaryVariant
+    }
+    MiuixSurface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = AppComponentTokens.ChipHeight),
+        color = containerColor,
+        shape = SmoothRoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            CompositionLocalProvider(LocalContentColor provides labelColor, content = label)
+        }
+    }
+}
+
+@Composable
+internal fun MaterialFilterChipImpl(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    modifier: Modifier,
+    enabled: Boolean
+) {
+    val colors = MaterialTheme.colorScheme
     FilterChip(
         selected = selected,
         onClick = onClick,
@@ -1817,153 +1876,172 @@ fun AppModalBottomSheet(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    when (LocalAppUiTheme.current) {
-        AppUiTheme.MIUIX -> {
-            val show = remember { mutableStateOf(true) }
-            MiuixSuperBottomSheet(
-                show = show,
-                modifier = modifier,
-                title = title,
-                onDismissRequest = onDismissRequest,
-                content = {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        content = content
-                    )
-                }
+    LocalComponentPack.current.ModalBottomSheet(title, onDismissRequest, modifier, content)
+}
+
+@Composable
+internal fun MiuixModalBottomSheetImpl(
+    title: String,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val show = remember { mutableStateOf(true) }
+    MiuixSuperBottomSheet(
+        show = show,
+        modifier = modifier,
+        title = title,
+        onDismissRequest = onDismissRequest,
+        content = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                content = content
             )
         }
+    )
+}
 
-        AppUiTheme.MATERIAL -> {
-            MaterialModalBottomSheet(
-                onDismissRequest = onDismissRequest,
-                modifier = modifier,
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-            ) {
-                Text(
-                    text = title,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    content = content
-                )
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun MaterialModalBottomSheetImpl(
+    title: String,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    MaterialModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            content = content
+        )
+    }
+}
+
+@Composable
+internal fun RadiantModalBottomSheetImpl(
+    title: String,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val visibility = remember {
+        MutableTransitionState(false).apply { targetState = true }
+    }
+    val scope = rememberCoroutineScope()
+    var dismissing by remember { mutableStateOf(false) }
+    val requestDismiss = {
+        if (!dismissing) {
+            dismissing = true
+            visibility.targetState = false
+            scope.launch {
+                delay(180)
+                onDismissRequest()
             }
         }
+    }
 
-        AppUiTheme.LIQUID_GLASS, AppUiTheme.RADIANT -> {
-            val visibility = remember {
-                MutableTransitionState(false).apply { targetState = true }
-            }
-            val scope = rememberCoroutineScope()
-            var dismissing by remember { mutableStateOf(false) }
-            val requestDismiss = {
-                if (!dismissing) {
-                    dismissing = true
-                    visibility.targetState = false
-                    scope.launch {
-                        delay(180)
-                        onDismissRequest()
-                    }
-                }
-            }
-
-            Dialog(
-                onDismissRequest = requestDismiss,
-                properties = DialogProperties(
-                    usePlatformDefaultWidth = false,
-                    decorFitsSystemWindows = false
+    Dialog(
+        onDismissRequest = requestDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.36f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = requestDismiss
                 )
+        ) {
+            AnimatedVisibility(
+                visibleState = visibility,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                enter = fadeIn(tween(150)) +
+                    slideInVertically(tween(220)) { height -> height / 5 },
+                exit = fadeOut(tween(120)) +
+                    slideOutVertically(tween(180)) { height -> height / 5 }
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.36f))
+                val sheetShape = SmoothRoundedCornerShape(32.dp)
+                Column(
+                    modifier = modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 720.dp)
+                        .navigationBarsPadding()
+                        .shadow(18.dp, sheetShape, clip = false)
+                        .clip(sheetShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .border(
+                            0.75.dp,
+                            MaterialTheme.colorScheme.outlineVariant,
+                            sheetShape
+                        )
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = requestDismiss
+                            onClick = {}
                         )
                 ) {
-                    AnimatedVisibility(
-                        visibleState = visibility,
+                    Row(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        enter = fadeIn(tween(150)) +
-                            slideInVertically(tween(220)) { height -> height / 5 },
-                        exit = fadeOut(tween(120)) +
-                            slideOutVertically(tween(180)) { height -> height / 5 }
+                            .padding(start = 24.dp, top = 20.dp, end = 18.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val sheetShape = SmoothRoundedCornerShape(32.dp)
-                        Column(
-                            modifier = modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 720.dp)
-                                .navigationBarsPadding()
-                                .shadow(18.dp, sheetShape, clip = false)
-                                .clip(sheetShape)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .border(
-                                    0.75.dp,
-                                    MaterialTheme.colorScheme.outlineVariant,
-                                    sheetShape
-                                )
+                        Text(
+                            text = title,
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(SmoothRoundedCornerShape(20.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                                 .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                    onClick = {}
-                                )
+                                    role = Role.Button,
+                                    onClick = requestDismiss
+                            ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 24.dp, top = 20.dp, end = 18.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = title,
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    fontWeight = FontWeight.Bold
+                            val closeIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            Canvas(modifier = Modifier.size(16.dp)) {
+                                val stroke = 2.dp.toPx()
+                                drawLine(
+                                    color = closeIconColor,
+                                    start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                                    end = androidx.compose.ui.geometry.Offset(size.width, size.height),
+                                    strokeWidth = stroke,
+                                    cap = StrokeCap.Round
                                 )
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .clip(SmoothRoundedCornerShape(20.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                                        .clickable(
-                                            role = Role.Button,
-                                            onClick = requestDismiss
-                                    ),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    val closeIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    Canvas(modifier = Modifier.size(16.dp)) {
-                                        val stroke = 2.dp.toPx()
-                                        drawLine(
-                                            color = closeIconColor,
-                                            start = androidx.compose.ui.geometry.Offset(0f, 0f),
-                                            end = androidx.compose.ui.geometry.Offset(size.width, size.height),
-                                            strokeWidth = stroke,
-                                            cap = StrokeCap.Round
-                                        )
-                                        drawLine(
-                                            color = closeIconColor,
-                                            start = androidx.compose.ui.geometry.Offset(size.width, 0f),
-                                            end = androidx.compose.ui.geometry.Offset(0f, size.height),
-                                            strokeWidth = stroke,
-                                            cap = StrokeCap.Round
-                                        )
-                                    }
-                                }
+                                drawLine(
+                                    color = closeIconColor,
+                                    start = androidx.compose.ui.geometry.Offset(size.width, 0f),
+                                    end = androidx.compose.ui.geometry.Offset(0f, size.height),
+                                    strokeWidth = stroke,
+                                    cap = StrokeCap.Round
+                                )
                             }
-                            content()
                         }
                     }
+                    content()
                 }
             }
         }

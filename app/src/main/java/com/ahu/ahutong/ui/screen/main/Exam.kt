@@ -67,10 +67,12 @@ import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.mock.MockScenarioController
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppStateCard
+import com.ahu.ahutong.ui.components.AppRefreshButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
+import com.ahu.ahutong.ui.components.AppTitleIconButton
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SecondarySearchState
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -242,136 +244,48 @@ fun Exam(
                 }
             }
         } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 120.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    AppCircularProgressIndicator(
-                        size = 32.dp,
-                        strokeWidth = 3.dp,
-                        color = 90.a1 withNight 90.a1
-                    )
-                    Text(
-                        "加载中…",
-                        color = 50.n1 withNight 80.n1,
-                        fontSize = 14.sp
-                    )
+            AppStateCard.Loading(
+                message = "加载中…",
+                modifier = Modifier.padding(vertical = 88.dp)
+            )
+        }
+    }
+
+    AppPageScaffold(
+        title = stringResource(id = R.string.exam),
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        search = SecondarySearchState(
+            query = searchQuery,
+            visible = isSearchActive,
+            placeholder = "搜索课程名称…",
+            onQueryChange = { searchQuery = it },
+            onClose = {
+                isSearchActive = false
+                searchQuery = ""
+            },
+            onSubmit = {}
+        ),
+        trailingContent = {
+            AppTitleIconButton(
+                icon = R.drawable.ic_find,
+                contentDescription = "搜索",
+                onClick = { isSearchActive = true }
+            )
+            val refreshState by examViewModel.refreshState.collectAsState()
+            val behaviorReporter = rememberBehaviorActionReporter()
+            AppRefreshButton(
+                state = refreshState,
+                contentDescription = "刷新考试",
+                onClick = {
+                    behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
+                    examViewModel.loadExam(isRefresh = true)
                 }
-            }
-        }
-    }
-
-    if (radiant) {
-        SecondaryPageScaffold(
-            title = stringResource(id = R.string.exam),
-            search = SecondarySearchState(
-                query = searchQuery,
-                visible = isSearchActive,
-                placeholder = "搜索课程名称…",
-                onQueryChange = { searchQuery = it },
-                onClose = {
-                    isSearchActive = false
-                    searchQuery = ""
-                },
-                onSubmit = {}
-            ),
-            trailingContent = {
-                ExamRadiantTitleButton(
-                    icon = R.drawable.ic_find,
-                    contentDescription = "搜索",
-                    onClick = { isSearchActive = true }
-                )
-                ExamRadiantRefreshButton(examViewModel)
-            }
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
             )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = stringResource(id = R.string.exam),
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            actions = { RefreshButton(examViewModel) },
-            content = pageContent
-        )
-    }
-}
-
-@Composable
-private fun ExamRadiantTitleButton(
-    icon: Int,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExamRadiantRefreshButton(examViewModel: ExamViewModel) {
-    val behaviorReporter = rememberBehaviorActionReporter()
-    val refreshState by examViewModel.refreshState.collectAsState()
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(
-            enabled = refreshState != RefreshState.LOADING,
-            onClick = {
-                behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
-                examViewModel.loadExam(isRefresh = true)
-            }
-        ) {
-            when (refreshState) {
-                RefreshState.LOADING -> AppCircularProgressIndicator(
-                    size = 18.dp,
-                    strokeWidth = 2.dp
-                )
-                RefreshState.UPDATED -> Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "已更新",
-                    tint = Color(0xFF2E7D32),
-                    modifier = Modifier.size(18.dp)
-                )
-                RefreshState.IDLE -> Icon(
-                    painter = painterResource(R.drawable.ic_refresh),
-                    contentDescription = "刷新考试",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-        }
-    }
+        },
+        bottomPadding = 48.dp,
+        content = pageContent
+    )
 }
 
 /** "磬苑校区-博学楼-博学楼A101" → "磬苑校区 博学楼A101" */
@@ -479,49 +393,6 @@ private fun ExamCard(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             content = cardContent
         )
-    }
-}
-
-@Composable
-private fun RefreshButton(examViewModel: ExamViewModel) {
-    val behaviorReporter = rememberBehaviorActionReporter()
-    val refreshState by examViewModel.refreshState.collectAsState()
-    when (refreshState) {
-        RefreshState.LOADING -> {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
-            ) {
-                AppCircularProgressIndicator(
-                    size = 16.dp,
-                    strokeWidth = 2.dp,
-                    color = 90.a1 withNight 90.a1
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("刷新中…", fontSize = 13.sp, color = 50.n1 withNight 80.n1)
-            }
-        }
-        RefreshState.UPDATED -> {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
-            ) {
-                Icon(Icons.Default.Check, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("已更新", fontSize = 13.sp, color = Color(0xFF2E7D32))
-            }
-        }
-        RefreshState.IDLE -> {
-            AppHeaderIconButton(
-                imageVector = Icons.Default.Refresh,
-                miuixImageVector = MiuixIcons.Useful.Refresh,
-                contentDescription = "刷新考试",
-                onClick = {
-                    behaviorReporter.organic(AppActionId.MANUAL_REFRESH_EXAM)
-                    examViewModel.loadExam(isRefresh = true)
-                }
-            )
-        }
     }
 }
 

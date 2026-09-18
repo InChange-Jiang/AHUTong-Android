@@ -52,6 +52,7 @@ import com.ahu.ahutong.data.repository.RepositoryManager
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppPageHeader
+import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.SettingsConfirmationDialog
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.RepositoryViewModel
@@ -137,18 +138,11 @@ fun RepositoryDownloads(
         }
 
         if (files.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("暂无下载文件", style = MaterialTheme.typography.bodyLarge,
-                        color = secondaryTextColor)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("浏览学习资料时可下载文件", style = MaterialTheme.typography.bodySmall,
-                        color = secondaryTextColor)
-                }
-            }
+            AppStateCard.Empty(
+                message = "暂无下载文件",
+                subtitle = "浏览学习资料时可下载文件",
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             LazyColumn(
                 modifier = Modifier

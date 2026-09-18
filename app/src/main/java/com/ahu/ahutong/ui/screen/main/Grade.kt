@@ -42,14 +42,15 @@ import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppStateCard
+import com.ahu.ahutong.ui.components.AppTitleIconButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SecondarySearchState
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
@@ -311,12 +312,7 @@ fun Grade(
                     }
                 }
             } else if (!searchExpanded && gradeViewModel.isLoading && gradeViewModel.grade == null) {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
+                AppStateCard.Loading()
             } else if (!searchExpanded && gradeData != null && gradeData.gradeList.isNotEmpty()) {
                 Column(
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -337,12 +333,7 @@ fun Grade(
                 } else {
                     "该学期目前没有任何成绩"
                 }
-                Text(
-                    text = emptyMsg,
-                    modifier = Modifier.padding(24.dp),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = 50.n1 withNight 70.n1
-                )
+                AppStateCard.Empty(message = emptyMsg)
             }
     }
 
@@ -350,84 +341,47 @@ fun Grade(
         behaviorReporter.organic(AppActionId.MANUAL_REFRESH_GRADE)
         gradeViewModel.refreshGrade()
     }
-    if (radiant) {
-        SecondaryPageScaffold(
-            title = stringResource(id = R.string.grade),
-            subtitle = selectedTermText,
-            search = SecondarySearchState(
-                query = searchQuery,
-                visible = searchExpanded,
-                placeholder = "搜索课程",
-                onQueryChange = { searchQuery = it },
-                onClose = {
-                    searchExpanded = false
-                    searchQuery = ""
-                },
-                onSubmit = {}
-            ),
-            contentEdgeToEdge = true,
-            trailingContent = {
-                GradeTermMenuButton(
-                    allTerms = allTerms,
-                    selectedTermText = selectedTermText,
-                    expanded = termMenuExpanded,
-                    onExpandedChange = { termMenuExpanded = it },
-                    onSelect = { year, term ->
-                        gradeViewModel.selectTerm(year, term)
-                        termMenuExpanded = false
-                    }
-                )
-                GradeRadiantTitleButton(
-                    icon = R.drawable.ic_refresh,
-                    contentDescription = "刷新成绩",
-                    onClick = refreshGrades
-                )
-                GradeRadiantTitleButton(
-                    icon = R.drawable.ic_find,
-                    contentDescription = "搜索成绩",
-                    onClick = { searchExpanded = true }
-                )
-            }
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(scrollState)
-                    .systemBarsPadding()
-                    .padding(top = 76.dp, bottom = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = stringResource(id = R.string.grade),
-            onBack = onBack,
-            scrollState = scrollState,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = Icons.Default.Refresh,
-                    miuixImageVector = MiuixIcons.Useful.Refresh,
-                    contentDescription = "刷新成绩",
-                    onClick = refreshGrades
-                )
-                AppHeaderIconButton(
-                    imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
-                    miuixImageVector = if (searchExpanded) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
-                    contentDescription = if (searchExpanded) "关闭搜索" else "搜索成绩",
-                    onClick = {
-                        searchExpanded = !searchExpanded
-                        if (!searchExpanded) searchQuery = ""
-                    }
-                )
+    AppPageScaffold(
+        title = stringResource(id = R.string.grade),
+        onBack = onBack,
+        subtitle = selectedTermText,
+        modifier = Modifier.fillMaxSize(),
+        search = SecondarySearchState(
+            query = searchQuery,
+            visible = searchExpanded,
+            placeholder = "搜索课程",
+            onQueryChange = { searchQuery = it },
+            onClose = {
+                searchExpanded = false
+                searchQuery = ""
             },
-            content = pageContent
-        )
-    }
+            onSubmit = {}
+        ),
+        trailingContent = {
+            GradeTermMenuButton(
+                allTerms = allTerms,
+                selectedTermText = selectedTermText,
+                expanded = termMenuExpanded,
+                onExpandedChange = { termMenuExpanded = it },
+                onSelect = { year, term ->
+                    gradeViewModel.selectTerm(year, term)
+                    termMenuExpanded = false
+                }
+            )
+            AppTitleIconButton(
+                icon = R.drawable.ic_refresh,
+                contentDescription = "刷新成绩",
+                onClick = refreshGrades
+            )
+            AppTitleIconButton(
+                icon = R.drawable.ic_find,
+                contentDescription = "搜索成绩",
+                onClick = { searchExpanded = true }
+            )
+        },
+        bottomPadding = 48.dp,
+        content = pageContent
+    )
 }
 
 @Composable
@@ -439,7 +393,7 @@ private fun GradeTermMenuButton(
     onSelect: (String, String) -> Unit
 ) {
     Box {
-        GradeRadiantTitleButton(
+        AppTitleIconButton(
             icon = R.drawable.ic_filter,
             contentDescription = "选择学期：$selectedTermText",
             onClick = { onExpandedChange(!expanded) }
@@ -455,30 +409,6 @@ private fun GradeTermMenuButton(
                     onClick = { onSelect(term.schoolYear, term.term) }
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun GradeRadiantTitleButton(
-    icon: Int,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(18.dp)
-            )
         }
     }
 }

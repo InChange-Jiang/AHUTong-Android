@@ -47,7 +47,7 @@ import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.AppDialogSurface
 import com.ahu.ahutong.ui.components.AppSelectField
@@ -56,7 +56,6 @@ import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SettingsChoice
 import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -159,7 +158,8 @@ fun CardBalanceDeposit(
         }
         null -> false
     }
-    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
+    // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
+    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         if (LocalAppUiTheme.current != AppUiTheme.MATERIAL) {
@@ -440,27 +440,13 @@ fun CardBalanceDeposit(
 
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = "校园卡充值",
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = "校园卡充值",
-            onBack = { navController.popBackStack() },
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            content = pageContent
-        )
-    }
+    AppPageScaffold(
+        title = "校园卡充值",
+        onBack = { navController.popBackStack() },
+        modifier = Modifier.fillMaxSize(),
+        bottomPadding = 48.dp,
+        content = pageContent
+    )
 
 }
 

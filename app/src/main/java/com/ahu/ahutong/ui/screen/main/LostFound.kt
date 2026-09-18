@@ -49,13 +49,14 @@ import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppFloatingActionButton
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppLazyPageLayout
 import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppStateCard
+import com.ahu.ahutong.ui.components.AppTitleIconButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppTextField
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.LostFoundViewModel
@@ -367,57 +368,25 @@ fun LostFound(
 
             if (lostFoundViewModel.listLoading && lostFoundList.isEmpty()) {
                 item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) { AppCircularProgressIndicator() }
+                    AppStateCard.Loading()
                 }
             }
 
             lostFoundViewModel.errorMessage?.let { message ->
                 item {
-                    Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .fillMaxWidth()
-                            .appLiquidGlassSurface(
-                                shape = SmoothRoundedCornerShape(20.dp),
-                                fallbackColor = MaterialTheme.colorScheme.errorContainer,
-                                level = LiquidGlassSurfaceLevel.Panel
-                            )
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("加载失败", style = MaterialTheme.typography.titleMedium)
-                        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        AppButton(
-                            onClick = { lostFoundViewModel.fetchFirstPage() },
-                            variant = AppButtonVariant.Secondary
-                        ) { Text("重试") }
-                    }
+                    AppStateCard.InlineError(
+                        message = message,
+                        onRetry = { lostFoundViewModel.fetchFirstPage() }
+                    )
                 }
             }
 
             if (!lostFoundViewModel.listLoading && filteredList.isEmpty() && lostFoundViewModel.errorMessage == null) {
                 item {
-                    Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .fillMaxWidth()
-                            .appLiquidGlassSurface(
-                                shape = SmoothRoundedCornerShape(20.dp),
-                                fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                                level = LiquidGlassSurfaceLevel.Panel
-                            )
-                            .padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text("暂无匹配内容", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "尝试切换校区、类型或清空搜索关键词。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    AppStateCard.Inline(
+                        title = "暂无匹配内容",
+                        message = "尝试切换校区、类型或清空搜索关键词。"
+                    )
                 }
             }
 
@@ -543,69 +512,31 @@ fun LostFound(
             .fillMaxSize()
             .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
     ) {
-        if (isRadiantUi) {
-            SecondaryPageScaffold(
-                title = "失物招领",
-                contentEdgeToEdge = true,
-                trailingContent = {
-                    LostFoundRadiantTitleButton(
-                        icon = R.drawable.ic_refresh,
-                        contentDescription = "刷新失物招领",
-                        onClick = lostFoundViewModel::refreshList
-                    )
-                    LostFoundRadiantTitleButton(
-                        icon = if (searchExpanded) null else R.drawable.ic_find,
-                        imageVector = if (searchExpanded) Icons.Default.Close else null,
-                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
-                        onClick = {
-                            searchExpanded = !searchExpanded
-                            if (!searchExpanded) searchQuery = ""
-                        }
-                    )
-                }
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .systemBarsPadding(),
-                    contentPadding = PaddingValues(top = 72.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(24.dp),
-                    content = pageContent
+        AppPageScaffold(
+            title = "失物招领",
+            onBack = onBack,
+            modifier = Modifier.fillMaxSize(),
+            listState = listState,
+            trailingContent = {
+                AppTitleIconButton(
+                    icon = R.drawable.ic_refresh,
+                    contentDescription = "刷新失物招领",
+                    onClick = lostFoundViewModel::refreshList
                 )
-            }
-        } else {
-            AppLazyPageLayout(
-                title = "失物招领",
-                onBack = onBack,
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                bottomPadding = 96.dp,
-                actions = {
-                    AppHeaderIconButton(
-                        imageVector = Icons.Default.Refresh,
-                        miuixImageVector = MiuixIcons.Useful.Refresh,
-                        contentDescription = "刷新失物招领",
-                        onClick = lostFoundViewModel::refreshList
-                    )
-                    AppHeaderIconButton(
-                        imageVector = if (searchExpanded) Icons.Default.Close else Icons.Default.Search,
-                        miuixImageVector = if (searchExpanded) {
-                            MiuixIcons.Useful.Cancel
-                        } else {
-                            MiuixIcons.Useful.Search
-                        },
-                        contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
-                        onClick = {
-                            searchExpanded = !searchExpanded
-                            if (!searchExpanded) searchQuery = ""
-                        }
-                    )
-                },
-                content = pageContent
-            )
-        }
+                AppTitleIconButton(
+                    icon = if (searchExpanded) null else R.drawable.ic_find,
+                    imageVector = if (searchExpanded) Icons.Default.Close else null,
+                    contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
+                    onClick = {
+                        searchExpanded = !searchExpanded
+                        if (!searchExpanded) searchQuery = ""
+                    }
+                )
+            },
+            bottomPadding = 96.dp,
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            lazyContent = pageContent
+        )
         AppFloatingActionButton(
             onClick = {
                 showPublishSheet = true
@@ -1055,37 +986,6 @@ fun LostFound(
 
                 Spacer(
                     modifier = Modifier.height(24.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun LostFoundRadiantTitleButton(
-    icon: Int? = null,
-    imageVector: ImageVector? = null,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            when {
-                icon != null -> Icon(
-                    painter = painterResource(icon),
-                    contentDescription = contentDescription,
-                    modifier = Modifier.size(18.dp)
-                )
-                imageVector != null -> Icon(
-                    imageVector = imageVector,
-                    contentDescription = contentDescription,
-                    modifier = Modifier.size(18.dp)
                 )
             }
         }

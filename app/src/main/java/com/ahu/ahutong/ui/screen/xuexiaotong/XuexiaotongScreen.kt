@@ -80,6 +80,7 @@ import com.ahu.ahutong.data.xuexiaotong.CourseProgress
 import com.ahu.ahutong.data.xuexiaotong.CustomEvent
 import com.ahu.ahutong.data.xuexiaotong.Work
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
+import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -696,14 +697,11 @@ fun XuexiaotongScreen(
         )
     }
 
-    // 底部抽屉菜单（参照天气页 ModalBottomSheet）
+    // 底部抽屉菜单（统一 AppModalBottomSheet，主题原生宿主）
     if (sideMenuOpen) {
-        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
-            onDismissRequest = { sideMenuOpen = false },
-            sheetState = sheetState,
-            containerColor = MaterialTheme.colorScheme.surface,
-            tonalElevation = 0.dp
+        AppModalBottomSheet(
+            title = "学习通日历",
+            onDismissRequest = { sideMenuOpen = false }
         ) {
             Column(
                 modifier = Modifier
@@ -711,11 +709,6 @@ fun XuexiaotongScreen(
                     .navigationBarsPadding()
                     .padding(24.dp)
             ) {
-                Text(
-                    "学习通日历",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
                 Text(
                     "作业日历 · 课程进度",
                     fontSize = 12.sp,

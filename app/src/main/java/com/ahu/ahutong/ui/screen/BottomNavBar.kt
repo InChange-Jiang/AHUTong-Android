@@ -21,10 +21,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TableChart
@@ -92,7 +94,7 @@ private data class RadiantDestination(
 private val classicDestinations = listOf(
     BottomDestination("home", "主页", Icons.Filled.Home, Icons.Outlined.Home),
     BottomDestination("schedule", "课表", Icons.Filled.TableChart, Icons.Outlined.TableChart),
-    BottomDestination("tools", "小工具", Icons.Filled.Build, Icons.Outlined.Build),
+    BottomDestination("xuexiaotong", "学小通", Icons.Filled.DateRange, Icons.Outlined.DateRange),
     BottomDestination("settings", "设置", Icons.Filled.Settings, Icons.Outlined.Settings)
 )
 

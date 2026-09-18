@@ -13,8 +13,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class RefreshState { IDLE, LOADING, UPDATED }
-
 internal object ExamRefreshPolicy {
     const val AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1_000L
 

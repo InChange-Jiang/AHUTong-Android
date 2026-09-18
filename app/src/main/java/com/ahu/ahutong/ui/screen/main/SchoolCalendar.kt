@@ -75,7 +75,9 @@ import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppPageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
+import com.ahu.ahutong.ui.components.AppStateCard
+import com.ahu.ahutong.ui.components.TrailingAction
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.utils.FileUtils
 import com.kyant.monet.n1
@@ -262,24 +264,14 @@ fun SchoolCalendar(navController: NavHostController) {
         imageOffset = Offset.Zero
     }
 
-    AppPageLayout(
+    AppPageScaffold(
         title = "校历",
         onBack = { navController.popBackStack() },
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-        actions = {
-            AppHeaderIconButton(
-                imageVector = Icons.Rounded.Refresh,
-                contentDescription = "刷新校历",
-                onClick = { fetchCatalog(true) }
-            )
-            AppHeaderIconButton(
-                imageVector = Icons.Rounded.Download,
-                contentDescription = "保存校历",
-                onClick = ::requestSave
-            )
-        }
+        modifier = Modifier.fillMaxSize(),
+        actions = listOf(
+            TrailingAction(Icons.Rounded.Refresh, "刷新校历") { fetchCatalog(true) },
+            TrailingAction(Icons.Rounded.Download, "保存校历", ::requestSave)
+        )
     ) {
         Column(
             modifier = Modifier
@@ -386,10 +378,21 @@ fun SchoolCalendar(navController: NavHostController) {
                     }
 
                     when {
-                        isLoading && calendarFile == null -> CalendarLoadingState(progress)
-                        calendarFile == null -> CalendarEmptyState(
+                        isLoading && calendarFile == null -> AppStateCard.Loading(
+                            message = if (progress > 0f) {
+                                "正在下载 ${(progress * 100).roundToInt()}%"
+                            } else {
+                                "正在获取校历"
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                        calendarFile == null -> AppStateCard.Empty(
                             message = errorMessage ?: "暂无可用校历",
-                            onRetry = { fetchCatalog(true) }
+                            modifier = Modifier.fillMaxSize(),
+                            icon = Icons.Rounded.CalendarMonth,
+                            actionLabel = "重新加载",
+                            actionIcon = Icons.Rounded.Refresh,
+                            onAction = { fetchCatalog(true) }
                         )
                     }
 
@@ -480,60 +483,6 @@ private fun CalendarOverviewCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun CalendarLoadingState(progress: Float) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        AppCircularProgressIndicator()
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = if (progress > 0f) {
-                "正在下载 ${(progress * 100).roundToInt()}%"
-            } else {
-                "正在获取校历"
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun CalendarEmptyState(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Rounded.CalendarMonth,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = message,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(8.dp))
-        AppButton(onClick = onRetry, variant = AppButtonVariant.Secondary) {
-            Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("重新加载")
         }
     }
 }

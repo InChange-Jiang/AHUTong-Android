@@ -27,6 +27,8 @@ import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
+import com.ahu.ahutong.ui.theme.pack.LocalComponentPack
+import com.ahu.ahutong.ui.theme.pack.componentPack
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.dao.DEFAULT_THEME_COLOR
 import com.ahu.ahutong.ui.state.PreferencesViewModel
@@ -179,7 +181,8 @@ fun AHUTheme(content: @Composable () -> Unit) {
                     LocalContentColor provides if (isDarkTheme) 100.n1 else 0.n1,
                     LocalAppUiTheme provides appUiTheme,
                     LocalIsLiquidGlassEnabled provides liquidGlassTokens.enabled,
-                    LocalLiquidGlassTokens provides liquidGlassTokens
+                    LocalLiquidGlassTokens provides liquidGlassTokens,
+                    LocalComponentPack provides appUiTheme.componentPack
                 ) {
                     // Keep the root node stable so switching UI libraries never recreates the
                     // navigation subtree. The transparent scaffold is also Miuix's popup host.

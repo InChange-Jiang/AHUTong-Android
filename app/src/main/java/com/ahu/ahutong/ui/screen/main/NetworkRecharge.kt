@@ -39,10 +39,10 @@ import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppFilterChip
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
+import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.component.SecurePaymentPasswordDialog
@@ -94,13 +94,14 @@ fun NetworkRecharge(
     val pageContent: @Composable ColumnScope.() -> Unit = {
         when (val state = pageState) {
             NetworkRechargePageState.Loading -> {
-                LoadingCard()
+                AppStateCard.Inline(loading = true)
             }
 
             is NetworkRechargePageState.Error -> {
-                ErrorCard(
+                AppStateCard.Inline(
                     message = state.message,
-                    onRetry = { viewModel.load() }
+                    actionLabel = "重试",
+                    onAction = { viewModel.load() }
                 )
             }
 
@@ -154,26 +155,12 @@ fun NetworkRecharge(
         }
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = "网费充值",
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = "网费充值",
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            content = pageContent
-        )
-    }
+    AppPageScaffold(
+        title = "网费充值",
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        content = pageContent
+    )
 
     if (showDialog) {
         SecurePaymentPasswordDialog(
@@ -205,89 +192,6 @@ fun NetworkRecharge(
 }
 
 private const val PAYMENT_RESULT_DISPLAY_DURATION_MS = 3_000L
-
-@Composable
-private fun LoadingCard() {
-    if (isRadiantUi) {
-        GlassCard(
-            containerColor = 100.n1 withNight 20.n1,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AppCircularProgressIndicator()
-            }
-        }
-        return
-    }
-    Box(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(24.dp),
-                fallbackColor = 100.n1 withNight 20.n1,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
-            .padding(24.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        AppCircularProgressIndicator()
-    }
-}
-
-@Composable
-private fun ErrorCard(
-    message: String,
-    onRetry: () -> Unit
-) {
-    if (isRadiantUi) {
-        GlassCard(
-            containerColor = 100.n1 withNight 20.n1,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = message,
-                    color = 10.n1 withNight 90.n1,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                AppButton(onClick = onRetry, variant = AppButtonVariant.Secondary) {
-                    Text("重试")
-                }
-            }
-        }
-        return
-    }
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 16.dp)
-            .fillMaxWidth()
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(24.dp),
-                fallbackColor = 100.n1 withNight 20.n1,
-                level = LiquidGlassSurfaceLevel.Panel
-            )
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Text(
-            text = message,
-            color = 10.n1 withNight 90.n1,
-            style = MaterialTheme.typography.bodyLarge
-        )
-        AppButton(onClick = onRetry, variant = AppButtonVariant.Secondary) {
-            Text("重试")
-        }
-    }
-}
 
 @Composable
 private fun NetworkAccountCard(
@@ -476,9 +380,7 @@ private fun RechargeActionRow(
     onConfirm: () -> Unit
 ) {
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = if (isRadiantUi) 0.dp else 16.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         when (payState) {

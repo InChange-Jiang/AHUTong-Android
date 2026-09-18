@@ -42,12 +42,11 @@ import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppComponentTokens
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -129,7 +128,8 @@ fun BathroomDeposit(
     val balanceData = info?.data?.map?.showData
     val canSubmit = amount.toDoubleOrNull()?.let { it > 0.0 } == true && accountData != null &&
         payState !is PayState.InProgress
-    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
+    // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
+    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         val lookupContent: @Composable ColumnScope.() -> Unit = {
@@ -374,27 +374,13 @@ fun BathroomDeposit(
         }
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = "浴室缴费",
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = "浴室缴费",
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            content = pageContent
-        )
-    }
+    AppPageScaffold(
+        title = "浴室缴费",
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        bottomPadding = 48.dp,
+        content = pageContent
+    )
 
     if (showPasswordDialog) {
         SecurePaymentPasswordDialog(

@@ -42,12 +42,12 @@ import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.GlassCard
 import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppModalBottomSheet
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
+import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.AppFilterChip
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SecondarySearchState
 import com.ahu.ahutong.ui.components.TrailingAction
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -106,23 +106,13 @@ fun Weather(
 
     val weatherContent: @Composable () -> Unit = {
         if (weatherViewModel.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxWidth().padding(48.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                AppCircularProgressIndicator()
-            }
+            AppStateCard.Loading()
         } else if (weatherViewModel.errorMessage != null) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(weatherViewModel.errorMessage!!, color = MaterialTheme.colorScheme.error)
-                Spacer(Modifier.height(16.dp))
-                AppButton(onClick = { weatherViewModel.refresh() }) {
-                    Text("重试")
-                }
-            }
+            AppStateCard.Error(
+                message = weatherViewModel.errorMessage!!,
+                title = null,
+                onRetry = { weatherViewModel.refresh() }
+            )
         } else if (weather != null) {
             WeatherCard(weather)
 
@@ -177,89 +167,32 @@ fun Weather(
         }
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = weatherViewModel.locationName.ifBlank { "天气" },
-            actions = listOf(
-                TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_find),
-                    "搜索城市"
-                ) { showSearch = true },
-                TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_config),
-                    "设置"
-                ) { showSettings = true },
-                TrailingAction(
-                    ImageVector.vectorResource(R.drawable.ic_refresh),
-                    "刷新"
-                ) {
-                    weatherViewModel.refresh()
-                    Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
-                }
-            ),
-            search = SecondarySearchState(
-                query = searchCity,
-                visible = showSearch,
-                onQueryChange = { searchCity = it },
-                onClose = {
-                    showSearch = false
-                    searchCity = ""
-                },
-                onSubmit = { submitCitySearch() }
-            )
-        ) {
-            weatherContent()
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = weatherViewModel.locationName.ifBlank { "天气" },
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = if (showSearch) Icons.Default.Close else Icons.Default.Search,
-                    miuixImageVector = if (showSearch) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
-                    contentDescription = if (showSearch) "关闭搜索" else "搜索城市",
-                    onClick = {
-                        showSearch = !showSearch
-                        if (!showSearch) searchCity = ""
-                    }
-                )
-                AppHeaderIconButton(
-                    imageVector = Icons.Default.Settings,
-                    miuixImageVector = MiuixIcons.Useful.Settings,
-                    contentDescription = "设置",
-                    onClick = { showSettings = true }
-                )
-                AppHeaderIconButton(
-                    imageVector = Icons.Default.Refresh,
-                    miuixImageVector = MiuixIcons.Useful.Refresh,
-                    contentDescription = "刷新",
-                    onClick = {
-                        weatherViewModel.refresh()
-                        Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
-                    }
-                )
+    AppPageScaffold(
+        title = weatherViewModel.locationName.ifBlank { "天气" },
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        actions = listOf(
+            TrailingAction(Icons.Default.Search, "搜索城市") { showSearch = true },
+            TrailingAction(Icons.Default.Settings, "设置") { showSettings = true },
+            TrailingAction(Icons.Default.Refresh, "刷新") {
+                weatherViewModel.refresh()
+                Toast.makeText(context, "已刷新", Toast.LENGTH_SHORT).show()
             }
-        ) {
-            Column(modifier = Modifier.padding(horizontal = AppComponentTokens.HeaderHorizontalPadding)) {
-                if (showSearch) {
-                    AppSearchField(
-                        value = searchCity,
-                        onValueChange = { searchCity = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = "输入城市名，如 合肥",
-                        onSearch = { submitCitySearch() }
-                    )
-                    Spacer(Modifier.height(16.dp))
-                }
-                weatherContent()
-            }
-        }
-    }
+        ),
+        search = SecondarySearchState(
+            query = searchCity,
+            visible = showSearch,
+            placeholder = "输入城市名，如 合肥",
+            onQueryChange = { searchCity = it },
+            onClose = {
+                showSearch = false
+                searchCity = ""
+            },
+            onSubmit = { submitCitySearch() }
+        ),
+        bottomPadding = 48.dp,
+        content = { weatherContent() }
+    )
 
     if (showSettings) {
         val config = weatherViewModel.homeConfig

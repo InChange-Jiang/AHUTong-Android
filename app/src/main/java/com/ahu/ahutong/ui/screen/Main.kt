@@ -1,7 +1,6 @@
 package com.ahu.ahutong.ui.screen
 
 import com.ahu.ahutong.BuildConfig
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,9 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -91,7 +88,6 @@ import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.utils.animatedComposable
 import com.ahu.ahutong.utils.NavigationObservationPolicy
 import com.ahu.ahutong.utils.NavigationSnapshot
-import com.ahu.ahutong.utils.resolveVisibleRoute
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.launch
@@ -103,7 +99,7 @@ import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.ui.SmartSuggestionHost
 import com.ahu.ahutong.personalization.action.AppActionId
 
-private val primaryDestinationRoutes = listOf("home", "schedule", "tools", "settings")
+private val primaryDestinationRoutes = listOf("home", "schedule", "xuexiaotong", "settings")
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -136,14 +132,7 @@ fun Main(
         currentRoute == "debug"
     val appUiTheme = LocalAppUiTheme.current
     val appUiThemeState = rememberUpdatedState(appUiTheme)
-    val primaryPagerState = rememberPagerState(pageCount = { primaryDestinationRoutes.size })
-    var preloadPrimaryNeighbors by remember { mutableStateOf(false) }
-    val primaryRoute = primaryDestinationRoutes[primaryPagerState.currentPage]
-    val effectiveRoute = resolveVisibleRoute(
-        currentRoute,
-        appUiTheme,
-        primaryDestinationRoutes[primaryPagerState.settledPage]
-    )
+    val effectiveRoute = currentRoute
 
     fun cancelSelection(token: Long) {
         if (navigationPolicy.cancelSelection(token)) {
@@ -157,32 +146,14 @@ fun Main(
         route: String,
         source: ActionSource = ActionSource.ORGANIC
     ) {
-        if (appUiTheme == AppUiTheme.RADIANT) {
-            val target = if (route == "tools") "widgets" else route
-            if (target == navController.currentBackStackEntry?.destination?.route) return
-            val selectionToken = navigationPolicy.expectSelection(target, source)
-            try {
-                navController.navigate(target) {
-                    popUpTo("home") { inclusive = false }
-                    launchSingleTop = true
-                }
-            } catch (error: Exception) {
-                cancelSelection(selectionToken)
-                throw error
-            }
-            return
-        }
-        val destinationIndex = primaryDestinationRoutes.indexOf(route)
-        if (destinationIndex < 0) return
-        if (destinationIndex == primaryPagerState.settledPage &&
-            !primaryPagerState.isScrollInProgress
-        ) return
-        val selectionToken = navigationPolicy.expectSelection(route, source)
+        val target = if (route == "tools") "widgets" else route
+        if (target == navController.currentBackStackEntry?.destination?.route) return
+        val selectionToken = navigationPolicy.expectSelection(target, source)
         try {
-            primaryPagerState.animateScrollToPage(
-                page = destinationIndex,
-                animationSpec = tween(durationMillis = 260)
-            )
+            navController.navigate(target) {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
         } catch (error: Exception) {
             cancelSelection(selectionToken)
             throw error
@@ -198,31 +169,14 @@ fun Main(
         scope.launch { selectPrimaryDestination("home") }
     }
 
-    LaunchedEffect(currentRoute) {
-        if (currentRoute == "home") {
-            delay(1_500L)
-            preloadPrimaryNeighbors = true
-        }
-    }
-
-    LaunchedEffect(appUiTheme) {
-        if (appUiTheme != AppUiTheme.RADIANT && currentRoute == "xuexiaotong") {
-            navController.navigate("home") {
-                popUpTo("home") { inclusive = false }
-                launchSingleTop = true
-            }
-        }
-    }
-
     val navigationSnapshot = NavigationSnapshot(
         route = effectiveRoute,
         entryId = currentBackStackEntry?.id,
         previousEntryId = navController.previousBackStackEntry?.id,
         uiTheme = appUiTheme,
-        settled = appUiTheme == AppUiTheme.RADIANT || currentRoute != "home" ||
-            !primaryPagerState.isScrollInProgress,
+        settled = true,
         diagnostics = diagnosticsRouteVisible,
-        primaryPagerHost = appUiTheme != AppUiTheme.RADIANT && currentRoute == "home"
+        primaryPagerHost = false
     )
     LaunchedEffect(navigationSnapshot, navigationObservationRevision) {
         val observation = navigationPolicy.observe(navigationSnapshot) ?: return@LaunchedEffect
@@ -252,73 +206,20 @@ fun Main(
                 .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
         ) {
             animatedComposable(appUiThemeState, "home") {
-                if (appUiTheme == AppUiTheme.RADIANT) {
-                    Home(
-                        discoveryViewModel = discoveryViewModel,
-                        scheduleViewModel = scheduleViewModel,
-                        navController = navController,
-                        behaviorRuntime = behaviorRuntime,
-                        onOpenSchedule = {
-                            scope.launch { selectPrimaryDestination("schedule") }
-                        },
-                        homeEditEnabled = homeEditGrayState.enabled,
-                        enterEditModeRequest = shouldEnterHomeEdit,
-                        onEnterEditModeRequestConsumed = {
-                            shouldEnterHomeEdit = false
-                        }
-                    )
-                } else {
-                    // Register before the pages so their own modal/edit BackHandlers take priority.
-                    BackHandler(
-                        enabled = currentRoute == "home" &&
-                            (primaryPagerState.settledPage != 0 ||
-                                primaryPagerState.currentPage != 0 ||
-                                primaryPagerState.targetPage != 0)
-                    ) {
-                        scope.launch { selectPrimaryDestination("home", ActionSource.RESTORE) }
+                Home(
+                    discoveryViewModel = discoveryViewModel,
+                    scheduleViewModel = scheduleViewModel,
+                    navController = navController,
+                    behaviorRuntime = behaviorRuntime,
+                    onOpenSchedule = {
+                        scope.launch { selectPrimaryDestination("schedule") }
+                    },
+                    homeEditEnabled = homeEditGrayState.enabled,
+                    enterEditModeRequest = shouldEnterHomeEdit,
+                    onEnterEditModeRequestConsumed = {
+                        shouldEnterHomeEdit = false
                     }
-                    HorizontalPager(
-                        state = primaryPagerState,
-                        modifier = Modifier.fillMaxSize(),
-                        beyondViewportPageCount = if (preloadPrimaryNeighbors) 1 else 0,
-                        userScrollEnabled = false,
-                        key = primaryDestinationRoutes::get
-                    ) { page ->
-                        when (page) {
-                            0 -> Home(
-                                discoveryViewModel = discoveryViewModel,
-                                scheduleViewModel = scheduleViewModel,
-                                navController = navController,
-                                behaviorRuntime = behaviorRuntime,
-                                onOpenSchedule = {
-                                    scope.launch { selectPrimaryDestination("schedule") }
-                                },
-                                homeEditEnabled = homeEditGrayState.enabled,
-                                enterEditModeRequest = shouldEnterHomeEdit,
-                                onEnterEditModeRequestConsumed = {
-                                    shouldEnterHomeEdit = false
-                                }
-                            )
-                            1 -> Schedule(
-                                scheduleViewModel = scheduleViewModel,
-                                behaviorRuntime = behaviorRuntime,
-                                isActive = primaryPagerState.settledPage == 1
-                            )
-                            2 -> Tools(
-                                navController = navController,
-                                homeEditEnabled = homeEditGrayState.enabled,
-                                onEditHome = ::requestHomeEdit
-                            )
-                            3 -> Settings(
-                                navController = navController,
-                                mainViewModel = mainViewModel,
-                                aboutViewModel = aboutViewModel,
-                                scheduleViewModel = scheduleViewModel,
-                                behaviorRuntime = behaviorRuntime
-                            )
-                        }
-                    }
-                }
+                )
             }
             animatedComposable(appUiThemeState, "setup") {
                 Setup(
@@ -346,7 +247,6 @@ fun Main(
                             navController.navigate("home") {
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
-                            primaryPagerState.scrollToPage(0)
                             com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
                                 behaviorRuntime.startProfile(it)
                             }
@@ -376,20 +276,14 @@ fun Main(
                 )
             }
             animatedComposable(appUiThemeState, "tools") {
-                if (appUiTheme == AppUiTheme.RADIANT) {
-                    LaunchedEffect(Unit) {
-                        navController.navigate("widgets") {
-                            popUpTo("tools") { inclusive = true }
-                            launchSingleTop = true
-                        }
+                // IA 统一后小工具页只存在于「主页-更多」二级路由；旧 tools 深链一律转 widgets
+                LaunchedEffect(Unit) {
+                    navController.navigate("widgets") {
+                        popUpTo("tools") { inclusive = true }
+                        launchSingleTop = true
                     }
-                    Box(modifier = Modifier.fillMaxSize())
-                } else {
-                    PrimaryDestinationRedirect(
-                        navController = navController,
-                        onRedirect = { primaryPagerState.scrollToPage(2) }
-                    )
                 }
+                Box(modifier = Modifier.fillMaxSize())
             }
             animatedComposable(appUiThemeState, "widgets") {
                 MoreWidgetsScreen(
@@ -543,27 +437,9 @@ fun Main(
         }
         BottomNavBar(
             backdrop = backdrop,
-            selectedRoute = when {
-                appUiTheme == AppUiTheme.RADIANT -> currentRoute
-                currentRoute == "home" -> primaryRoute
-                else -> null
-            },
+            selectedRoute = currentRoute,
             onDestinationSelected = { route ->
-                if (appUiTheme == AppUiTheme.RADIANT) {
-                    scope.launch { selectPrimaryDestination(route) }
-                } else if (route == "xuexiaotong") {
-                    navController.navigate(route) { launchSingleTop = true }
-                } else {
-                    scope.launch {
-                        selectPrimaryDestination(route)
-                        if (currentRoute != "home") {
-                            navController.navigate("home") {
-                                popUpTo("home") { inclusive = false }
-                                launchSingleTop = true
-                            }
-                        }
-                    }
-                }
+                scope.launch { selectPrimaryDestination(route) }
             }
         )
         val productUiBlocked = effectiveRoute == "login" || effectiveRoute == "setup" ||
@@ -576,10 +452,7 @@ fun Main(
             backdrop = backdrop,
             blocked = productUiBlocked,
             hiddenForDiagnostics = diagnosticsRouteVisible,
-            bottomSpacing = if (
-                effectiveRoute in primaryDestinationRoutes ||
-                appUiTheme == AppUiTheme.RADIANT && currentRoute == "xuexiaotong"
-            ) {
+            bottomSpacing = if (effectiveRoute in primaryDestinationRoutes) {
                 88.dp
             } else {
                 16.dp
@@ -597,19 +470,7 @@ fun Main(
                         navController.navigate("home") { launchSingleTop = true }
                     } else {
                         com.ahu.ahutong.personalization.action.AppActionCatalog.spec(action).route?.let { route ->
-                            if (appUiTheme == AppUiTheme.RADIANT) {
-                                selectPrimaryDestination(route, ActionSource.SUGGESTION)
-                            } else if (route in primaryDestinationRoutes) {
-                                if (currentRoute != "home") {
-                                    navController.navigate("home") {
-                                        popUpTo("home") { inclusive = false }
-                                        launchSingleTop = true
-                                    }
-                                }
-                                selectPrimaryDestination(route, ActionSource.SUGGESTION)
-                            } else {
-                                navController.navigate(route) { launchSingleTop = true }
-                            }
+                            selectPrimaryDestination(route, ActionSource.SUGGESTION)
                         }
                     }
                 }
@@ -650,21 +511,4 @@ fun Main(
             }
         }
     }
-}
-
-@Composable
-private fun PrimaryDestinationRedirect(
-    navController: NavHostController,
-    onRedirect: suspend () -> Unit
-) {
-    LaunchedEffect(Unit) {
-        onRedirect()
-        if (!navController.popBackStack("home", inclusive = false)) {
-            navController.navigate("home") {
-                popUpTo(navController.graph.startDestinationId) { inclusive = false }
-                launchSingleTop = true
-            }
-        }
-    }
-    Box(modifier = Modifier.fillMaxSize())
 }

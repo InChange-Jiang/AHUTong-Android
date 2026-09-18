@@ -42,6 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.ahu.ahutong.data.xuexiaotong.CustomEvent
+import com.ahu.ahutong.ui.components.AppDialog
+import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -94,220 +97,150 @@ fun AddEventDialog(
     var errText by remember { mutableStateOf("") }
     val context = LocalContext.current
 
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(96.n1 withNight 10.n1)
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Text(
-                    "新建日程",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                // 任务名
-                OutlinedTextField(
-                    value = form.title,
-                    onValueChange = { form = form.copy(title = it) },
-                    label = { Text("任务名") },
-                    placeholder = { Text("给日程起个名字") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                    )
-                )
-            }
-
-            // 分割线
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(80.n1 withNight 30.n1)
+    AppDialog(
+        title = "新建日程",
+        onDismiss = onDismiss,
+        contentScrollable = true,
+        actions = listOf(
+            AppDialogAction(label = "取消", onClick = onDismiss),
+            AppDialogAction(
+                label = "保存",
+                style = AppDialogActionStyle.Primary,
+                onClick = {
+                    val title = form.title.trim()
+                    val startTs = parseDateMs(form.startDate, form.startTime)
+                    val endTs = parseDateMs(form.endDate, form.endTime)
+                    errText = when {
+                        title.isEmpty() -> "请输入任务名"
+                        endTs < startTs -> "结束时间需晚于开始时间"
+                        else -> ""
+                    }
+                    if (errText.isEmpty()) {
+                        val ev = CustomEvent(
+                            id = "event_${System.currentTimeMillis()}_${(Math.random() * 1000).toInt()}",
+                            title = title,
+                            startDate = form.startDate,
+                            startTime = form.startTime,
+                            endDate = form.endDate,
+                            endTime = form.endTime,
+                            startTs = startTs,
+                            endTs = endTs,
+                            done = false,
+                            colorBg = form.colorBg,
+                            colorText = form.colorText
+                        )
+                        onSave(ev)
+                    }
+                }
             )
-
-            Column(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // 开始时间
-                NativeDateTimeRow(
-                    label = "开始",
-                    date = form.startDate,
-                    time = form.startTime,
-                    onDatePick = { date ->
-                        val parts = date.split("-")
-                        val y = parts[0].toInt()
-                        val m = parts[1].toInt() - 1
-                        val d = parts[2].toInt()
-                        DatePickerDialog(context, { _, yy, mm, dd ->
-                            form = form.copy(startDate = "$yy-${(mm + 1).toString().padStart(2, '0')}-${dd.toString().padStart(2, '0')}")
-                        }, y, m, d).show()
-                    },
-                    onTimePick = { time ->
-                        val parts = time.split(":")
-                        TimePickerDialog(context, { _, h, m ->
-                            form = form.copy(startTime = "$h:${m.toString().padStart(2, '0')}")
-                        }, parts[0].toInt(), parts[1].toInt(), true).show()
-                    }
+        ),
+        headerContent = {
+            // 任务名
+            OutlinedTextField(
+                value = form.title,
+                onValueChange = { form = form.copy(title = it) },
+                label = { Text("任务名") },
+                placeholder = { Text("给日程起个名字") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                 )
+            )
+        }
+    ) {
+        // 开始时间
+        NativeDateTimeRow(
+            label = "开始",
+            date = form.startDate,
+            time = form.startTime,
+            onDatePick = { date ->
+                val parts = date.split("-")
+                val y = parts[0].toInt()
+                val m = parts[1].toInt() - 1
+                val d = parts[2].toInt()
+                DatePickerDialog(context, { _, yy, mm, dd ->
+                    form = form.copy(startDate = "$yy-${(mm + 1).toString().padStart(2, '0')}-${dd.toString().padStart(2, '0')}")
+                }, y, m, d).show()
+            },
+            onTimePick = { time ->
+                val parts = time.split(":")
+                TimePickerDialog(context, { _, h, m ->
+                    form = form.copy(startTime = "$h:${m.toString().padStart(2, '0')}")
+                }, parts[0].toInt(), parts[1].toInt(), true).show()
+            }
+        )
 
-                // 结束时间
-                NativeDateTimeRow(
-                    label = "结束",
-                    date = form.endDate,
-                    time = form.endTime,
-                    onDatePick = { date ->
-                        val parts = date.split("-")
-                        val y = parts[0].toInt()
-                        val m = parts[1].toInt() - 1
-                        val d = parts[2].toInt()
-                        DatePickerDialog(context, { _, yy, mm, dd ->
-                            form = form.copy(endDate = "$yy-${(mm + 1).toString().padStart(2, '0')}-${dd.toString().padStart(2, '0')}")
-                        }, y, m, d).show()
-                    },
-                    onTimePick = { time ->
-                        val parts = time.split(":")
-                        TimePickerDialog(context, { _, h, m ->
-                            form = form.copy(endTime = "$h:${m.toString().padStart(2, '0')}")
-                        }, parts[0].toInt(), parts[1].toInt(), true).show()
-                    }
-                )
+        // 结束时间
+        NativeDateTimeRow(
+            label = "结束",
+            date = form.endDate,
+            time = form.endTime,
+            onDatePick = { date ->
+                val parts = date.split("-")
+                val y = parts[0].toInt()
+                val m = parts[1].toInt() - 1
+                val d = parts[2].toInt()
+                DatePickerDialog(context, { _, yy, mm, dd ->
+                    form = form.copy(endDate = "$yy-${(mm + 1).toString().padStart(2, '0')}-${dd.toString().padStart(2, '0')}")
+                }, y, m, d).show()
+            },
+            onTimePick = { time ->
+                val parts = time.split(":")
+                TimePickerDialog(context, { _, h, m ->
+                    form = form.copy(endTime = "$h:${m.toString().padStart(2, '0')}")
+                }, parts[0].toInt(), parts[1].toInt(), true).show()
+            }
+        )
 
-                // 颜色选择
-                Text(
-                    "颜色",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(
+        // 颜色选择
+        Text(
+            "颜色",
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            EVENT_COLORS.forEach { (bg, text) ->
+                Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        .size(32.dp)
+                        .clickable { form = form.copy(colorBg = bg, colorText = text) }
+                        .background(Color(android.graphics.Color.parseColor(bg)), CircleShape)
+                        .then(
+                            if (form.colorBg == bg) Modifier
+                                .background(
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                                    CircleShape
+                                )
+                                .padding(3.dp)
+                                .background(Color(android.graphics.Color.parseColor(bg)), CircleShape)
+                            else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    EVENT_COLORS.forEach { (bg, text) ->
+                    if (form.colorBg == bg) {
                         Box(
                             modifier = Modifier
-                                .size(32.dp)
-                                .clickable { form = form.copy(colorBg = bg, colorText = text) }
-                                .background(Color(android.graphics.Color.parseColor(bg)), CircleShape)
-                                .then(
-                                    if (form.colorBg == bg) Modifier
-                                        .background(
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                                            CircleShape
-                                        )
-                                        .padding(3.dp)
-                                        .background(Color(android.graphics.Color.parseColor(bg)), CircleShape)
-                                    else Modifier
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (form.colorBg == bg) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .background(Color.White, CircleShape)
-                                )
-                            }
-                        }
+                                .size(12.dp)
+                                .background(Color.White, CircleShape)
+                        )
                     }
                 }
-
-                if (errText.isNotEmpty()) {
-                    Text(
-                        errText,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
             }
+        }
 
-            // 分割线
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(80.n1 withNight 30.n1)
+        if (errText.isNotEmpty()) {
+            Text(
+                errText,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.error
             )
-
-            // 按钮
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
-                        .clickable { onDismiss() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "取消",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f))
-                        .clickable {
-                            val title = form.title.trim()
-                            if (title.isEmpty()) {
-                                errText = "请输入任务名"
-                                return@clickable
-                            }
-                            val startTs = parseDateMs(form.startDate, form.startTime)
-                            val endTs = parseDateMs(form.endDate, form.endTime)
-                            if (endTs < startTs) {
-                                errText = "结束时间需晚于开始时间"
-                                return@clickable
-                            }
-                            val ev = CustomEvent(
-                                id = "event_${System.currentTimeMillis()}_${(Math.random() * 1000).toInt()}",
-                                title = title,
-                                startDate = form.startDate,
-                                startTime = form.startTime,
-                                endDate = form.endDate,
-                                endTime = form.endTime,
-                                startTs = startTs,
-                                endTs = endTs,
-                                done = false,
-                                colorBg = form.colorBg,
-                                colorText = form.colorText
-                            )
-                            onSave(ev)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "保存",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
         }
     }
 }

@@ -61,12 +61,12 @@ import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppComponentTokens
 import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppLazyPageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
+import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.FreeClassroomViewModel
@@ -334,10 +334,11 @@ fun FreeClassroom(
 
         errorMessage?.let { message ->
             item {
-                MessageCard(
+                AppStateCard.Inline(
                     title = "查询失败",
                     message = message,
                     actionLabel = "重试",
+                    actionIcon = Icons.Rounded.Refresh,
                     onAction = {
                         freeClassroomViewModel.clearError()
                         freeClassroomViewModel.searchFreeRooms()
@@ -364,12 +365,12 @@ fun FreeClassroom(
         }
 
         when {
-            isSearching -> item { MessageCard("正在查找", "正在获取符合条件的教室…") }
+            isSearching -> item { AppStateCard.Inline(title = "正在查找", message = "正在获取符合条件的教室…") }
             !hasSearched -> item {
-                MessageCard("选择条件后查询", "默认会查询今天、全部教学楼和全天时段。")
+                AppStateCard.Inline(title = "选择条件后查询", message = "默认会查询今天、全部教学楼和全天时段。")
             }
             rooms.isEmpty() && errorMessage == null -> item {
-                MessageCard(
+                AppStateCard.Inline(
                     title = "没有找到空闲教室",
                     message = "可以扩大日期或时段范围后再试。",
                     actionLabel = "调整条件",
@@ -385,32 +386,14 @@ fun FreeClassroom(
         }
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = stringResource(id = R.string.free_classroom),
-            contentEdgeToEdge = true
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding(),
-                contentPadding = PaddingValues(top = 72.dp, bottom = 112.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppLazyPageLayout(
-            title = stringResource(id = R.string.free_classroom),
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 112.dp,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            content = pageContent
-        )
-    }
+    AppPageScaffold(
+        title = stringResource(id = R.string.free_classroom),
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        bottomPadding = 112.dp,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        lazyContent = pageContent
+    )
 }
 
 @Composable
@@ -538,47 +521,6 @@ private fun FreeRoomCard(room: FreeRoom) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium
         )
-    }
-}
-
-@Composable
-private fun MessageCard(
-    title: String,
-    message: String,
-    actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
-) {
-    Column(
-        modifier = if (isRadiantUi) {
-            Modifier
-                .padding(horizontal = 16.dp)
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .background(100.n1 withNight 20.n1)
-                .padding(20.dp)
-        } else {
-            Modifier
-                .padding(horizontal = 16.dp)
-                .fillMaxWidth()
-                .appLiquidGlassSurface(
-                    shape = SmoothRoundedCornerShape(20.dp),
-                    fallbackColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    level = LiquidGlassSurfaceLevel.Panel
-                )
-                .padding(18.dp)
-        },
-        verticalArrangement = Arrangement.spacedBy(if (isRadiantUi) 10.dp else 8.dp)
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        if (actionLabel != null && onAction != null) {
-            AppButton(onClick = onAction, variant = AppButtonVariant.Secondary) {
-                if (actionLabel == "重试") {
-                    Icon(Icons.Rounded.Refresh, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                }
-                Text(actionLabel)
-            }
-        }
     }
 }
 

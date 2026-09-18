@@ -57,14 +57,14 @@ import com.ahu.ahutong.R
 import com.ahu.ahutong.data.model.Tel
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.AppSearchHeader
+import com.ahu.ahutong.ui.components.AppTitleIconButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppLazyPageLayout
 import com.ahu.ahutong.ui.components.AppSearchField
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.SecondarySearchState
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
@@ -169,85 +169,36 @@ fun PhoneBook(onBack: (() -> Unit)? = null) {
         }
     }
 
-    if (radiant) {
-        SecondaryPageScaffold(
-            title = stringResource(id = R.string.phone_book),
-            search = SecondarySearchState(
-                query = searchQuery,
-                visible = isSearchActive,
-                placeholder = "搜索电话或部门",
-                onQueryChange = { searchQuery = it },
-                onClose = {
-                    isSearchActive = false
-                    searchQuery = ""
-                },
-                onSubmit = {}
-            ),
-            trailingContent = {
-                PhoneBookTitleButton(
-                    icon = R.drawable.ic_find,
-                    contentDescription = "搜索",
-                    onClick = { isSearchActive = true }
-                )
+    AppPageScaffold(
+        title = stringResource(id = R.string.phone_book),
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        search = SecondarySearchState(
+            query = searchQuery,
+            visible = isSearchActive,
+            placeholder = "搜索电话或部门",
+            onQueryChange = { searchQuery = it },
+            onClose = {
+                isSearchActive = false
+                searchQuery = ""
             },
-            contentEdgeToEdge = true
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding(),
-                contentPadding = PaddingValues(top = 72.dp, bottom = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                content = pageContent
+            onSubmit = {}
+        ),
+        trailingContent = {
+            AppTitleIconButton(
+                icon = R.drawable.ic_find,
+                contentDescription = "搜索",
+                onClick = { isSearchActive = true }
             )
-        }
-    } else {
-        AppLazyPageLayout(
-            title = stringResource(id = R.string.phone_book),
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = if (isSearchActive) Icons.Default.Close else Icons.Default.Search,
-                    miuixImageVector = if (isSearchActive) MiuixIcons.Useful.Cancel else MiuixIcons.Useful.Search,
-                    contentDescription = if (isSearchActive) "关闭搜索" else "搜索",
-                    onClick = toggleSearch
-                )
-            },
-            content = pageContent
-        )
-    }
+        },
+        bottomPadding = 48.dp,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        lazyContent = pageContent
+    )
     DialDialog(
         onDismiss = { dialData = null },
         tel = dialData
     )
-}
-
-@Composable
-private fun PhoneBookTitleButton(
-    icon: Int,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
 }
 
 private fun openTelOrChooseCampus(

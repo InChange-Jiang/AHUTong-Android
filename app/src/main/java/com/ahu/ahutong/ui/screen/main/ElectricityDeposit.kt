@@ -41,12 +41,12 @@ import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import com.ahu.ahutong.ui.components.AppComponentTokens
-import com.ahu.ahutong.ui.components.AppScrollablePageLayout
+import com.ahu.ahutong.ui.components.AppPageScaffold
+import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.GlassCard
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
@@ -127,52 +127,17 @@ fun ElectricityDeposit(
         selectedBuilding != null && selectedFloor != null && selectedRoom != null &&
         amount.toDoubleOrNull()?.let { it > 0.0 } == true &&
         !isLoading && payState is PayState.Idle
-    val horizontalPadding = if (isRadiantUi) 0.dp else 16.dp
+    // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
+    val horizontalPadding = 0.dp
 
     val pageContent: @Composable ColumnScope.() -> Unit = {
         if (errorMessage != null) {
-            val errorContent: @Composable ColumnScope.() -> Unit = {
-                Text("电控信息加载失败", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = errorMessage.orEmpty(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                AppButton(
-                    onClick = viewModel::retry,
-                    modifier = Modifier.fillMaxWidth(),
-                    variant = AppButtonVariant.Secondary
-                ) {
-                    Text("重新加载")
-                }
-            }
-            if (isRadiantUi) {
-                GlassCard(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    overlayColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.24f),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        content = errorContent
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .padding(horizontal = horizontalPadding)
-                        .fillMaxWidth()
-                        .appLiquidGlassSurface(
-                            shape = AppComponentTokens.CardShape,
-                            fallbackColor = MaterialTheme.colorScheme.errorContainer,
-                            level = LiquidGlassSurfaceLevel.Panel
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    content = errorContent
-                )
-            }
+            AppStateCard.InlineError(
+                title = "电控信息加载失败",
+                message = errorMessage.orEmpty(),
+                retryLabel = "重新加载",
+                onRetry = viewModel::retry
+            )
         }
 
         if (historyOptions.isNotEmpty()) {
@@ -394,27 +359,13 @@ fun ElectricityDeposit(
         }
     }
 
-    if (isRadiantUi) {
-        SecondaryPageScaffold(
-            title = "电控缴费",
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                content = pageContent
-            )
-        }
-    } else {
-        AppScrollablePageLayout(
-            title = "电控缴费",
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            content = pageContent
-        )
-    }
+    AppPageScaffold(
+        title = "电控缴费",
+        onBack = onBack,
+        modifier = Modifier.fillMaxSize(),
+        bottomPadding = 48.dp,
+        content = pageContent
+    )
 
     if (showPasswordDialog) {
         SecurePaymentPasswordDialog(
@@ -452,27 +403,18 @@ fun ElectricityRecentRooms(
     viewModel: ElectricityDepositViewModel
 ) {
     val historyOptions by viewModel.historyOptions.collectAsState()
-    AppScrollablePageLayout(
+    AppPageScaffold(
         title = "最近使用的房间",
         onBack = onBack,
-        modifier = Modifier
-            .fillMaxSize()
-            .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
+        modifier = Modifier.fillMaxSize(),
         bottomPadding = 48.dp
     ) {
         if (historyOptions.isEmpty()) {
-            Text(
-                text = "暂无最近使用的房间",
-                modifier = Modifier.padding(horizontal = 20.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyLarge
-            )
+            AppStateCard.Empty(message = "暂无最近使用的房间")
         } else {
             historyOptions.forEach { item ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {

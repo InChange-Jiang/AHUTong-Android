@@ -77,10 +77,11 @@ import com.ahu.ahutong.ui.components.AppButton
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppHeaderIconButton
-import com.ahu.ahutong.ui.components.AppLazyPageLayout
 import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
-import com.ahu.ahutong.ui.components.SecondaryPageScaffold
+import com.ahu.ahutong.ui.components.AppStateCard
+import com.ahu.ahutong.ui.components.AppTitleIconButton
+import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.EvaluationViewModel
@@ -268,31 +269,14 @@ private fun EvaluationListScreen(
 
         if (!errorMessage.isNullOrBlank()) {
             item(key = "error") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .appLiquidGlassSurface(
-                            shape = SmoothRoundedCornerShape(16.dp),
-                            fallbackColor = MaterialTheme.colorScheme.errorContainer,
-                            level = LiquidGlassSurfaceLevel.Panel
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text(
-                        text = errorMessage.orEmpty(),
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    AppButton(
-                        onClick = {
-                            if (semesters.isEmpty()) viewModel.loadSemesters()
-                            else viewModel.loadEvaluationList()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        variant = AppButtonVariant.Secondary
-                    ) { Text("重试") }
-                }
+                AppStateCard.InlineError(
+                    message = errorMessage.orEmpty(),
+                    title = null,
+                    onRetry = {
+                        if (semesters.isEmpty()) viewModel.loadSemesters()
+                        else viewModel.loadEvaluationList()
+                    }
+                )
             }
         }
 
@@ -332,120 +316,59 @@ private fun EvaluationListScreen(
 
         if (!isLoading && taskItems.isEmpty() && errorMessage.isNullOrBlank()) {
             item(key = "empty") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "暂无待评教课程",
-                        color = 40.n1 withNight 80.n1,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                AppStateCard.Empty(message = "暂无待评教课程")
             }
         }
     }
 
-    if (radiant) {
-        SecondaryPageScaffold(
-            title = "评教",
-            subtitle = semesters.firstOrNull { it.id == selectedSemesterId }?.nameZh,
-            contentEdgeToEdge = true,
-            trailingContent = {
-                Box {
-                    EvaluationRadiantTitleButton(
-                        icon = R.drawable.ic_filter,
-                        contentDescription = "选择学期",
-                        onClick = { semesterExpanded = true }
-                    )
-                    DropdownMenu(
-                        expanded = semesterExpanded,
-                        onDismissRequest = { semesterExpanded = false },
-                        containerColor = 100.n1 withNight 20.n1
-                    ) {
-                        semesters.forEach { semester ->
-                            DropdownMenuItem(
-                                text = { Text(semester.nameZh) },
-                                onClick = {
-                                    viewModel.selectedSemesterId.value = semester.id
-                                    viewModel.loadEvaluationList()
-                                    semesterExpanded = false
-                                },
-                                leadingIcon = if (semester.id == selectedSemesterId) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Filled.Check,
-                                            contentDescription = null,
-                                            tint = 40.a1 withNight 80.a1
-                                        )
-                                    }
-                                } else null
-                            )
-                        }
+    AppPageScaffold(
+        title = "评教",
+        onBack = onBack,
+        subtitle = semesters.firstOrNull { it.id == selectedSemesterId }?.nameZh,
+        modifier = Modifier.fillMaxSize(),
+        trailingContent = {
+            Box {
+                AppTitleIconButton(
+                    icon = R.drawable.ic_filter,
+                    contentDescription = "选择学期",
+                    onClick = { semesterExpanded = true }
+                )
+                DropdownMenu(
+                    expanded = semesterExpanded,
+                    onDismissRequest = { semesterExpanded = false },
+                    containerColor = 100.n1 withNight 20.n1
+                ) {
+                    semesters.forEach { semester ->
+                        DropdownMenuItem(
+                            text = { Text(semester.nameZh) },
+                            onClick = {
+                                viewModel.selectedSemesterId.value = semester.id
+                                viewModel.loadEvaluationList()
+                                semesterExpanded = false
+                            },
+                            leadingIcon = if (semester.id == selectedSemesterId) {
+                                {
+                                    Icon(
+                                        imageVector = Icons.Filled.Check,
+                                        contentDescription = null,
+                                        tint = 40.a1 withNight 80.a1
+                                    )
+                                }
+                            } else null
+                        )
                     }
                 }
-                EvaluationRadiantTitleButton(
-                    icon = R.drawable.ic_config,
-                    contentDescription = "评教预设",
-                    onClick = { presetDialogShown = true }
-                )
             }
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding(),
-                contentPadding = PaddingValues(top = 76.dp, bottom = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                content = pageContent
+            AppTitleIconButton(
+                icon = R.drawable.ic_config,
+                contentDescription = "评教预设",
+                onClick = { presetDialogShown = true }
             )
-        }
-    } else {
-        AppLazyPageLayout(
-            title = "评教",
-            onBack = onBack,
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = Icons.Filled.Settings,
-                    miuixImageVector = MiuixIcons.Useful.Settings,
-                    contentDescription = "评教预设",
-                    onClick = { presetDialogShown = true }
-                )
-            },
-            content = pageContent
-        )
-    }
-}
-
-@Composable
-private fun EvaluationRadiantTitleButton(
-    icon: Int,
-    contentDescription: String,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)),
-        contentAlignment = Alignment.Center
-    ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(18.dp)
-            )
-        }
-    }
+        },
+        bottomPadding = 48.dp,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        lazyContent = pageContent
+    )
 }
 
 @Composable
@@ -666,48 +589,22 @@ private fun EvaluationFormScreen(viewModel: EvaluationViewModel) {
         }
     }
 
-    if (radiant) {
-        SecondaryPageScaffold(
-            title = currentCourseName.ifBlank { "课程评教" },
-            subtitle = "${currentTeacher?.teacherName.orEmpty()} · $currentLessonName",
-            contentEdgeToEdge = true,
-            trailingContent = {
-                EvaluationRadiantTitleButton(
-                    icon = R.drawable.ic_config,
-                    contentDescription = "评教预设",
-                    onClick = { presetDialogShown = true }
-                )
-            }
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .systemBarsPadding(),
-                contentPadding = PaddingValues(top = 76.dp, bottom = 48.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                content = pageContent
+    AppPageScaffold(
+        title = currentCourseName.ifBlank { "课程评教" },
+        onBack = { viewModel.backToList() },
+        subtitle = "${currentTeacher?.teacherName.orEmpty()} · $currentLessonName",
+        modifier = Modifier.fillMaxSize(),
+        trailingContent = {
+            AppTitleIconButton(
+                icon = R.drawable.ic_config,
+                contentDescription = "评教预设",
+                onClick = { presetDialogShown = true }
             )
-        }
-    } else {
-        AppLazyPageLayout(
-            title = currentCourseName.ifBlank { "课程评教" },
-            onBack = { viewModel.backToList() },
-            modifier = Modifier
-                .fillMaxSize()
-                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1),
-            bottomPadding = 48.dp,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            actions = {
-                AppHeaderIconButton(
-                    imageVector = Icons.Filled.Settings,
-                    miuixImageVector = MiuixIcons.Useful.Settings,
-                    contentDescription = "评教预设",
-                    onClick = { presetDialogShown = true }
-                )
-            },
-            content = pageContent
-        )
-    }
+        },
+        bottomPadding = 48.dp,
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        lazyContent = pageContent
+    )
 }
 
 @Composable

@@ -20,7 +20,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,9 +53,6 @@ import com.ahu.ahutong.ui.components.AppSelectField
 import com.ahu.ahutong.ui.components.AppSelectOption
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppToggle
-import com.ahu.ahutong.ui.components.LocalAppUiTheme
-import com.ahu.ahutong.ui.components.SettingsChoice
-import com.ahu.ahutong.ui.components.SettingsSelectRow
 import com.ahu.ahutong.ui.state.CardAccountState
 import com.ahu.ahutong.ui.state.CardBalanceDepositViewModel
 import com.ahu.ahutong.ui.state.PaymentState
@@ -155,46 +151,27 @@ fun CardBalanceDeposit(
         }
         null -> false
     }
-    // 壳（AppPageScaffold）已统一提供内容水平 padding，页面侧补偿归零；阶段④清理页面内容时再删
-
     val pageContent: @Composable ColumnScope.() -> Unit = {
-        if (LocalAppUiTheme.current != AppUiTheme.MATERIAL) {
-            AppSelectField(
-                label = "充值方式",
-                selected = selectedRechargeBank,
-                options = CardRechargeBank.entries.map { method ->
-                    AppSelectOption(method, method.displayName)
-                },
-                onSelected = ::selectRechargeBank,
-                modifier = Modifier,
-                enabled = paymentState != PaymentState.Loading,
-                valueTextAlign = TextAlign.End,
-                miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
-                    start = 12.dp,
-                    top = 16.dp,
-                    end = 16.dp,
-                    bottom = 16.dp
-                ),
-                miuixStandalone = true
-            )
-        }
+        AppSelectField(
+            label = "充值方式",
+            selected = selectedRechargeBank,
+            options = CardRechargeBank.entries.map { method ->
+                AppSelectOption(method, method.displayName)
+            },
+            onSelected = ::selectRechargeBank,
+            modifier = Modifier,
+            enabled = paymentState != PaymentState.Loading,
+            valueTextAlign = TextAlign.End,
+            miuixInsideMargin = androidx.compose.foundation.layout.PaddingValues(
+                start = 12.dp,
+                top = 16.dp,
+                end = 16.dp,
+                bottom = 16.dp
+            ),
+            miuixStandalone = true
+        )
 
         val accountContent: @Composable ColumnScope.() -> Unit = {
-            if (LocalAppUiTheme.current == AppUiTheme.MATERIAL) {
-                SettingsSelectRow(
-                    title = "充值方式",
-                    selected = selectedRechargeBank,
-                    choices = CardRechargeBank.entries.map { method ->
-                        SettingsChoice<CardRechargeBank?>(method, method.displayName)
-                    },
-                    onSelected = { method -> method?.let(::selectRechargeBank) },
-                    showDivider = false
-                )
-                HorizontalDivider(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-            }
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier

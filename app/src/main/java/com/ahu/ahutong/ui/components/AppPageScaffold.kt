@@ -59,7 +59,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 /**
  * 统一页面壳（P0 组件）：一套 API 覆盖所有二级页。
  *
- * 消灭「if (radiant) SecondaryPageScaffold else AppXxxPageLayout」双壳分叉——
+ * 历史双壳（SecondaryPageScaffold / AppXxxPageLayout）已整体删除——
  * 页面声明语义参数（标题/副标题/操作/搜索态）+ 内容（[content] 滚动流 / [lazyContent] 懒列表 /
  * [freeContent] 页面自管滚动的自由容器，三选一），头部形态与滚动行为由当前主题的
  * ComponentPack 决定：
@@ -70,7 +70,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
  * 页面自管滚动的场景（课表/校历等）继续使用 AppPageLayout。
  *
  * 注意：壳统一提供 [content] 的水平内边距（Radiant 16dp / 其他主题 20dp），页面内容勿再自带；
- * [lazyContent] 则不加水平 padding（列表项按惯例自带）。
+ * [lazyContent] 则不加水平 padding（列表项按惯例自带）；[freeContent] 完全自管（课表/校历/学习资料用）。
  */
 @Composable
 fun AppPageScaffold(

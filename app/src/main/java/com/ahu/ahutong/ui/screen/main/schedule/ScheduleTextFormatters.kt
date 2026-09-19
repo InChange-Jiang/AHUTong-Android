@@ -15,7 +15,7 @@ private val locationPattern = Regex(
     locationShortenMap.keys.joinToString("|") { Regex.escape(it) }
 )
 
-internal fun String?.shortScheduleLocation(): String {
+fun String?.shortScheduleLocation(): String {
     val shortened = orEmpty()
         .replace(locationPattern) { locationShortenMap[it.value].orEmpty() }
         .replace(Regex("\\s*\\[[^\\]]*]"), "")

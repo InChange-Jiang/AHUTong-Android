@@ -574,6 +574,50 @@ object AHUCache {
         )
     }
 
+    // ---- 主页网格 v2（统一布局族：全主题一份配置） ----
+
+    private const val HOME_GRID_V2_ICONS_KEY = "home_grid_v2_icons"
+    private const val HOME_GRID_V2_CAMPUS_SPAN_KEY = "home_grid_v2_campus_span"
+
+    /**
+     * 读取网格 v2 功能槽（7 槽）。首次读取时从旧布局族一次性迁移
+     * （优先 RADIANT 配置，其次 CLASSIC；旧 key 保留不删，可回退）。
+     */
+    fun getHomeGridIconsV2(): List<String?> {
+        val existing = userGetStringOrMigrate(HOME_GRID_V2_ICONS_KEY) {
+            kv.decodeString(HOME_GRID_V2_ICONS_KEY)
+        }
+        if (!existing.isNullOrBlank()) {
+            return runCatching {
+                Gson().fromJson<List<String?>>(
+                    existing,
+                    object : TypeToken<List<String?>>() {}.type
+                )
+            }.getOrNull().orEmpty()
+        }
+        val migrated = getHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT)
+            .ifEmpty { getHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC) }
+            .filterNotNull()
+            .take(7)
+        val migratedPadded = migrated + List(7 - migrated.size) { null }
+        saveHomeGridIconsV2(migratedPadded)
+        return migratedPadded
+    }
+
+    fun saveHomeGridIconsV2(icons: List<String?>) {
+        userPutString(HOME_GRID_V2_ICONS_KEY, Gson().toJson(icons))
+    }
+
+    /** 校园卡形态（"2x2"/"1x4"，存取字符串，解析在 ui 层 CampusSpan）。 */
+    fun getCampusCardSpanV2(): String =
+        userGetStringOrMigrate(HOME_GRID_V2_CAMPUS_SPAN_KEY) {
+            kv.decodeString(HOME_GRID_V2_CAMPUS_SPAN_KEY)
+        } ?: "2x2"
+
+    fun saveCampusCardSpanV2(span: String) {
+        userPutString(HOME_GRID_V2_CAMPUS_SPAN_KEY, span)
+    }
+
     fun logout() {
         val userId = getCurrentUser()?.xh
         val boxName = userBoxName(userId)

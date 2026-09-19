@@ -131,59 +131,39 @@ fun CampusCard(
     }
 
 
-    val radiant = isRadiantUi
     val campusShape = SmoothRoundedCornerShape(24.dp)
-    val campusSurface = if (radiant) {
-        Modifier.liquidGlassSurface(
-            backdrop = LocalLiquidGlassAmbientBackdrop.current,
-            shape = campusShape,
-            surfaceColor = liquidGlassTint()
-        )
-    } else {
-        Modifier.appLiquidGlassSurface(
-            shape = campusShape,
-            fallbackColor = 100.n1 withNight 20.n1
-        )
-    }
+    val campusSurface = Modifier.appLiquidGlassSurface(
+        shape = campusShape,
+        fallbackColor = 100.n1 withNight 20.n1
+    )
     Box(
         modifier = modifier.then(campusSurface)
     ) {
-        AnimatedContent(
-            targetState = isQrcode,
-            transitionSpec = {
-                (fadeIn(tween(150)) togetherWith fadeOut(tween(150)))
-                    .using(SizeTransform(clip = true))
+        CardView(
+            balance = balance,
+            transitionBalance = transitionBalance,
+            onClick = {
+                behaviorRuntime.recordActionIntentAsync(
+                    AppActionId.OPEN_PAYMENT_QR,
+                    ActionSource.ORGANIC
+                )
+                isQrcode = true
             },
-            contentAlignment = Alignment.TopStart,
-            label = "campus-card-qrcode"
-        ) { showQrcode ->
-            if (showQrcode) {
-                QRcodeView(
-                    balance = balance,
-                    onBack = { isQrcode = false }
-                )
-            } else {
-                CardView(
-                    balance = balance,
-                    transitionBalance = transitionBalance,
-                    onClick = {
-                        behaviorRuntime.recordActionIntentAsync(
-                            AppActionId.OPEN_PAYMENT_QR,
-                            ActionSource.ORGANIC
-                        )
-                        isQrcode = true
-                    },
-                    navController = navController,
-                    enabled = enabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (isRadiantUi) 78.dp else 140.dp)
-                )
-            }
-        }
+            navController = navController,
+            enabled = enabled,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 
-
+    // 二维码以弹层呈现：网格内卡片尺寸固定，二维码不宜挤在卡内
+    if (isQrcode) {
+        Dialog(onDismissRequest = { isQrcode = false }) {
+            QRcodeView(
+                balance = balance,
+                onBack = { isQrcode = false }
+            )
+        }
+    }
 }
 
 
@@ -246,55 +226,33 @@ private fun CardView(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .then(if (isRadiantUi) Modifier.width(76.dp) else Modifier)
+                .width(76.dp)
                 .then(
                     if (enabled) {
                         Modifier.clickable {
-//                    try {
-//                        context.startActivity(
-//                            Intent(
-//                                Intent.ACTION_VIEW,
-//                                Uri.parse(
-//                                    "alipays://platformapi/startapp?appId=2019090967125695&page=pages%2Findex%2Findex&enbsv=0.3.2106171038.6&chInfo=ch_share__chsub_CopyLink"
-//                                )
-//                            ).apply {
-//                                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
-//                            }
-//                        )
-//                    } catch (e: Exception) {
-//                        Toast.makeText(context, "请安装支付宝", Toast.LENGTH_SHORT).show()
-//                    }
-
                             navController.navigate("card_balance_deposit")
                         }
                     } else {
                         Modifier
                     }
                 )
-                .padding(if (isRadiantUi) 8.dp else 16.dp),
+                .padding(8.dp),
             contentAlignment = Alignment.Center
         ) {
-            if (isRadiantUi) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_income),
-                        contentDescription = "充值",
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = "充值",
-                        fontWeight = FontWeight.Medium,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_income),
+                    contentDescription = "充值",
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = "充\n值",
-                    style = MaterialTheme.typography.titleMedium
+                    text = "充值",
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelSmall
                 )
             }
         }

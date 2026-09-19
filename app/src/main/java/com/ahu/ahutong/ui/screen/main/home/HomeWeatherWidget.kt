@@ -472,7 +472,7 @@ private fun String.hasAnyWeatherKeyword(vararg keywords: String): Boolean {
     return keywords.any { contains(it) }
 }
 
-private fun getCityFromLocation(context: Context): String? {
+internal fun getCityFromLocation(context: Context): String? {
     val hasFineLocation = ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.ACCESS_FINE_LOCATION

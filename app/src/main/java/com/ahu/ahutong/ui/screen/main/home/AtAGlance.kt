@@ -1,197 +1,42 @@
 package com.ahu.ahutong.ui.screen.main.home
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.data.model.Course
-import com.ahu.ahutong.ui.components.isRadiantUi
-import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ScheduleViewModel
-import com.kyant.monet.a1
+import com.kyant.monet.n1
 import com.kyant.monet.withNight
 
+/**
+ * At a Glance（缩小版）：轻量信息带——一行主标题（当前课/下节课/今日状态）+
+ * 一行小字副标题（剩余时间/地点）。全主题统一，无形态分叉。
+ */
 @Composable
 fun AtAGlance(
     todayCourses: List<Course>,
     currentMinutes: Int,
-    currentDateText: String,
     onOpenSchedule: () -> Unit,
     isInSemester: Boolean = true,
-    enabled: Boolean = true,
-    trailingContent: @Composable RowScope.() -> Unit = {}
-) {
-    if (isRadiantUi) {
-        RadiantAtAGlance(
-            todayCourses = todayCourses,
-            currentMinutes = currentMinutes,
-            onOpenSchedule = onOpenSchedule,
-            isInSemester = isInSemester,
-            enabled = enabled
-        )
-        return
-    }
-
-    val currentCourse = todayCourses.find {
-        currentMinutes in ScheduleViewModel.getCourseTimeRangeInMinutes(it)
-    }
-    val currentCourseIndex = todayCourses.indexOfFirst {
-        val range = ScheduleViewModel.getCourseTimeRangeInMinutes(it)
-        if (currentMinutes in range) {
-            true
-        } else {
-            currentMinutes < range.first
-        }
-    }.takeIf { it != -1 } ?: todayCourses.lastIndex
-    val hasRemainingCourses = if (todayCourses.isNotEmpty()) {
-        currentMinutes <= ScheduleViewModel.getCourseTimeRangeInMinutes(todayCourses.last()).last
-    } else {
-        false
-    }
-    Column(
-        modifier = Modifier.padding(vertical = 0.dp),
-        verticalArrangement = Arrangement.spacedBy(32.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp, 8.dp, 16.dp, 0.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = currentDateText,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            trailingContent()
-        }
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(SmoothRoundedCornerShape(32.dp))
-                .then(
-                    if (enabled) {
-                        Modifier.clickable(onClick = onOpenSchedule)
-                    } else {
-                        Modifier
-                    }
-                )
-                .padding(horizontal = 32.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (isInSemester) {
-                Text(
-                    text = when {
-                        currentCourse != null -> "正在上课"
-                        hasRemainingCourses -> "下节课是"
-                        else -> "今日课程"
-                    },
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-            Text(
-                text = when {
-                    !isInSemester -> "假期中"
-                    currentCourse != null -> currentCourse.name
-                    hasRemainingCourses -> todayCourses[currentCourseIndex].name
-                    else -> "已全部上完"
-                },
-                modifier = if (isInSemester && (currentCourse != null || hasRemainingCourses)) {
-                    Modifier
-                        .composed {
-                            val color = 50.a1 withNight 90.a1
-                            drawBehind {
-                                drawLine(
-                                    color = color,
-                                    start = Offset.Zero,
-                                    end = Offset(0f, size.height),
-                                    strokeWidth = 4.dp.toPx()
-                                )
-                            }
-                        }
-                        .padding(start = 8.dp)
-                } else {
-                    Modifier
-                },
-                fontSize = 40.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.headlineLarge
-            )
-            Text(
-                text = when {
-                    currentCourse != null -> {
-                        val duration =
-                            ScheduleViewModel.getCourseTimeRangeInMinutes(currentCourse).last - currentMinutes
-                        "距下课还有 " + when {
-                            duration % 60 == 0 -> "${duration / 60}小时整"
-                            duration > 60 -> "${duration / 60}小时${duration % 60}分钟"
-                            else -> "${duration}分钟"
-                        }
-                    }
-
-                    hasRemainingCourses -> {
-                        val duration =
-                            ScheduleViewModel.getCourseTimeRangeInMinutes(
-                                todayCourses[currentCourseIndex]
-                            ).first - currentMinutes
-                        "还有 " + when {
-                            duration % 60 == 0 -> "${duration / 60}小时整"
-                            duration > 60 -> "${duration / 60}小时${duration % 60}分钟"
-                            else -> "${duration}分钟"
-                        } + "，在 ${todayCourses[currentCourseIndex].location}"
-                    }
-
-                    else -> "准备您自己的安排吧"
-                },
-                maxLines = 1,
-                overflow = TextOverflow.Clip,
-                style = MaterialTheme.typography.bodyLarge
-            )
-        }
-    }
-}
-
-@Composable
-private fun RadiantAtAGlance(
-    todayCourses: List<Course>,
-    currentMinutes: Int,
-    onOpenSchedule: () -> Unit,
-    isInSemester: Boolean,
-    enabled: Boolean
+    enabled: Boolean = true
 ) {
     val currentCourse = todayCourses.find {
         currentMinutes in ScheduleViewModel.getCourseTimeRangeInMinutes(it)
     }
-    val currentCourseIndex = todayCourses.indexOfFirst {
-        val range = ScheduleViewModel.getCourseTimeRangeInMinutes(it)
-        currentMinutes in range || currentMinutes < range.first
-    }.takeIf { it != -1 } ?: todayCourses.lastIndex
-    val hasRemainingCourses = todayCourses.isNotEmpty() &&
-        currentMinutes <= ScheduleViewModel.getCourseTimeRangeInMinutes(todayCourses.last()).last
+    val nextCourse = todayCourses.firstOrNull {
+        currentMinutes < ScheduleViewModel.getCourseTimeRangeInMinutes(it).first
+    }
     val headline = when {
         currentCourse != null -> "正在上课 · ${currentCourse.name}"
-        hasRemainingCourses -> "下节课是 ${todayCourses[currentCourseIndex].name}"
+        nextCourse != null -> "下节课是 ${nextCourse.name}"
         !isInSemester -> "假期中"
         else -> "今日空闲"
     }
@@ -201,15 +46,12 @@ private fun RadiantAtAGlance(
                 currentMinutes
             "距下课还有 ${formatCourseDuration(duration)}"
         }
-
-        hasRemainingCourses -> {
-            val nextCourse = todayCourses[currentCourseIndex]
+        nextCourse != null -> {
             val duration = ScheduleViewModel.getCourseTimeRangeInMinutes(nextCourse).first -
                 currentMinutes
             "还有 ${formatCourseDuration(duration)}，在 ${nextCourse.location}"
         }
-
-        !isInSemester -> "准备您自己的安排吧"
+        !isInSemester -> "安排属于自己的一天吧"
         else -> "今天暂无课程安排"
     }
 
@@ -217,27 +59,22 @@ private fun RadiantAtAGlance(
         modifier = Modifier
             .fillMaxWidth()
             .then(if (enabled) Modifier.clickable(onClick = onOpenSchedule) else Modifier)
-            .padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+            .padding(horizontal = 20.dp)
     ) {
         Text(
             text = headline,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Bold,
-            lineHeight = 34.sp,
-            maxLines = 2,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.headlineLarge
+            color = 10.n1 withNight 95.n1
         )
         Text(
             text = subtitle,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center,
+            style = MaterialTheme.typography.bodySmall,
             maxLines = 1,
-            overflow = TextOverflow.Clip,
-            style = MaterialTheme.typography.bodyMedium
+            overflow = TextOverflow.Ellipsis,
+            color = 45.n1 withNight 70.n1
         )
     }
 }

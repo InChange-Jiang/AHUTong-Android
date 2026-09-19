@@ -317,11 +317,6 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
                     ),
                     onSelected = viewModel::setAppThemeMode
                 )
-                SettingsActionRow(
-                    title = "主题实验室",
-                    subtitle = "界面风格套装 · 组件槽位逐件混搭 · 实时预览",
-                    onClick = onOpenThemeLab
-                )
                 ThemeColorPicker(
                     selectedColor = themeColor,
                     showMiuixDefault = appUiTheme == AppUiTheme.MIUIX,

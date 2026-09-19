@@ -1,15 +1,31 @@
 package com.ahu.ahutong.ui.screen.main
 
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -18,52 +34,77 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
+import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
+import com.ahu.ahutong.data.schedule.CurrentWeekResolver
+import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.ScheduleConfigBean
 import com.ahu.ahutong.data.mock.MockScenarioController
-import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.semantic.MutationId
-import com.ahu.ahutong.ui.components.GlassBackdropContainer
-import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
+import com.ahu.ahutong.ui.components.GlassBackdropContainer
+import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.screen.main.home.AtAGlance
-import com.ahu.ahutong.ui.screen.main.home.CampusCard
-import com.ahu.ahutong.ui.screen.main.home.CampusSpan
-import com.ahu.ahutong.ui.screen.main.home.CourseStrip
-import com.ahu.ahutong.ui.screen.main.home.HomeGrid
-import com.ahu.ahutong.ui.screen.main.home.HomeGridConfig
-import com.ahu.ahutong.ui.screen.main.home.HomeTitleRow
+import com.ahu.ahutong.ui.screen.main.home.HomeDateRow
+import com.ahu.ahutong.ui.screen.main.home.HomeWeatherWidget
+import com.ahu.ahutong.ui.screen.main.home.HomeWidgetDragOverlay
+import com.ahu.ahutong.ui.screen.main.home.HomeWidgetLibrarySheet
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
-import com.ahu.ahutong.ui.screen.main.home.normalizeHomeGridIcons
+import com.ahu.ahutong.ui.screen.main.home.HomeWidgetSlotLayout
+import com.ahu.ahutong.ui.screen.main.home.CourseStrip
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
-import com.kyant.monet.n1
-import com.kyant.monet.withNight
+import com.ahu.ahutong.ui.state.WeatherHomeConfig
+import com.ahu.ahutong.ui.state.WeatherHomeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import com.kyant.monet.n1
+import com.kyant.monet.withNight
+import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 private const val HOME_REFRESH_INTERVAL_MS = 30_000L
 
-/**
- * 主页（全主题唯一布局族）：
- * 标题行（日期 + 天气胶囊）→ At a Glance（小号）→ 课程条（滚轮三区）→ 3×4 组件网格。
- * 布局与主题正交——主题只换材质皮肤，不换结构。
- * 编辑：长按网格进入；图标格 × 删除、空位 ＋ 添加、校园卡角标拖拽变形（2×2 ⇄ 1×4）。
- */
+private data class ActiveHomeWidgetDrag(
+    val widgetId: String,
+    val sourceSlot: Int?,
+    val topLeft: Offset,
+    val size: IntSize
+) {
+    val center: Offset
+        get() = topLeft + Offset(size.width / 2f, size.height / 2f)
+}
+
 @Composable
 fun Home(
     discoveryViewModel: DiscoveryViewModel = viewModel(),
@@ -75,6 +116,7 @@ fun Home(
     enterEditModeRequest: Boolean = false,
     onEnterEditModeRequestConsumed: () -> Unit = {}
 ) {
+    val density = LocalDensity.current
     val schedule = scheduleViewModel.schedule.observeAsState().value?.getOrNull() ?: emptyList()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
     val localScheduleConfig by produceState<ScheduleConfigBean?>(
@@ -89,13 +131,6 @@ fun Home(
     val isInSemester = effectiveScheduleConfig?.isInSemester != false
     val currentWeek = effectiveScheduleConfig?.week ?: 1
     val mockRefreshRevision by MockScenarioController.refreshRevisions().collectAsState()
-
-    val initialCalendar = remember { Calendar.getInstance(Locale.CHINA) }
-    var currentMinutes by remember {
-        mutableIntStateOf(
-            initialCalendar.get(Calendar.HOUR_OF_DAY) * 60 + initialCalendar.get(Calendar.MINUTE)
-        )
-    }
     val todayCourses = remember(schedule, effectiveScheduleConfig, isInSemester, currentWeek) {
         if (isInSemester) {
             schedule
@@ -115,86 +150,183 @@ fun Home(
             emptyList()
         }
     }
-
-    // ---- 网格配置（全主题一份，v2 存储含旧族迁移） ----
-    val knownWidgetIds = remember { HomeWidgetRegistry.widgets.mapTo(mutableSetOf()) { it.id } }
-    var gridConfig by remember {
-        mutableStateOf(
-            HomeGridConfig(
-                campusSpan = CampusSpan.fromStorage(AHUCache.getCampusCardSpanV2()),
-                icons = normalizeHomeGridIcons(AHUCache.getHomeGridIconsV2(), knownWidgetIds)
-            )
+    // 主页排版全主题统一为 Radiant 方案（曜光居中 Hero 布局），主题只换材质皮肤
+    val layoutFamily = HomeWidgetLayoutFamily.RADIANT
+    val slotCount = HomeWidgetRegistry.slotCountRadiant
+    val knownWidgetIds = remember {
+        HomeWidgetRegistry.availableWidgets(true).mapTo(mutableSetOf()) { it.id }
+    }
+    val initialCalendar = remember { Calendar.getInstance(Locale.CHINA) }
+    var currentDateText by remember { mutableStateOf("") }
+    var currentMinutes by remember {
+        mutableIntStateOf(
+            initialCalendar.get(Calendar.HOUR_OF_DAY) * 60 + initialCalendar.get(Calendar.MINUTE)
         )
     }
     var isEditingHome by remember { mutableStateOf(false) }
-    var qrExpanded by remember { mutableStateOf(false) }
-
-    fun saveIcons(icons: List<String?>) {
-        val normalized = normalizeHomeGridIcons(icons, knownWidgetIds)
-        gridConfig = gridConfig.copy(icons = normalized)
-        AHUCache.saveHomeGridIconsV2(normalized)
+    var homeWidgetSlots by remember {
+        // 一次性迁移：Radiant 族没存过配置时，沿用经典族的用户配置
+        val initial = if (AHUCache.hasStoredHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT)) {
+            AHUCache.getHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT)
+        } else {
+            AHUCache.getHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC)
+        }
+        mutableStateOf(normalizeHomeWidgetSlots(initial, slotCount, knownWidgetIds))
+    }
+    val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
+    var libraryBounds by remember { mutableStateOf<Rect?>(null) }
+    var rootTopLeft by remember { mutableStateOf(Offset.Zero) }
+    var activeDrag by remember { mutableStateOf<ActiveHomeWidgetDrag?>(null) }
+    val dropSlopPx = remember(density) { with(density) { 48.dp.toPx() } }
+    val highlightedSlot = activeDrag?.let {
+        findHomeWidgetDropSlot(
+            drag = it,
+            slots = homeWidgetSlots,
+            slotBounds = slotBounds,
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
+        )
+    }
+    val weatherHomeConfig by produceState(
+        initialValue = WeatherHomeConfig(),
+        key1 = Unit
+    ) {
+        value = withContext(Dispatchers.IO) { WeatherHomeConfig.fromCache() }
     }
 
-    /** 拖拽换位：交换两槽内容（压实由 saveIcons 保证）。 */
-    fun swapSlots(from: Int, to: Int) {
-        val next = gridConfig.icons.toMutableList()
-        if (from !in next.indices || to !in next.indices || from == to) return
-        val tmp = next[from]
-        next[from] = next[to]
-        next[to] = tmp
-        saveIcons(next)
-        behaviorRuntime.recordCommittedMutationAsync(
-            MutationId.HOME_WIDGET_MOVED, from + 1, to + 1,
-            coarseValueBucket = "GRID_SWAP"
+    fun saveHomeWidgetSlots(slots: List<String?>) {
+        val normalizedSlots = normalizeHomeWidgetSlots(slots, slotCount, knownWidgetIds)
+        homeWidgetSlots = normalizedSlots
+        AHUCache.saveHomeWidgetSlots(layoutFamily, normalizedSlots)
+    }
+
+    fun enterHomeEditMode() {
+        if (homeEditEnabled) {
+            isEditingHome = true
+        }
+    }
+
+    fun startDrag(widgetId: String, sourceSlot: Int?, bounds: Rect) {
+        if (!homeEditEnabled) return
+        enterHomeEditMode()
+        activeDrag = ActiveHomeWidgetDrag(
+            widgetId = widgetId,
+            sourceSlot = sourceSlot,
+            topLeft = bounds.topLeft,
+            size = IntSize(
+                width = bounds.width.roundToInt().coerceAtLeast(1),
+                height = bounds.height.roundToInt().coerceAtLeast(1)
+            )
         )
     }
 
-    fun removeSlot(slotIndex: Int) {
-        val next = gridConfig.icons.toMutableList()
-        val removed = next.getOrNull(slotIndex) ?: return
-        next[slotIndex] = null
-        saveIcons(next)
-        behaviorRuntime.recordCommittedMutationAsync(
-            MutationId.HOME_WIDGET_REMOVED, removed, null,
-            coarseValueBucket = removed.uppercase()
+    fun stopDrag() {
+        val drag = activeDrag ?: return
+        val dragCenter = drag.center
+        val nextSlots = homeWidgetSlots.toMutableList()
+        val targetSlot = findHomeWidgetDropSlot(
+            drag = drag,
+            slots = homeWidgetSlots,
+            slotBounds = slotBounds,
+            dropSlopPx = dropSlopPx,
+            slotCount = slotCount
         )
+
+        if (drag.sourceSlot != null && libraryBounds?.contains(dragCenter) == true) {
+            nextSlots[drag.sourceSlot - 1] = null
+            saveHomeWidgetSlots(nextSlots)
+            behaviorRuntime.recordCommittedMutationAsync(
+                MutationId.HOME_WIDGET_REMOVED,
+                drag.widgetId,
+                null,
+                coarseValueBucket = drag.widgetId.uppercase()
+            )
+        } else if (targetSlot != null) {
+            val targetIndex = targetSlot - 1
+            val sourceSlot = drag.sourceSlot
+
+            if (sourceSlot == null) {
+                if (nextSlots[targetIndex] == null) {
+                    nextSlots[targetIndex] = drag.widgetId
+                    saveHomeWidgetSlots(nextSlots)
+                    behaviorRuntime.recordCommittedMutationAsync(
+                        MutationId.HOME_WIDGET_ADDED,
+                        null,
+                        drag.widgetId,
+                        coarseValueBucket = drag.widgetId.uppercase()
+                    )
+                }
+            } else if (sourceSlot != targetSlot) {
+                val sourceIndex = sourceSlot - 1
+                val targetWidget = nextSlots[targetIndex]
+                nextSlots[targetIndex] = drag.widgetId
+                nextSlots[sourceIndex] = targetWidget
+                saveHomeWidgetSlots(nextSlots)
+                behaviorRuntime.recordCommittedMutationAsync(
+                    MutationId.HOME_WIDGET_MOVED,
+                    sourceSlot,
+                    targetSlot,
+                    coarseValueBucket = drag.widgetId.uppercase()
+                )
+            }
+        }
+
+        activeDrag = null
     }
 
-    fun addToSlot(slotIndex: Int, widgetId: String) {
-        val next = gridConfig.icons.toMutableList()
-        if (slotIndex !in next.indices || widgetId in next) return
-        next[slotIndex] = widgetId
-        saveIcons(next)
+    fun addWidgetToFirstEmptySlot(widgetId: String) {
+        val nextSlots = homeWidgetSlots.toMutableList()
+        val targetIndex = nextSlots.indexOfFirst { it == null }
+        if (targetIndex == -1 || widgetId in nextSlots) return
+        nextSlots[targetIndex] = widgetId
+        saveHomeWidgetSlots(nextSlots)
         behaviorRuntime.recordCommittedMutationAsync(
-            MutationId.HOME_WIDGET_ADDED, null, widgetId,
+            MutationId.HOME_WIDGET_ADDED,
+            null,
+            widgetId,
             coarseValueBucket = widgetId.uppercase()
         )
     }
 
-    fun changeCampusSpan(span: CampusSpan) {
-        if (gridConfig.campusSpan == span) return
-        gridConfig = gridConfig.copy(campusSpan = span)
-        AHUCache.saveCampusCardSpanV2(span.storageValue)
+    fun removeHomeWidget(slotIndex: Int) {
+        val nextSlots = homeWidgetSlots.toMutableList()
+        if (slotIndex !in 1..nextSlots.size) return
+        val removedWidget = nextSlots[slotIndex - 1] ?: return
+        nextSlots[slotIndex - 1] = null
+        saveHomeWidgetSlots(nextSlots)
+        behaviorRuntime.recordCommittedMutationAsync(
+            MutationId.HOME_WIDGET_REMOVED,
+            removedWidget,
+            null,
+            coarseValueBucket = removedWidget.uppercase()
+        )
     }
 
-    fun enterEdit() {
-        if (homeEditEnabled) isEditingHome = true
-    }
-
-    fun exitEdit() {
+    fun exitHomeEditMode() {
+        activeDrag = null
         isEditingHome = false
     }
 
-    BackHandler(enabled = isEditingHome) { exitEdit() }
+    BackHandler(enabled = isEditingHome) {
+        exitHomeEditMode()
+    }
 
+    LaunchedEffect(Unit) {
+        if (!enterEditModeRequest) {
+            exitHomeEditMode()
+        }
+    }
     LaunchedEffect(enterEditModeRequest) {
         if (enterEditModeRequest) {
-            enterEdit()
+            activeDrag = null
+            enterHomeEditMode()
             onEnterEditModeRequestConsumed()
         }
     }
     LaunchedEffect(homeEditEnabled) {
-        if (!homeEditEnabled) exitEdit()
+        if (!homeEditEnabled) {
+            exitHomeEditMode()
+        }
     }
     LaunchedEffect(mockRefreshRevision) {
         if (mockRefreshRevision > 0 && AHUCache.getMockData()) {
@@ -207,72 +339,309 @@ fun Home(
         while (true) {
             val now = withContext(Dispatchers.IO) { DebugClock.nowDate() }
             val calendar = Calendar.getInstance(Locale.CHINA).apply { time = now }
+            currentDateText = withContext(Dispatchers.Default) {
+                SimpleDateFormat("MM-dd / EE", Locale.CHINA).format(now)
+            }
             currentMinutes = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
             delay(HOME_REFRESH_INTERVAL_MS)
             discoveryViewModel.refreshCardBalance()
         }
     }
-    DisposableEffect(Unit) { onDispose { exitEdit() } }
-
+    DisposableEffect(Unit) {
+        onDispose {
+            exitHomeEditMode()
+        }
+    }
+    val trailingContent: @Composable RowScope.() -> Unit = {
+        if (BuildConfig.DEBUG) {
+            DebugBuildBadge()
+        }
+        if (
+            !isEditingHome &&
+            weatherHomeConfig.showOnHome &&
+            weatherHomeConfig.mode == WeatherHomeMode.Compact
+        ) {
+            HomeWeatherWidget(
+                onClick = { navController.navigate("weather") },
+                modifier = Modifier.padding(start = 12.dp),
+                config = weatherHomeConfig,
+                mode = WeatherHomeMode.Compact
+            )
+        }
+    }
     GlassBackdropContainer(modifier = Modifier.fillMaxSize()) { backdrop ->
-        CompositionLocalProvider(LocalLiquidGlassAmbientBackdrop provides backdrop) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
-                    .pointerInput(isEditingHome) {
-                        detectTapGestures(onTap = { if (isEditingHome) exitEdit() })
-                    }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
-                        .systemBarsPadding()
-                        .padding(top = 12.dp, bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    HomeTitleRow(onOpenWeather = { navController.navigate("weather") })
-                    AtAGlance(
-                        todayCourses = todayCourses,
-                        currentMinutes = currentMinutes,
-                        onOpenSchedule = onOpenSchedule,
-                        isInSemester = isInSemester,
-                        enabled = !isEditingHome
-                    )
-                    if (todayCourses.isNotEmpty()) {
-                        CourseStrip(
-                            todayCourses = todayCourses,
-                            currentMinutes = currentMinutes,
-                            onOpenSchedule = onOpenSchedule
+        CompositionLocalProvider(
+            LocalLiquidGlassAmbientBackdrop provides backdrop
+        ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
+                .onGloballyPositioned { rootTopLeft = it.boundsInRoot().topLeft }
+                .pointerInput(isEditingHome, homeEditEnabled) {
+                    if (isEditingHome) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(
+                                requireUnconsumed = false,
+                                pass = PointerEventPass.Final
+                            )
+                            val start = down.position
+                            var shouldExit = !down.isConsumed
+                            var waitingForUp = true
+                            while (waitingForUp) {
+                                val event = awaitPointerEvent(PointerEventPass.Final)
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                if (change == null) {
+                                    waitingForUp = false
+                                } else {
+                                    if (change.isConsumed ||
+                                        (change.position - start).getDistance() > viewConfiguration.touchSlop
+                                    ) {
+                                        shouldExit = false
+                                    }
+                                    if (!change.pressed) {
+                                        waitingForUp = false
+                                    }
+                                }
+                            }
+                            if (shouldExit) {
+                                exitHomeEditMode()
+                            }
+                        }
+                    } else {
+                        detectTapGestures(
+                            onLongPress = {
+                                enterHomeEditMode()
+                            }
                         )
                     }
-                    HomeGrid(
-                        config = gridConfig,
-                        isEditing = isEditingHome,
-                        qrExpanded = qrExpanded,
-                        onEnterEdit = ::enterEdit,
-                        onRemoveSlot = ::removeSlot,
-                        onAddToSlot = ::addToSlot,
-                        onSwapSlots = ::swapSlots,
-                        onCampusSpanChange = ::changeCampusSpan,
-                        onOpenMore = { navController.navigate("widgets") },
-                        onOpenWidget = { route -> navController.navigate(route) },
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        campusContent = { cellModifier ->
-                            CampusCard(
-                                balance = discoveryViewModel.balance,
-                                transitionBalance = discoveryViewModel.transitionBalance,
-                                onRefreshBalance = discoveryViewModel::refreshCardBalance,
-                                navController = navController,
-                                enabled = !isEditingHome,
-                                modifier = cellModifier,
-                                onQrVisibilityChange = { qrExpanded = it }
-                            )
-                        }
+                }
+        ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .systemBarsPadding()
+                .padding(
+                    top = 48.dp,
+                    bottom = if (isEditingHome) 520.dp else 96.dp
+                ),
+            verticalArrangement = Arrangement.Center
+        ) {
+            AtAGlance(
+                todayCourses = todayCourses,
+                currentMinutes = currentMinutes,
+                currentDateText = currentDateText,
+                onOpenSchedule = onOpenSchedule,
+                isInSemester = isInSemester,
+                enabled = !isEditingHome,
+                trailingContent = trailingContent
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            if (todayCourses.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                // 课程条（滚轮三区）替代原纵向列表——全主题生效
+                CourseStrip(
+                    todayCourses = todayCourses,
+                    currentMinutes = currentMinutes,
+                    onOpenSchedule = onOpenSchedule
+                )
+            }
+            if (weatherHomeConfig.showOnHome && weatherHomeConfig.mode == WeatherHomeMode.Detailed) {
+                Spacer(modifier = Modifier.height(20.dp))
+                if (!isEditingHome) {
+                    HomeWeatherWidget(
+                        onClick = { navController.navigate("weather") },
+                        config = weatherHomeConfig,
+                        mode = WeatherHomeMode.Detailed
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            HomeWidgetSlotLayout(
+                balance = discoveryViewModel.balance,
+                transitionBalance = discoveryViewModel.transitionBalance,
+                onRefreshBalance = discoveryViewModel::refreshCardBalance,
+                navController = navController,
+                slots = homeWidgetSlots,
+                isEditing = isEditingHome,
+                highlightedSlot = highlightedSlot,
+                draggingWidgetId = activeDrag?.widgetId,
+                onEnterEdit = ::enterHomeEditMode,
+                onHomeWidgetClick = ::removeHomeWidget,
+                onSlotPositioned = { slotIndex, bounds ->
+                    slotBounds[slotIndex] = bounds
+                },
+                onHomeWidgetDragStarted = { widgetId, slotIndex, bounds ->
+                    startDrag(widgetId, slotIndex, bounds)
+                },
+                onHomeWidgetDragged = { dragAmount ->
+                    activeDrag = activeDrag?.let {
+                        it.copy(topLeft = it.topLeft + dragAmount)
+                    }
+                },
+                onHomeWidgetDragStopped = ::stopDrag
+            )
+        }
+
+        // 曜光固定头部（渐变遮罩 + 日期行），全主题统一
+        run {
+            val headerBackground = if (LocalIsLiquidGlassEnabled.current) {
+                MaterialTheme.colorScheme.surfaceContainerLowest
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .zIndex(20f)
+                    .background(
+                        Brush.verticalGradient(
+                            0f to headerBackground,
+                            0.35f to headerBackground,
+                            0.68f to headerBackground.copy(alpha = 0.85f),
+                            1f to headerBackground.copy(alpha = 0f)
+                        )
+                    )
+                    .statusBarsPadding()
+                    .padding(top = 12.dp)
+            ) {
+                HomeDateRow(trailingContent = trailingContent)
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+
+        val placedWidgetIds = homeWidgetSlots.filterNotNull().toSet()
+        val availableWidgets = HomeWidgetRegistry.availableWidgets(true)
+            .filter { it.id !in placedWidgetIds }
+        val isDraggingFromLibrary = activeDrag != null && activeDrag?.sourceSlot == null
+        HomeWidgetLibrarySheet(
+            visible = isEditingHome,
+            hiddenDuringLibraryDrag = isDraggingFromLibrary,
+            modifier = Modifier.align(androidx.compose.ui.Alignment.BottomCenter),
+            availableWidgets = availableWidgets,
+            onDismiss = {
+                activeDrag = null
+                isEditingHome = false
+            },
+            onBoundsChanged = { libraryBounds = it },
+            onLibraryWidgetClick = ::addWidgetToFirstEmptySlot,
+            onLibraryWidgetDragStarted = { widgetId, bounds ->
+                startDrag(widgetId, null, bounds)
+            },
+            onLibraryWidgetDragged = { dragAmount ->
+                activeDrag = activeDrag?.let {
+                    it.copy(topLeft = it.topLeft + dragAmount)
+                }
+            },
+            onLibraryWidgetDragStopped = ::stopDrag
+        )
+
+        activeDrag?.let { drag ->
+            HomeWidgetRegistry.widgetById[drag.widgetId]?.let { spec ->
+                val previewSlot = if (drag.sourceSlot == null) {
+                    highlightedSlot
+                        ?: homeWidgetSlots.indexOfFirst { it == null }
+                            .takeIf { it != -1 }
+                            ?.let { it + 1 }
+                } else {
+                    null
+                }
+                val previewBounds = previewSlot?.let { slotBounds[it] }
+                val previewSize = previewBounds?.let {
+                    IntSize(
+                        width = it.width.roundToInt().coerceAtLeast(1),
+                        height = it.height.roundToInt().coerceAtLeast(1)
+                    )
+                } ?: drag.size
+                val previewTopLeft = if (previewBounds != null) {
+                    drag.center - Offset(previewSize.width / 2f, previewSize.height / 2f)
+                } else {
+                    drag.topLeft
+                }
+
+                HomeWidgetDragOverlay(
+                    spec = spec,
+                    topLeft = previewTopLeft,
+                    size = previewSize,
+                    rootTopLeft = rootTopLeft
+                )
+            }
+        }
+        }
         }
     }
+}
+
+@Composable
+private fun DebugBuildBadge() {
+    Surface(
+        color = MaterialTheme.colorScheme.error,
+        contentColor = MaterialTheme.colorScheme.onError,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+        shadowElevation = 4.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .height(28.dp)
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.BugReport,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = stringResource(R.string.debug_build_badge),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun normalizeHomeWidgetSlots(
+    slots: List<String?>,
+    slotCount: Int,
+    knownIds: Set<String>
+): List<String?> {
+    val seen = mutableSetOf<String>()
+    return List(slotCount) { index ->
+        val id = slots.getOrNull(index)?.takeIf { it in knownIds }
+        if (id != null && seen.add(id)) id else null
+    }
+}
+
+private fun findHomeWidgetDropSlot(
+    drag: ActiveHomeWidgetDrag,
+    slots: List<String?>,
+    slotBounds: Map<Int, Rect>,
+    dropSlopPx: Float,
+    slotCount: Int
+): Int? {
+    val center = drag.center
+    return slotBounds
+        .filterKeys { it in 1..slotCount }
+        .mapNotNull { (slotIndex, bounds) ->
+            if (!bounds.expandedBy(dropSlopPx).contains(center)) return@mapNotNull null
+            if (drag.sourceSlot == null && slots.getOrNull(slotIndex - 1) != null) return@mapNotNull null
+            slotIndex to bounds.centerDistanceTo(center)
+        }
+        .minByOrNull { it.second }
+        ?.first
+}
+
+private fun Rect.expandedBy(padding: Float): Rect {
+    return Rect(
+        left = left - padding,
+        top = top - padding,
+        right = right + padding,
+        bottom = bottom + padding
+    )
+}
+
+private fun Rect.centerDistanceTo(point: Offset): Float {
+    return hypot(center.x - point.x, center.y - point.y)
 }

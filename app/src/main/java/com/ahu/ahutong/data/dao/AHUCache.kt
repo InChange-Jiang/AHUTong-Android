@@ -560,6 +560,13 @@ object AHUCache {
     fun saveHomeWidgetSlots(slots: List<String?>) =
         saveHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC, slots)
 
+    /** 该布局族是否有用户实际存过的槽位配置（区别于默认兜底）。用于布局族收敛时的一次性迁移。 */
+    fun hasStoredHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): Boolean {
+        val key = homeWidgetSlotsKey(layoutFamily)
+        val data = userGetStringOrMigrate(key) { kv.decodeString(key) }
+        return !data.isNullOrBlank()
+    }
+
     fun saveHomeWidgetSlots(
         layoutFamily: HomeWidgetLayoutFamily,
         slots: List<String?>

@@ -225,6 +225,21 @@ fun Settings(
                 onClick = { navController.navigate("preferences") }
             )
             SettingsActionRow(
+                title = "主题实验室",
+                subtitle = "界面风格套装 · 组件槽位逐件混搭 · 实时预览",
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Settings
+                    isRadiant -> null
+                    else -> Icons.Outlined.Tune
+                },
+                leadingPainter = if (isRadiant) {
+                    painterResource(R.drawable.ic_topic)
+                } else {
+                    null
+                },
+                onClick = { navController.navigate("settings__theme_lab") }
+            )
+            SettingsActionRow(
                 title = stringResource(id = R.string.check_update),
                 leadingIcon = when {
                     useMiuixIcons -> MiuixIcons.Useful.Update

@@ -86,8 +86,7 @@ fun CampusCard(
     onRefreshBalance: () -> Unit,
     navController: NavController,
     enabled: Boolean = true,
-    modifier: Modifier = Modifier,
-    onQrVisibilityChange: (Boolean) -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context = context) }
@@ -126,7 +125,6 @@ fun CampusCard(
     }
 
     LaunchedEffect(isQrcode) {
-        onQrVisibilityChange(isQrcode)
         if (AHUCache.isLogin() && isQrcode) {
             onRefreshBalance()
         }
@@ -141,8 +139,6 @@ fun CampusCard(
     Box(
         modifier = modifier.then(campusSurface)
     ) {
-        // 原位弹开：卡片内容在 余额卡 ⇄ 二维码视图 间动画切换，
-        // 尺寸放大由外层网格（HomeGrid）按 onQrVisibilityChange 联动果冻动画
         AnimatedContent(
             targetState = isQrcode,
             transitionSpec = {
@@ -170,11 +166,15 @@ fun CampusCard(
                     },
                     navController = navController,
                     enabled = enabled,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(78.dp)
                 )
             }
         }
     }
+
+
 }
 
 

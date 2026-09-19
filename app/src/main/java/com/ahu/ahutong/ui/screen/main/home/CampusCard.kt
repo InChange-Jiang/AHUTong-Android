@@ -86,7 +86,8 @@ fun CampusCard(
     onRefreshBalance: () -> Unit,
     navController: NavController,
     enabled: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onQrVisibilityChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val preferencesManager = remember { PreferencesManager(context = context) }
@@ -125,6 +126,7 @@ fun CampusCard(
     }
 
     LaunchedEffect(isQrcode) {
+        onQrVisibilityChange(isQrcode)
         if (AHUCache.isLogin() && isQrcode) {
             onRefreshBalance()
         }
@@ -139,29 +141,38 @@ fun CampusCard(
     Box(
         modifier = modifier.then(campusSurface)
     ) {
-        CardView(
-            balance = balance,
-            transitionBalance = transitionBalance,
-            onClick = {
-                behaviorRuntime.recordActionIntentAsync(
-                    AppActionId.OPEN_PAYMENT_QR,
-                    ActionSource.ORGANIC
-                )
-                isQrcode = true
+        // 原位弹开：卡片内容在 余额卡 ⇄ 二维码视图 间动画切换，
+        // 尺寸放大由外层网格（HomeGrid）按 onQrVisibilityChange 联动果冻动画
+        AnimatedContent(
+            targetState = isQrcode,
+            transitionSpec = {
+                (fadeIn(tween(150)) togetherWith fadeOut(tween(150)))
+                    .using(SizeTransform(clip = true))
             },
-            navController = navController,
-            enabled = enabled,
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-
-    // 二维码以弹层呈现：网格内卡片尺寸固定，二维码不宜挤在卡内
-    if (isQrcode) {
-        Dialog(onDismissRequest = { isQrcode = false }) {
-            QRcodeView(
-                balance = balance,
-                onBack = { isQrcode = false }
-            )
+            contentAlignment = Alignment.TopStart,
+            label = "campus-card-qrcode"
+        ) { showQrcode ->
+            if (showQrcode) {
+                QRcodeView(
+                    balance = balance,
+                    onBack = { isQrcode = false }
+                )
+            } else {
+                CardView(
+                    balance = balance,
+                    transitionBalance = transitionBalance,
+                    onClick = {
+                        behaviorRuntime.recordActionIntentAsync(
+                            AppActionId.OPEN_PAYMENT_QR,
+                            ActionSource.ORGANIC
+                        )
+                        isQrcode = true
+                    },
+                    navController = navController,
+                    enabled = enabled,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
     }
 }

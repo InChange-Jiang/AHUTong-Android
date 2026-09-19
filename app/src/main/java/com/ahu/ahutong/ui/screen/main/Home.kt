@@ -127,11 +127,26 @@ fun Home(
         )
     }
     var isEditingHome by remember { mutableStateOf(false) }
+    var qrExpanded by remember { mutableStateOf(false) }
 
     fun saveIcons(icons: List<String?>) {
         val normalized = normalizeHomeGridIcons(icons, knownWidgetIds)
         gridConfig = gridConfig.copy(icons = normalized)
         AHUCache.saveHomeGridIconsV2(normalized)
+    }
+
+    /** 拖拽换位：交换两槽内容（压实由 saveIcons 保证）。 */
+    fun swapSlots(from: Int, to: Int) {
+        val next = gridConfig.icons.toMutableList()
+        if (from !in next.indices || to !in next.indices || from == to) return
+        val tmp = next[from]
+        next[from] = next[to]
+        next[to] = tmp
+        saveIcons(next)
+        behaviorRuntime.recordCommittedMutationAsync(
+            MutationId.HOME_WIDGET_MOVED, from + 1, to + 1,
+            coarseValueBucket = "GRID_SWAP"
+        )
     }
 
     fun removeSlot(slotIndex: Int) {
@@ -235,9 +250,11 @@ fun Home(
                     HomeGrid(
                         config = gridConfig,
                         isEditing = isEditingHome,
+                        qrExpanded = qrExpanded,
                         onEnterEdit = ::enterEdit,
                         onRemoveSlot = ::removeSlot,
                         onAddToSlot = ::addToSlot,
+                        onSwapSlots = ::swapSlots,
                         onCampusSpanChange = ::changeCampusSpan,
                         onOpenMore = { navController.navigate("widgets") },
                         onOpenWidget = { route -> navController.navigate(route) },
@@ -249,7 +266,8 @@ fun Home(
                                 onRefreshBalance = discoveryViewModel::refreshCardBalance,
                                 navController = navController,
                                 enabled = !isEditingHome,
-                                modifier = cellModifier
+                                modifier = cellModifier,
+                                onQrVisibilityChange = { qrExpanded = it }
                             )
                         }
                     )

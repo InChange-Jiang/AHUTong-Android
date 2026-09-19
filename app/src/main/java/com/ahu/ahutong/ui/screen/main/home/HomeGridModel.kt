@@ -85,8 +85,8 @@ fun computeHomeGridPlacements(config: HomeGridConfig): List<Pair<String, GridPla
 /** 校园卡在排布结果里的固定标识。 */
 const val CampusCardSlotId = "__campus__"
 
-/** 图标槽内容归一化：未知 id 剔除、恒 7 槽。 */
-fun normalizeHomeGridIcons(icons: List<String?>, knownIds: Set<String>): List<String?> =
-    List(HomeGridConfig.ICON_SLOT_COUNT) { index ->
-        icons.getOrNull(index)?.takeIf { it in knownIds }
-    }
+/** 图标槽内容归一化：未知 id 剔除、恒 7 槽、压实（非空项保持相对顺序前移，空位只允许在末尾）。 */
+fun normalizeHomeGridIcons(icons: List<String?>, knownIds: Set<String>): List<String?> {
+    val compacted = icons.filterNotNull().filter { it in knownIds }.distinct()
+    return compacted + List(HomeGridConfig.ICON_SLOT_COUNT - compacted.size.coerceAtMost(HomeGridConfig.ICON_SLOT_COUNT)) { null }
+}

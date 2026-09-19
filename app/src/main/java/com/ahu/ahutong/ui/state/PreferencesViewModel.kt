@@ -9,6 +9,10 @@ import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.bootstrap.BootstrapContributionStatus
 import com.ahu.ahutong.personalization.semantic.MutationId
+import com.ahu.ahutong.ui.theme.pack.ComponentSlotId
+import com.ahu.ahutong.ui.theme.pack.SlotSource
+import com.ahu.ahutong.ui.theme.pack.parseSlotOverrides
+import com.ahu.ahutong.ui.theme.pack.serializeSlotOverrides
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +68,29 @@ class PreferencesViewModel @Inject constructor(
     )
     val appThemeMode: StateFlow<AppThemeMode> = _appThemeMode.asStateFlow()
 
+    /** 组件槽位覆盖（Theme Park 混搭）：槽位 → 实现来源；空 = 全部跟随套装。 */
+    private val _componentSlotOverrides = MutableStateFlow(
+        parseSlotOverrides(startupThemePreferences?.slotOverrides)
+    )
+    val componentSlotOverrides: StateFlow<Map<ComponentSlotId, SlotSource>> =
+        _componentSlotOverrides.asStateFlow()
+
+    /** 设置某槽位的实现来源；source 传 null 表示恢复「跟随套装」。 */
+    fun setComponentSlotOverride(slot: ComponentSlotId, source: SlotSource?) {
+        val next = _componentSlotOverrides.value.toMutableMap()
+        if (source == null) next.remove(slot) else next[slot] = source
+        _componentSlotOverrides.value = next
+        viewModelScope.launch {
+            preferencesManager.setComponentSlotOverrides(next.serializeSlotOverrides())
+        }
+    }
+
+    /** 一键清空全部槽位覆盖。 */
+    fun clearComponentSlotOverrides() {
+        _componentSlotOverrides.value = emptyMap()
+        viewModelScope.launch { preferencesManager.setComponentSlotOverrides("") }
+    }
+
     private val _courseReminderEnabled = MutableStateFlow(false)
     val courseReminderEnabled: StateFlow<Boolean> = _courseReminderEnabled.asStateFlow()
 
@@ -98,8 +125,14 @@ class PreferencesViewModel @Inject constructor(
                 preferencesManager.rememberStartupThemePreferences(
                     appUiTheme = appUiTheme,
                     themeColor = themeColor,
-                    themeMode = themeMode
+                    themeMode = themeMode,
+                    slotOverrides = _componentSlotOverrides.value.serializeSlotOverrides()
                 )
+            }
+        }
+        viewModelScope.launch {
+            preferencesManager.componentSlotOverrides.collect {
+                _componentSlotOverrides.value = parseSlotOverrides(it)
             }
         }
         viewModelScope.launch {

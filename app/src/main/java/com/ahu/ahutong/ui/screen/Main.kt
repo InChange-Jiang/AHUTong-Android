@@ -68,6 +68,7 @@ import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
 import com.ahu.ahutong.ui.screen.settings.License
 import com.ahu.ahutong.ui.screen.settings.Preferences
+import com.ahu.ahutong.ui.screen.settings.ThemeLab
 import com.ahu.ahutong.ui.screen.setup.Info
 import com.ahu.ahutong.ui.screen.setup.Login
 import com.ahu.ahutong.ui.components.LiquidGlassAppHost
@@ -366,7 +367,14 @@ fun Main(
             }
 
             animatedComposable(appUiThemeState, "preferences") {
-                Preferences(onBack = { navController.popBackStack() })
+                Preferences(
+                    onBack = { navController.popBackStack() },
+                    onOpenThemeLab = { navController.navigate("settings__theme_lab") }
+                )
+            }
+
+            animatedComposable(appUiThemeState, "settings__theme_lab") {
+                ThemeLab(onBack = { navController.popBackStack() })
             }
 
             animatedComposable(appUiThemeState, "electricity_pay") {

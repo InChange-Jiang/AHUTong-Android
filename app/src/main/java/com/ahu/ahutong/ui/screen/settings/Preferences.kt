@@ -66,7 +66,7 @@ import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.PreferencesViewModel
 
 @Composable
-fun Preferences(onBack: () -> Unit = {}) {
+fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
     val viewModel: PreferencesViewModel = hiltViewModel()
     val context = LocalContext.current
     var isRequestingPermission by remember { mutableStateOf(false) }
@@ -317,12 +317,10 @@ fun Preferences(onBack: () -> Unit = {}) {
                     ),
                     onSelected = viewModel::setAppThemeMode
                 )
-                SettingsSelectRow(
-                    title = "主题",
-                    subtitle = "切换整套界面的组件与交互风格",
-                    selected = appUiTheme,
-                    choices = AppUiTheme.entries.map { SettingsChoice(it, it.displayName) },
-                    onSelected = viewModel::setAppUiTheme
+                SettingsActionRow(
+                    title = "主题实验室",
+                    subtitle = "界面风格套装 · 组件槽位逐件混搭 · 实时预览",
+                    onClick = onOpenThemeLab
                 )
                 ThemeColorPicker(
                     selectedColor = themeColor,

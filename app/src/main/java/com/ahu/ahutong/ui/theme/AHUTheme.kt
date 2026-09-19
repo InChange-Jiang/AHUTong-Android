@@ -29,6 +29,7 @@ import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalAppUiTheme
 import com.ahu.ahutong.ui.theme.pack.LocalComponentPack
 import com.ahu.ahutong.ui.theme.pack.componentPack
+import com.ahu.ahutong.ui.theme.pack.mixing
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.dao.DEFAULT_THEME_COLOR
 import com.ahu.ahutong.ui.state.PreferencesViewModel
@@ -49,6 +50,7 @@ fun AHUTheme(content: @Composable () -> Unit) {
     val themeColorHex by preferencesViewModel.themeColor.collectAsState()
     val themeMode by preferencesViewModel.appThemeMode.collectAsState()
     val appUiTheme by preferencesViewModel.appUiTheme.collectAsState()
+    val componentSlotOverrides by preferencesViewModel.componentSlotOverrides.collectAsState()
     val isUiThemePreferenceReady by
         preferencesViewModel.isUiThemePreferenceReady.collectAsState()
     val isDarkTheme = themeMode.resolve(isSystemInDarkTheme())
@@ -176,13 +178,17 @@ fun AHUTheme(content: @Composable () -> Unit) {
             val liquidGlassTokens = rememberLiquidGlassTokens(
                 enabled = isUiThemePreferenceReady && appUiTheme.usesLiquidGlass
             )
+            // Theme Park：套装 + 槽位覆盖 → 实际生效的组件包（页面层无感）
+            val componentPack = remember(appUiTheme, componentSlotOverrides) {
+                appUiTheme.componentPack.mixing(componentSlotOverrides)
+            }
             MiuixTheme(controller = miuixController) {
                 CompositionLocalProvider(
                     LocalContentColor provides if (isDarkTheme) 100.n1 else 0.n1,
                     LocalAppUiTheme provides appUiTheme,
                     LocalIsLiquidGlassEnabled provides liquidGlassTokens.enabled,
                     LocalLiquidGlassTokens provides liquidGlassTokens,
-                    LocalComponentPack provides appUiTheme.componentPack
+                    LocalComponentPack provides componentPack
                 ) {
                     // Keep the root node stable so switching UI libraries never recreates the
                     // navigation subtree. The transparent scaffold is also Miuix's popup host.

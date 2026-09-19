@@ -19,6 +19,7 @@ object PreferencesKeys {
     val IS_SHOW_ALL_COURSE = booleanPreferencesKey("is_show_all_course")
     val USE_LIQUID_GLASS = booleanPreferencesKey("use_liquid_glass")
     val UI_THEME = stringPreferencesKey("ui_theme")
+    val COMPONENT_SLOT_OVERRIDES = stringPreferencesKey("component_slot_overrides")
     val UI_STYLE = stringPreferencesKey("ui_style")
     val USE_BUILT_IN_SECURE_PASSWORD_KEYBOARD =
         booleanPreferencesKey("use_built_in_secure_password_keyboard")
@@ -58,7 +59,8 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
     data class StartupThemePreferences(
         val appUiTheme: AppUiTheme,
         val themeColor: String?,
-        val themeMode: AppThemeMode
+        val themeMode: AppThemeMode,
+        val slotOverrides: String
     )
 
     private val startupThemeMirror by lazy {
@@ -75,20 +77,23 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
             themeColor = startupThemeMirror.getString("theme_color", null),
             themeMode = AppThemeMode.fromStorage(
                 startupThemeMirror.getString("theme_mode", null)
-            )
+            ),
+            slotOverrides = startupThemeMirror.getString("slot_overrides", null).orEmpty()
         )
     }
 
     fun rememberStartupThemePreferences(
         appUiTheme: AppUiTheme,
         themeColor: String?,
-        themeMode: AppThemeMode
+        themeMode: AppThemeMode,
+        slotOverrides: String
     ) {
         startupThemeMirror.edit()
             .putBoolean("initialized", true)
             .putString("ui_theme", appUiTheme.storageValue)
             .putString("theme_color", themeColor)
             .putString("theme_mode", themeMode.storageValue)
+            .putString("slot_overrides", slotOverrides)
             .apply()
     }
 
@@ -289,6 +294,22 @@ class PreferencesManager @Inject constructor(@param:ApplicationContext private v
             legacyUseLiquidGlass = prefs[PreferencesKeys.USE_LIQUID_GLASS],
             legacyUiStyle = prefs[PreferencesKeys.UI_STYLE]
         )
+    }
+
+    /** 组件槽位覆盖（序列化字符串，解析在 ui/theme/pack/ComponentSlots.kt）。 */
+    val componentSlotOverrides: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[PreferencesKeys.COMPONENT_SLOT_OVERRIDES].orEmpty()
+    }
+
+    suspend fun setComponentSlotOverrides(serialized: String) {
+        context.dataStore.edit { prefs ->
+            if (serialized.isEmpty()) {
+                prefs.remove(PreferencesKeys.COMPONENT_SLOT_OVERRIDES)
+            } else {
+                prefs[PreferencesKeys.COMPONENT_SLOT_OVERRIDES] = serialized
+            }
+        }
+        startupThemeMirror.edit().putString("slot_overrides", serialized).apply()
     }
 
     suspend fun setAppUiTheme(value: AppUiTheme) {

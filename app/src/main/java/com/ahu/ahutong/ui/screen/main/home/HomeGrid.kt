@@ -177,8 +177,8 @@ fun HomeGrid(
             }
 
             // 图标格 / 空位 / 更多
-            placements.forEach { (slotKey, p) ->
-                if (slotKey == CampusCardSlotId) return@forEach
+            for ((slotKey, p) in placements) {
+                if (slotKey == CampusCardSlotId) continue
                 key(slotKey) {
                     val animator = remember { CellAnimator() }
                     val targetX = p.col * (cellWPx + gapPx)
@@ -213,33 +213,35 @@ fun HomeGrid(
                         }
 
                         else -> {
-                            val spec = HomeWidgetRegistry.widgetById[slotKey] ?: return@key
+                            val spec = HomeWidgetRegistry.widgetById[slotKey]
                             val slotIndex = config.icons.indexOf(slotKey)
-                            Box(modifier = cellModifier) {
-                                GridIconCell(
-                                    iconId = spec.iconId,
-                                    title = spec.title,
-                                    tint = spec.tint,
-                                    modifier = Modifier.fillMaxSize(),
-                                    onClick = { if (!isEditing) onOpenWidget(spec.route) },
-                                    onLongClick = onEnterEdit
-                                )
-                                if (isEditing && slotIndex >= 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.TopEnd)
-                                            .offset(x = 4.dp, y = (-4).dp)
-                                            .size(20.dp)
-                                            .clip(CircleShape)
-                                            .background(MaterialTheme.colorScheme.error)
-                                            .clickable { onRemoveSlot(slotIndex) },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            "×",
-                                            color = 100.n1,
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
+                            if (spec != null) {
+                                Box(modifier = cellModifier) {
+                                    GridIconCell(
+                                        iconId = spec.iconId,
+                                        title = spec.title,
+                                        tint = spec.tint,
+                                        modifier = Modifier.fillMaxSize(),
+                                        onClick = { if (!isEditing) onOpenWidget(spec.route) },
+                                        onLongClick = onEnterEdit
+                                    )
+                                    if (isEditing && slotIndex >= 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 4.dp, y = (-4).dp)
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(MaterialTheme.colorScheme.error)
+                                                .clickable { onRemoveSlot(slotIndex) },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                "×",
+                                                color = 100.n1,
+                                                style = MaterialTheme.typography.labelSmall
+                                            )
+                                        }
                                     }
                                 }
                             }

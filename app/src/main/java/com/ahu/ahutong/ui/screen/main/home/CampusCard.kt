@@ -70,6 +70,7 @@ import com.ahu.ahutong.personalization.runtime.BehaviorRuntimeEntryPoint
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
+import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.components.liquidGlassSurface
@@ -132,10 +133,19 @@ fun CampusCard(
 
 
     val campusShape = SmoothRoundedCornerShape(24.dp)
-    val campusSurface = Modifier.appLiquidGlassSurface(
-        shape = campusShape,
-        fallbackColor = 100.n1 withNight 20.n1
-    )
+    // 玻璃材质按「液态能力」分发（非主题枚举）：液态启用 → ambient 真玻璃；否则实色回落
+    val campusSurface = if (LocalIsLiquidGlassEnabled.current) {
+        Modifier.liquidGlassSurface(
+            backdrop = LocalLiquidGlassAmbientBackdrop.current,
+            shape = campusShape,
+            surfaceColor = liquidGlassTint()
+        )
+    } else {
+        Modifier.appLiquidGlassSurface(
+            shape = campusShape,
+            fallbackColor = 100.n1 withNight 20.n1
+        )
+    }
     Box(
         modifier = modifier.then(campusSurface)
     ) {

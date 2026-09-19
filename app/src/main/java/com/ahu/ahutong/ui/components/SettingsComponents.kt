@@ -83,7 +83,6 @@ import top.yukonga.miuix.kmp.basic.Text as MiuixText
 import top.yukonga.miuix.kmp.basic.TopAppBar as MiuixTopAppBar
 import top.yukonga.miuix.kmp.extra.SuperDropdown
 import top.yukonga.miuix.kmp.extra.SuperArrow
-import top.yukonga.miuix.kmp.extra.SuperSwitch
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.icons.useful.Back
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -601,24 +600,12 @@ fun SettingsToggleRow(
     showDivider: Boolean = true,
     onHorizontalDragActiveChange: (Boolean) -> Unit = {}
 ) {
-    if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        val haptic = LocalHapticFeedback.current
-        val onCheckedWithFeedback: (Boolean) -> Unit = { checked ->
-            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-            onSelectedChange(checked)
-        }
-        Column(modifier = modifier.fillMaxWidth()) {
-            SuperSwitch(
-                checked = selected,
-                onCheckedChange = onCheckedWithFeedback,
-                title = title,
-                summary = subtitle,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = enabled
-            )
-            SettingsDivider(visible = showDivider)
-        }
-        return
+    // 行布局 = 设置族通用；开关控件走契约槽位（AppToggle → 主题实验室可逐槽混搭）。
+    // 旋钮拖拽手势随 LiquidToggle 直用一并移除（行点击切换保留）。
+    val haptic = LocalHapticFeedback.current
+    val onCheckedWithFeedback: (Boolean) -> Unit = { checked ->
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        onSelectedChange(checked)
     }
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -628,7 +615,7 @@ fun SettingsToggleRow(
                     value = selected,
                     enabled = enabled,
                     role = Role.Switch,
-                    onValueChange = onSelectedChange
+                    onValueChange = onCheckedWithFeedback
                 )
                 .heightIn(min = 72.dp)
                 .padding(horizontal = 20.dp, vertical = 12.dp),
@@ -641,13 +628,10 @@ fun SettingsToggleRow(
                 enabled = enabled,
                 modifier = Modifier.weight(1f)
             )
-            LiquidToggle(
-                selected = { selected },
-                onSelect = onSelectedChange,
-                backdrop = backdrop,
-                userInputEnabled = enabled,
-                toggleOnTap = false,
-                onHorizontalDragActiveChange = onHorizontalDragActiveChange
+            AppToggle(
+                checked = selected,
+                onCheckedChange = onCheckedWithFeedback,
+                enabled = enabled
             )
         }
         SettingsDivider(visible = showDivider)

@@ -99,7 +99,7 @@ fun AppDialog(
 
             if (content != null) {
                 Column(
-                    modifier = Modifier
+                    modifier = (if (contentScrollable) Modifier.weight(1f, fill = false) else Modifier)
                         .padding(24.dp)
                         .then(
                             if (contentScrollable) {

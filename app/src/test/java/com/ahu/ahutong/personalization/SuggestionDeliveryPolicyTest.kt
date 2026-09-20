@@ -171,7 +171,7 @@ class SuggestionDeliveryPolicyTest {
     fun suggestionWindowIsNonModalAndDoesNotDimBusinessSheets() {
         val host = File(
             repositoryRoot(),
-            "app/src/main/java/com/ahu/ahutong/personalization/ui/SmartSuggestionHost.kt"
+            "app/src/main/java/com/ahu/ahutong/ui/suggestion/SmartSuggestionHost.kt"
         ).readText()
 
         assertTrue(host.contains("WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE"))
@@ -240,7 +240,7 @@ class SuggestionDeliveryPolicyTest {
         ).readText()
         val host = File(
             root,
-            "app/src/main/java/com/ahu/ahutong/personalization/ui/SmartSuggestionHost.kt"
+            "app/src/main/java/com/ahu/ahutong/ui/suggestion/SmartSuggestionHost.kt"
         ).readText()
         val diagnostics = File(
             root,

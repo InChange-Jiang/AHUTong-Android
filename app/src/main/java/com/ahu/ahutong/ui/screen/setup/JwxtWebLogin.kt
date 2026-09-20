@@ -22,7 +22,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
+import com.ahu.ahutong.data.AHURepository
 import com.google.gson.Gson
 import org.json.JSONObject
 
@@ -110,7 +110,7 @@ private fun createJwxtLoginWebView(
         settings.javaScriptCanOpenWindowsAutomatically = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.userAgentString = JwxtApi.BROWSER_USER_AGENT
+        settings.userAgentString = AHURepository.jwxtBrowserUserAgent
 
         val webCookieManager = CookieManager.getInstance()
         webCookieManager.setAcceptCookie(true)

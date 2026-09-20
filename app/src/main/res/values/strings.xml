@@ -5,29 +5,21 @@
     <string name="title_mine">我的</string>
     <string name="mine_tv_identity">教务系统认证</string>
     <string name="mine_tv_logout">教务系统注销</string>
-    <string name="setting">设置</string>
     <string name="mine_tv_recommend">推荐给好友</string>
-    <string name="mine_tv_feedback">意见反馈</string>
     <string name="mine_tv_about_us">关于我们</string>
     <string name="contributors">贡献名单</string>
-    <string name="mine_tv_developer">开发者</string>
-    <string name="mine_tv_partner">加入我们</string>
     <string name="tools_logo">tools logo</string>
     <string name="college">院系风采</string>
     <string name="edu">教务通知</string>
     <string name="association">社团动态</string>
     <string name="recruit">校招实习</string>
     <string name="ok">确定</string>
-    <string name="close">关闭</string>
     <string name="import_schedule">导入课表</string>
     <string name="add_course">手动添加课程</string>
     <string name="setting_change_theme">更换主题</string>
     <string name="setting_diy_theme">自定义主题</string>
     <string name="setting_show_all">显示非本周课程</string>
-    <string name="setting_clear">清除数据</string>
     <string name="license">开源协议</string>
-    <string name="view_source">查看源代码</string>
-    <string name="license_load_failed">无法读取许可证资源：%1$s</string>
     <string name="login">认证</string>
     <string name="hint_userid">请输入您的学号</string>
     <string name="hint_wisdom_password">请输入您的智慧安大密码</string>
@@ -36,8 +28,6 @@
     <string name="library">图书馆</string>
     <string name="emptyRoom">空教室</string>
     <string name="pass">挂科率</string>
-    <string name="grade">成绩单</string>
-    <string name="exam">考场查询</string>
     <string name="teachIn">宣讲会</string>
     <string name="share_schedule">共享课表</string>
     <string name="bathroom">浴室开放</string>
@@ -66,10 +56,8 @@
     <string name="login_wisdom_ahu">智慧安大</string>
     <string name="login_teach_system">教务系统</string>
     <string name="search">搜索</string>
-    <string name="check_update">检查更新</string>
     <string name="debug_build_badge">DEBUG</string>
     <string name="debug_build_notice">正在运行调试版本，自动更新已被禁用。</string>
-    <string name="update_intro">更新日志</string>
     <string name="schedule_input">导入课表</string>
     <string name="schedule_add">手动添加课程</string>
     <string name="schedule_time">设置当前时间</string>
@@ -103,7 +91,6 @@
     <string name="school_calendar">校历</string>
     <string name="free_classroom">空闲教室</string>
     <string name="lost_found">失物招领</string>
-    <string name="preferences">偏好设置</string>
     <string name="repository">学习资料</string>
     <string name="repository_downloads">已下载</string>
 </resources>

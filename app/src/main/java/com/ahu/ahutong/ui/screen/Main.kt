@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen
 
+import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.BuildConfig
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.layout.Arrangement
@@ -67,6 +68,8 @@ import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen
 import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
 import com.ahu.ahutong.ui.screen.settings.License
+import com.ahu.ahutong.R
+import androidx.compose.ui.res.stringResource
 import com.ahu.ahutong.ui.screen.settings.Preferences
 import com.ahu.ahutong.ui.screen.settings.ThemeLab
 import com.ahu.ahutong.ui.screen.setup.Info
@@ -95,21 +98,37 @@ import com.ahu.ahutong.personalization.action.ActionSource
 import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
 import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
-import com.ahu.ahutong.personalization.ui.SmartSuggestionHost
+import com.ahu.ahutong.personalization.recorder.BehaviorRecorder
+import com.ahu.ahutong.ui.suggestion.SmartSuggestionHost
 import com.ahu.ahutong.personalization.action.AppActionId
+import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.xuexiaotong.ChaoxingSession
+import dagger.hilt.EntryPoint
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
 
 private val primaryDestinationRoutes = listOf("home", "schedule", "xuexiaotong", "settings")
+
+internal fun settingsParentRoute(uiTheme: AppUiTheme): String =
+    if (uiTheme == AppUiTheme.RADIANT) "settings" else "home"
+
+internal fun shouldNormalizePreferencesParent(
+    uiTheme: AppUiTheme,
+    previousRoute: String?
+): Boolean = previousRoute != settingsParentRoute(uiTheme)
 
 @OptIn(ExperimentalAnimationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun Main(
     navController: NavHostController,
-    mainViewModel: MainViewModel = viewModel(),
+    mainViewModel: MainViewModel = hiltViewModel(),
     loginViewModel: LoginViewModel = viewModel(),
     discoveryViewModel: DiscoveryViewModel = viewModel(),
-    scheduleViewModel: ScheduleViewModel = viewModel(),
+    scheduleViewModel: ScheduleViewModel = hiltViewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
     behaviorRuntime: BehaviorPredictionRuntime,
+    behaviorRecorder: BehaviorRecorder,
     diagnosticsContribution: DiagnosticsContribution,
     paymentQrCommands: PaymentQrOpenCommandStore,
     isReLoginShown: Boolean,
@@ -132,6 +151,8 @@ fun Main(
     val appUiTheme = LocalAppUiTheme.current
     val appUiThemeState = rememberUpdatedState(appUiTheme)
     val effectiveRoute = currentRoute
+    // 合并注：IA 已收敛为 Radiant 单形态（无主屏 pager），isHomeActive 简化为路由判断
+    val isHomeActive = currentRoute == "home"
 
     fun cancelSelection(token: Long) {
         if (navigationPolicy.cancelSelection(token)) {
@@ -166,6 +187,30 @@ fun Main(
         )
         shouldEnterHomeEdit = true
         scope.launch { selectPrimaryDestination("home") }
+    }
+
+    fun navigateBackFromPreferences() {
+        if (!navController.popBackStack("settings", inclusive = false)) {
+            navController.navigate("settings") {
+                popUpTo("home") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    LaunchedEffect(currentRoute, appUiTheme) {
+        if (
+            currentRoute == "preferences" &&
+            shouldNormalizePreferencesParent(
+                appUiTheme,
+                navController.previousBackStackEntry?.destination?.route
+            )
+        ) {
+            navController.navigate("settings") {
+                popUpTo("home") { inclusive = false }
+            }
+            navController.navigate("preferences") { launchSingleTop = true }
+        }
     }
 
     val navigationSnapshot = NavigationSnapshot(
@@ -208,6 +253,7 @@ fun Main(
                     scheduleViewModel = scheduleViewModel,
                     navController = navController,
                     behaviorRuntime = behaviorRuntime,
+                    isActive = isHomeActive,
                     onOpenSchedule = {
                         scope.launch { selectPrimaryDestination("schedule") }
                     },
@@ -244,7 +290,7 @@ fun Main(
                             navController.navigate("home") {
                                 popUpTo(navController.graph.id) { inclusive = true }
                             }
-                            com.ahu.ahutong.data.dao.AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
+                            com.ahu.ahutong.data.session.SessionStore.currentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
                                 behaviorRuntime.startProfile(it)
                             }
                             homeEditGrayState = GrayReleaseManager.state(
@@ -269,7 +315,7 @@ fun Main(
                 // 返回转场竞态；非 RADIANT 主题下独立展示课表页可正常用系统返回
                 Schedule(
                     scheduleViewModel = scheduleViewModel,
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(appUiThemeState, "tools") {
@@ -322,7 +368,7 @@ fun Main(
                 Repository(
                     navController = navController,
                     path = "",
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(
@@ -339,7 +385,7 @@ fun Main(
                 Repository(
                     navController = navController,
                     path = backStackEntry.arguments?.getString(REPOSITORY_PATH_ARG).orEmpty(),
-                    behaviorRuntime = behaviorRuntime
+                    behaviorRecorder = behaviorRecorder
                 )
             }
             animatedComposable(appUiThemeState, "repository_downloads") {
@@ -351,24 +397,28 @@ fun Main(
             animatedComposable(appUiThemeState, "settings") {
                 // 无条件渲染：切换主题后 pop 回此路由时不能落入空白重定向页，
                 // 否则 pop 转场与 redirect 的二次 pop 竞态会导致白屏/卡死
-                Settings(
+                SettingsHub(
                     navController = navController,
                     mainViewModel = mainViewModel,
-                    aboutViewModel = aboutViewModel,
-                    scheduleViewModel = scheduleViewModel,
-                    behaviorRuntime = behaviorRuntime
+                    scheduleViewModel = scheduleViewModel
                 )
             }
             animatedComposable(appUiThemeState, "settings__license") {
-                License(onBack = { navController.popBackStack() })
+                License(
+                    title = stringResource(R.string.license),
+                    onBack = { navController.popBackStack() }
+                )
             }
             animatedComposable(appUiThemeState, "settings__contributors") {
-                Contributors(onBack = { navController.popBackStack() })
+                Contributors(
+                    title = stringResource(R.string.contributors),
+                    onBack = { navController.popBackStack() }
+                )
             }
 
             animatedComposable(appUiThemeState, "preferences") {
                 Preferences(
-                    onBack = { navController.popBackStack() },
+                    onBack = ::navigateBackFromPreferences,
                     onOpenThemeLab = { navController.navigate("settings__theme_lab") }
                 )
             }
@@ -413,8 +463,7 @@ fun Main(
             }
 
             animatedComposable(appUiThemeState, "xuexiaotong") {
-                val api = remember { com.ahu.ahutong.data.xuexiaotong.ChaoxingApi(context) }
-                XuexiaotongScreen(api = api)
+                XuexiaotongScreen()
             }
 
             if (BuildConfig.DEBUG) {

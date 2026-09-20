@@ -1,6 +1,6 @@
 package com.ahu.ahutong.data.dao
 
-import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.data.crawler.model.adwnh.CampusItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
@@ -18,6 +18,10 @@ import com.ahu.ahutong.data.model.GradeStudentProfile
 import com.ahu.ahutong.data.model.RoomSelectionInfo
 import com.ahu.ahutong.data.model.User
 import com.ahu.ahutong.data.security.SecureStorage
+import com.ahu.ahutong.data.security.SecureBoxStore
+
+import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.session.SecureCredentialVault
 import com.ahu.ahutong.ext.fromJson
 import com.ahu.ahutong.sdk.RustSDK
 import com.google.gson.Gson
@@ -37,16 +41,11 @@ enum class HomeWidgetLayoutFamily {
 object AHUCache {
 
     init {
-        MMKV.initialize(AHUApplication.getApp())
+        MMKV.initialize(AppEnvironmentHolder.context())
     }
 
     private val kv_init: MMKV = MMKV.mmkvWithID("ahu")
 
-    private val currentUserCacheLock = Any()
-    @Volatile
-    private var currentUserCacheInitialized = false
-    @Volatile
-    private var currentUserCache: User? = null
 
     @Volatile
     private var mockDataCache: Boolean? = null
@@ -57,7 +56,7 @@ object AHUCache {
 
     private val kv: MMKV
         get() {
-            val user = getCurrentUser()
+            val user = SessionStore.currentUser()
             return  if (user != null && !user.xh.isNullOrEmpty()) {
                 MMKV.mmkvWithID("ahu_${user.xh}")
             } else {
@@ -67,72 +66,41 @@ object AHUCache {
 
     private const val INIT_BOX = "init"
 
-    private fun sanitizeBoxPart(value: String): String {
-        return value.replace(Regex("[^A-Za-z0-9_.-]"), "_")
-    }
-
-    private fun userBoxName(userId: String? = getCurrentUser()?.xh): String {
-        val stableUserId = userId?.takeIf { it.isNotEmpty() } ?: "guest"
-        return "user_${sanitizeBoxPart(stableUserId)}"
-    }
+    /**
+     * 用户分箱名。命名规则与迁移链统一收口在 [SecureBoxStore]，
+     * 避免"缓存层用一份 sanitize、安全层用另一份"这种隐性错位。
+     */
+    private fun userBoxName(userId: String? = SessionStore.currentUser()?.xh): String =
+        SecureBoxStore.userBox(userId)
 
     private fun initPutString(key: String, value: String) {
-        SecureStorage.putString("$INIT_BOX.$key", value)
-        RustSDK.kvRemoveSafe(INIT_BOX, key)
-        kv_init.removeValueForKey(key)
+        SecureBoxStore.put(key, value)
     }
 
     private fun initGetString(key: String): String? {
-        SecureStorage.getString("$INIT_BOX.$key")?.let { return it }
-        return RustSDK.kvGetStringSafe(INIT_BOX, key)?.also { value ->
-            SecureStorage.putString("$INIT_BOX.$key", value)
-            RustSDK.kvRemoveSafe(INIT_BOX, key)
-        }
+        return SecureBoxStore.get(key)
     }
 
     private fun initGetStringOrMigrate(key: String, fallback: () -> String?): String? {
-        initGetString(key)?.let { return it }
-        return fallback()?.also { value ->
-            if (value.isNotEmpty()) initPutString(key, value)
-            kv_init.removeValueForKey(key)
-        }
+        return SecureBoxStore.getOrMigrate(key, fallback)
     }
 
     private fun initRemove(key: String) {
-        SecureStorage.remove("$INIT_BOX.$key")
-        RustSDK.kvRemoveSafe(INIT_BOX, key)
-        kv_init.removeValueForKey(key)
+        SecureBoxStore.remove(key)
     }
 
     private fun userPutString(key: String, value: String) {
-        val boxName = userBoxName()
-        SecureStorage.putString("$boxName.$key", value)
-        RustSDK.kvRemoveSafe(boxName, key)
-        kv.removeValueForKey(key)
+        SecureBoxStore.put(userBoxName(), key, value)
     }
 
-    private fun userGetString(key: String): String? {
-        val boxName = userBoxName()
-        SecureStorage.getString("$boxName.$key")?.let { return it }
-        return RustSDK.kvGetStringSafe(boxName, key)?.also { value ->
-            SecureStorage.putString("$boxName.$key", value)
-            RustSDK.kvRemoveSafe(boxName, key)
-        }
-    }
+    private fun userGetString(key: String): String? =
+        SecureBoxStore.get(userBoxName(), key)
 
-    private fun userGetStringOrMigrate(key: String, fallback: () -> String?): String? {
-        userGetString(key)?.let { return it }
-        return fallback()?.also { value ->
-            if (value.isNotEmpty()) userPutString(key, value)
-            kv.removeValueForKey(key)
-        }
-    }
+    private fun userGetStringOrMigrate(key: String, fallback: () -> String?): String? =
+        SecureBoxStore.getOrMigrate(userBoxName(), key, fallback)
 
     private fun userRemove(key: String) {
-        val boxName = userBoxName()
-        SecureStorage.remove("$boxName.$key")
-        RustSDK.kvRemoveSafe(boxName, key)
-        kv.removeValueForKey(key)
+        SecureBoxStore.remove(userBoxName(), key)
     }
 
     /**
@@ -150,10 +118,7 @@ object AHUCache {
         kv_init.clearAll()
         currentKv.clearAll()
         MMKV.mmkvWithID("ahu_guest").clearAll()
-        synchronized(currentUserCacheLock) {
-            currentUserCache = null
-            currentUserCacheInitialized = true
-        }
+        SessionStore.clearPersistedCurrentUser()
         mockDataCache = null
         mockCurrentTimeCache = null
         mockCurrentTimeCacheInitialized = false
@@ -165,12 +130,7 @@ object AHUCache {
      * @param user User
      */
     fun saveCurrentUser(user: User) {
-        val data = Gson().toJson(user)
-        initPutString("current_user", data)
-        synchronized(currentUserCacheLock) {
-            currentUserCache = user
-            currentUserCacheInitialized = true
-        }
+        SessionStore.persistCurrentUser(user)
         homeWidgetSlotsCache = null
     }
 
@@ -178,67 +138,8 @@ object AHUCache {
      * 清除本地登陆状态
      */
     fun clearCurrentUser() {
-        initRemove("current_user")
-        synchronized(currentUserCacheLock) {
-            currentUserCache = null
-            currentUserCacheInitialized = true
-        }
+        SessionStore.clearPersistedCurrentUser()
         homeWidgetSlotsCache = null
-    }
-
-    /**
-     * 获取本地User对象
-     * @return User?
-     */
-    fun getCurrentUser(): User? {
-        if (currentUserCacheInitialized) return currentUserCache
-        return synchronized(currentUserCacheLock) {
-            if (currentUserCacheInitialized) {
-                currentUserCache
-            } else {
-                val data = initGetStringOrMigrate("current_user") {
-                    kv_init.decodeString("current_user")
-                }.orEmpty()
-                data.fromJson(User::class.java).also { user ->
-                    currentUserCache = user
-                    currentUserCacheInitialized = true
-                }
-            }
-        }
-    }
-
-    /**
-     * 是否登录
-     * @return Boolean
-     */
-    fun isLogin(): Boolean {
-        return getCurrentUser() != null
-    }
-
-    /**
-     * 保存智慧安大密码
-     * @param password String
-     */
-    fun saveWisdomPassword(password: String) {
-        if (password.isEmpty()) initRemove("password_wisdom")
-        else initPutString("password_wisdom", password)
-    }
-
-    /**
-     * 获取智慧安大密码
-     * @return String?
-     */
-    fun getWisdomPassword(): String? {
-        return initGetStringOrMigrate("password_wisdom") { kv_init.decodeString("password_wisdom") }
-    }
-
-    fun saveEvalToken(token: String) {
-        if (token.isEmpty()) userRemove("eval_token")
-        else userPutString("eval_token", token)
-    }
-
-    fun getEvalToken(): String? {
-        return userGetStringOrMigrate("eval_token") { kv.decodeString("eval_token") }
     }
 
     fun saveEvalPreset(preset: EvalPreset) {
@@ -521,7 +422,7 @@ object AHUCache {
         getHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC)
 
     fun getHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): List<String?> {
-        val userId = getCurrentUser()?.xh
+        val userId = SessionStore.currentUser()?.xh
         homeWidgetSlotsCache
             ?.takeIf { it.userId == userId && it.layoutFamily == layoutFamily }
             ?.let { return it.slots }
@@ -575,7 +476,7 @@ object AHUCache {
         val data = Gson().toJson(normalizedSlots)
         userPutString(homeWidgetSlotsKey(layoutFamily), data)
         homeWidgetSlotsCache = HomeWidgetSlotsCache(
-            getCurrentUser()?.xh,
+            SessionStore.currentUser()?.xh,
             layoutFamily,
             normalizedSlots
         )
@@ -626,7 +527,7 @@ object AHUCache {
     }
 
     fun logout() {
-        val userId = getCurrentUser()?.xh
+        val userId = SessionStore.currentUser()?.xh
         val boxName = userBoxName(userId)
         val currentUserKv = if (userId.isNullOrEmpty()) {
             MMKV.mmkvWithID("ahu_guest")
@@ -636,8 +537,8 @@ object AHUCache {
         SecureStorage.clearPrefix("$boxName.")
         RustSDK.kvClearBoxSafe(boxName)
         currentUserKv.clearAll()
-        saveWisdomPassword("")
-        saveRustCookies("")
+        SecureCredentialVault.clearWisdomPassword()
+        SessionStore.saveRustCookies("")
         clearCurrentUser()
     }
 
@@ -696,21 +597,6 @@ object AHUCache {
     fun saveString(key: String ,value : String){
         userPutString(key, value)
     }
-
-    fun saveRustCookies(cookiesJson: String) {
-        if (cookiesJson.isEmpty()) {
-            initRemove("rust_cookies_json")
-        } else {
-            initPutString("rust_cookies_json", cookiesJson)
-        }
-    }
-
-    fun getRustCookies(): String {
-        return initGetStringOrMigrate("rust_cookies_json") {
-            kv_init.getString("rust_cookies_json", "")
-        } ?: ""
-    }
-
 
     fun isAgreementAccepted(): Boolean{
         userGetString("agreementAccepted")?.toBooleanStrictOrNull()?.let { return it }

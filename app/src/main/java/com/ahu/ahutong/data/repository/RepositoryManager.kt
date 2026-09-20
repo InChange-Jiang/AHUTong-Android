@@ -8,7 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.util.Base64
-import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.data.dao.PreferencesManager
 import com.google.gson.Gson
 import com.google.gson.JsonArray
@@ -19,20 +19,14 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import com.ahu.ahutong.data.network.AhuHttp
 
 internal object RepositoryIndexRefreshPolicy {
     const val AUTO_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1_000L
@@ -62,12 +56,18 @@ object RepositoryManager {
     private const val CONTENT_TREE_CACHE_TIME_KEY = "content_tree_cache_time"
     private const val CONTENT_TREE_CACHE_VERSION_KEY = "content_tree_cache_version"
     private const val CONTENT_UNSUPPORTED_PATHS_KEY = "content_unsupported_paths"
-    private const val CONTENT_CACHE_VERSION = 7
+    private const val CONTENT_CACHE_VERSION = 8
     private const val DOWNLOAD_RECORDS_KEY = "downloaded_files"
     private const val DOWNLOAD_RELATIVE_ROOT = "ahutong"
-    private const val GIT_LFS_POINTER_PREFIX = "version https://git-lfs.github.com/spec/v1"
-    private const val GIT_LFS_POINTER_MAX_BYTES = 1024
-    private val GIT_LFS_BATCH_MEDIA_TYPE = "application/vnd.git-lfs+json".toMediaType()
+    private const val CONTENT_INDEX_SERVER_TS_KEY = "content_index_server_ts"
+
+    // ahutong-storage 服务：索引与下载都经由它；非 LFS 文件的最终下载地址仍是
+    // GitHub 直链，由客户端按当前加速源拼接。LFS 文件由服务端直接回源传输。
+    private const val STORAGE_BASE_URL = "https://ahutong-storage.muxyang.com"
+    private const val HEADER_DOWNLOAD_TYPE = "X-Download-Type"
+    private const val HEADER_FILE_SIZE = "X-File-Size"
+    private const val DOWNLOAD_TYPE_LINK = "link"
+    private const val DIR_STATE_UNSUPPORTED = "unsupported"
 
     private val repositorySources = listOf(
         RepositorySource(
@@ -144,17 +144,15 @@ object RepositoryManager {
 
     private val gson = Gson()
     private val kv: MMKV by lazy {
-        MMKV.initialize(AHUApplication.getApp())
+        MMKV.initialize(AppEnvironmentHolder.context())
         MMKV.mmkvWithID("repository_downloads")
     }
     private val warmUpMutex = Mutex()
 
-    private val downloadClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .retryOnConnectionFailure(true)
-        .followRedirects(true)
-        .build()
+    private val downloadClient = AhuHttp.plain(
+        connectTimeoutSeconds = 10,
+        readTimeoutSeconds = 60
+    ).build()
 
     // === GitHub API ===
 
@@ -209,13 +207,28 @@ object RepositoryManager {
                     return@withLock cachedUpdateTime
                 }
 
-                val grouped = buildAllDirectoryCaches(onProgress)
+                // 先问服务端索引时间戳：与本地记录一致说明索引没变，直接复用目录缓存，
+                // 不必整包重新拉取 /api/list。
+                val serverUpdatedAt = fetchStorageUpdatedAt()
+                if (!forceRefresh &&
+                    serverUpdatedAt > 0L &&
+                    serverUpdatedAt == kv.decodeLong(CONTENT_INDEX_SERVER_TS_KEY, 0L) &&
+                    getCachedContents("") != null
+                ) {
+                    kv.encode(CONTENT_TREE_CACHE_TIME_KEY, System.currentTimeMillis())
+                    kv.encode(CONTENT_TREE_CACHE_VERSION_KEY, CONTENT_CACHE_VERSION)
+                    return@withLock serverUpdatedAt
+                }
+
+                val index = fetchStorageIndex()
+                val grouped = buildAllDirectoryCaches(index, onProgress)
                 val updateTime = System.currentTimeMillis()
                 grouped.forEach { (path, items) ->
                     saveContentCache(path, items, updateTime)
                 }
                 kv.encode(CONTENT_TREE_CACHE_TIME_KEY, updateTime)
                 kv.encode(CONTENT_TREE_CACHE_VERSION_KEY, CONTENT_CACHE_VERSION)
+                kv.encode(CONTENT_INDEX_SERVER_TS_KEY, index.updatedAt)
                 updateTime
             }
         }
@@ -310,40 +323,43 @@ object RepositoryManager {
         return withContext(Dispatchers.IO) {
             val resolved = resolveVirtualPath(path)
                 ?: throw IllegalArgumentException("无效的 Markdown 路径")
-            val urls = getDownloadUrls(path, AHUApplication.getApp())
-            val selectedAccelerationSource = getSelectedAccelerationSource(AHUApplication.getApp())
-            var lastError: Exception? = null
-            for (url in urls) {
-                try {
-                    val request = Request.Builder().url(url).build()
-                    downloadClient.newCall(request).execute().use { response ->
-                        if (!response.isSuccessful) {
-                            lastError = IllegalStateException("HTTP ${response.code}")
-                            return@use
-                        }
-                        val content = response.readGitLfsMarkdown(
-                            source = resolved.source,
-                            accelerationSource = selectedAccelerationSource
-                        )
-                            ?: response.body?.string().orEmpty()
-                        return@withContext RepositoryMarkdownDocument(
-                            title = File(resolved.repositoryPath).name.ifBlank { "Markdown" },
-                            path = path,
-                            content = content
+            val selectedAccelerationSource = getSelectedAccelerationSource(AppEnvironmentHolder.context())
+            val fileId = resolveStorageFileId(path)
+                ?: throw IllegalStateException("索引中不存在该文件")
+
+            downloadClient.newCall(buildStorageDownloadRequest(fileId)).execute().use { apiResponse ->
+                if (!apiResponse.isSuccessful) {
+                    throw IllegalStateException("HTTP ${apiResponse.code}")
+                }
+                val content = when (apiResponse.header(HEADER_DOWNLOAD_TYPE)) {
+                    DOWNLOAD_TYPE_LINK -> {
+                        val rawUrl = parseStorageLink(apiResponse)
+                            ?: resolved.source.rawUrl(resolved.repositoryPath)
+                        fetchTextWithFallback(
+                            prioritizedDownloadUrls(rawUrl, resolved, selectedAccelerationSource)
                         )
                     }
-                } catch (e: Exception) {
-                    lastError = e
-                }
+                    // file：服务端已回源 LFS 并直接传输内容
+                    else -> apiResponse.body?.string()
+                } ?: throw IllegalStateException("无法读取 Markdown")
+                RepositoryMarkdownDocument(
+                    title = File(resolved.repositoryPath).name.ifBlank { "Markdown" },
+                    path = path,
+                    content = content
+                )
             }
-            throw lastError ?: IllegalStateException("无法读取 Markdown")
         }
     }
 
-    private suspend fun getDownloadUrls(path: String, context: Context): List<String> {
-        val resolved = resolveVirtualPath(path) ?: return emptyList()
-        val selectedSource = getSelectedAccelerationSource(context)
-        val rawUrl = resolved.source.rawUrl(resolved.repositoryPath)
+    /**
+     * 生成按当前加速源排序的候选下载地址：选中的源优先，jsDelivr 与 GitHub 直连兜底。
+     * rawUrl 来自服务端 /api/download 的 link 应答，客户端只负责拼接加速前缀。
+     */
+    private fun prioritizedDownloadUrls(
+        rawUrl: String,
+        resolved: ResolvedRepositoryPath,
+        selectedSource: RepositoryAccelerationSource
+    ): List<String> {
         val cdnUrl = resolved.source.cdnUrl(resolved.repositoryPath)
         val selectedUrl = when {
             selectedSource.useJsDelivr -> cdnUrl
@@ -385,94 +401,188 @@ object RepositoryManager {
     ): DownloadedFile? = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val resolved = resolveVirtualPath(path) ?: return@withContext null
-        val urls = getDownloadUrls(path, appContext)
+        val fileId = resolveStorageFileId(path) ?: return@withContext null
         val selectedAccelerationSource = getSelectedAccelerationSource(appContext)
         val previousRecord = getDownloadRecord(path)
         val target = createDownloadTarget(path, appContext)
 
-        for ((index, url) in urls.withIndex()) {
-            try {
-                val request = Request.Builder().url(url).build()
-                var gitLfsPointer: GitLfsPointer? = null
-                var gitLfsDownload: GitLfsDownloadAction? = null
-                downloadClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        return@use
-                    }
-                    val pointer = response.readGitLfsPointer()
-                    if (pointer != null) {
-                        gitLfsPointer = pointer
-                        gitLfsDownload = resolveGitLfsDownload(resolved.source, pointer)
-                        return@use
-                    }
-
-                    val body = response.body ?: return@use
-                    val total = body.contentLength()
-                    var downloadedBytes = 0L
-
-                    body.byteStream().use { input ->
-                        target.openOutputStream().use { output ->
-                            val buffer = ByteArray(8 * 1024)
-                            var completed: Long = 0
-                            var read = input.read(buffer)
-                            while (read >= 0) {
-                                output.write(buffer, 0, read)
-                                completed += read
-                                downloadedBytes = completed
-                                if (total > 0) {
-                                    onProgress(completed.toFloat() / total.toFloat())
-                                }
-                                read = input.read(buffer)
-                            }
-                            output.flush()
-                        }
-                    }
-
-                    target.markCompleted()
-                    if (target is DownloadTarget.MediaStoreTarget || previousRecord?.uri != null) {
-                        previousRecord?.delete(appContext)
-                    }
-                    removeDownloadRecord(path)
-                    val record = DownloadRecord(
-                        path = path,
-                        localName = target.relativePath,
-                        uri = target.uri?.toString(),
-                        localPath = target.displayPath,
-                        downloadTime = System.currentTimeMillis(),
-                        size = downloadedBytes
-                    )
-                    saveDownloadRecord(record)
-                    return@withContext record.toDownloadedFile(appContext)
-                }
-
-                if (gitLfsPointer != null) {
-                    val lfsDownload = gitLfsDownload
-                    if (lfsDownload != null) {
-                        val lfsResult = downloadGitLfsFile(
-                            urls = buildLfsDownloadUrls(
-                                href = lfsDownload.href,
-                                accelerationSource = selectedAccelerationSource
-                            ),
-                            headers = lfsDownload.header,
-                            path = path,
-                            context = appContext,
-                            target = target,
-                            previousRecord = previousRecord,
-                            pointer = gitLfsPointer,
-                            onProgress = onProgress
-                        )
-                        if (lfsResult != null) return@withContext lfsResult
-                    }
-                }
-            } catch (e: Exception) {
-                if (index == urls.lastIndex) {
+        try {
+            downloadClient.newCall(buildStorageDownloadRequest(fileId)).execute().use { apiResponse ->
+                if (!apiResponse.isSuccessful) {
                     target.delete()
                     return@withContext null
                 }
+                when (apiResponse.header(HEADER_DOWNLOAD_TYPE)) {
+                    DOWNLOAD_TYPE_LINK -> {
+                        // link：服务端返回 GitHub 直链，客户端按当前加速源拼接后下载
+                        val rawUrl = parseStorageLink(apiResponse)
+                            ?: resolved.source.rawUrl(resolved.repositoryPath)
+                        val urls = prioritizedDownloadUrls(rawUrl, resolved, selectedAccelerationSource)
+                        for (url in urls) {
+                            val downloaded = runCatching {
+                                downloadClient.newCall(Request.Builder().url(url).build())
+                                    .execute().use { response ->
+                                        if (!response.isSuccessful) return@use null
+                                        streamResponseToTarget(
+                                            response = response,
+                                            target = target,
+                                            totalBytes = response.body?.contentLength() ?: -1L,
+                                            onProgress = onProgress
+                                        )
+                                    }
+                            }.getOrNull()
+                            if (downloaded != null) {
+                                return@withContext completeDownload(
+                                    path = path,
+                                    target = target,
+                                    previousRecord = previousRecord,
+                                    context = appContext,
+                                    downloadedBytes = downloaded
+                                )
+                            }
+                        }
+                        target.delete()
+                        return@withContext null
+                    }
+                    else -> {
+                        // file：LFS 文件由服务端直接传输，X-File-Size 给出总大小
+                        val totalBytes = apiResponse.header(HEADER_FILE_SIZE)?.toLongOrNull()
+                            ?: apiResponse.body?.contentLength() ?: -1L
+                        val downloaded = streamResponseToTarget(apiResponse, target, totalBytes, onProgress)
+                        if (downloaded == null) {
+                            target.delete()
+                            return@withContext null
+                        }
+                        return@withContext completeDownload(
+                            path = path,
+                            target = target,
+                            previousRecord = previousRecord,
+                            context = appContext,
+                            downloadedBytes = downloaded
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            target.delete()
+            return@withContext null
+        }
+    }
+
+    private fun buildStorageDownloadRequest(fileId: String): Request {
+        return Request.Builder()
+            .url("$STORAGE_BASE_URL/api/download?id=$fileId")
+            .build()
+    }
+
+    private fun parseStorageLink(response: Response): String? {
+        val link = runCatching {
+            gson.fromJson(response.body?.string().orEmpty(), StorageLinkResponse::class.java)
+        }.getOrNull()
+        return link?.url?.takeIf { it.isNotBlank() }
+    }
+
+    private suspend fun fetchStorageUpdatedAt(): Long = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$STORAGE_BASE_URL/api/update")
+            .header("Cache-Control", "no-cache")
+            .build()
+        downloadClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("无法获取索引版本: HTTP ${response.code}")
+            }
+            gson.fromJson(response.body?.string().orEmpty(), StorageUpdateResponse::class.java)
+                ?.updatedAt ?: 0L
+        }
+    }
+
+    private suspend fun fetchStorageIndex(): StorageIndexResponse = withContext(Dispatchers.IO) {
+        val request = Request.Builder()
+            .url("$STORAGE_BASE_URL/api/list")
+            .header("Cache-Control", "no-cache")
+            .build()
+        downloadClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IllegalStateException("无法获取资料索引: HTTP ${response.code}")
+            }
+            gson.fromJson(response.body?.string().orEmpty(), StorageIndexResponse::class.java)
+                ?: throw IllegalStateException("资料索引解析失败")
+        }
+    }
+
+    /** 从目录缓存里找文件的服务端索引 id；找不到时强制刷新一次索引再试。 */
+    private suspend fun resolveStorageFileId(path: String): String? {
+        findStorageFileId(path)?.let { return it }
+        runCatching { warmUpAllContentCaches(forceRefresh = true) }
+        return findStorageFileId(path)
+    }
+
+    private fun findStorageFileId(path: String): String? {
+        val parent = normalizeRepositoryPath(path).substringBeforeLast('/', "")
+        return getCachedContents(parent)?.items?.firstOrNull { it.path == path }?.id
+    }
+
+    private fun fetchTextWithFallback(urls: List<String>): String? {
+        for (url in urls) {
+            val content = runCatching {
+                downloadClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                    if (response.isSuccessful) response.body?.string() else null
+                }
+            }.getOrNull()
+            if (content != null) return content
+        }
+        return null
+    }
+
+    /** 把响应体写入下载目标并回报进度，返回写入字节数。 */
+    private fun streamResponseToTarget(
+        response: Response,
+        target: DownloadTarget,
+        totalBytes: Long,
+        onProgress: (Float) -> Unit
+    ): Long? {
+        val body = response.body ?: return null
+        var downloadedBytes = 0L
+        body.byteStream().use { input ->
+            target.openOutputStream().use { output ->
+                val buffer = ByteArray(8 * 1024)
+                var read = input.read(buffer)
+                while (read >= 0) {
+                    output.write(buffer, 0, read)
+                    downloadedBytes += read
+                    if (totalBytes > 0) {
+                        onProgress(downloadedBytes.toFloat() / totalBytes.toFloat())
+                    }
+                    read = input.read(buffer)
+                }
+                output.flush()
             }
         }
-        target.delete()
-        null
+        return downloadedBytes
+    }
+
+    private fun completeDownload(
+        path: String,
+        target: DownloadTarget,
+        previousRecord: DownloadRecord?,
+        context: Context,
+        downloadedBytes: Long
+    ): DownloadedFile? {
+        target.markCompleted()
+        if (target is DownloadTarget.MediaStoreTarget || previousRecord?.uri != null) {
+            previousRecord?.delete(context)
+        }
+        removeDownloadRecord(path)
+        val record = DownloadRecord(
+            path = path,
+            localName = target.relativePath,
+            uri = target.uri?.toString(),
+            localPath = target.displayPath,
+            downloadTime = System.currentTimeMillis(),
+            size = downloadedBytes
+        )
+        saveDownloadRecord(record)
+        return record.toDownloadedFile(context)
     }
 
     fun getLocalFile(path: String, context: Context): File? {
@@ -492,48 +602,27 @@ object RepositoryManager {
 
     // === 内部方法 ===
 
-    private suspend fun buildAllDirectoryCaches(
+    private fun buildAllDirectoryCaches(
+        index: StorageIndexResponse,
         onProgress: ((Int) -> Unit)? = null
     ): Map<String, List<GitHubContentItem>> {
-        val progressCounter = AtomicInteger(0)
-        val repositoryCaches = supervisorScope {
-            repositorySources.map { source ->
-                async {
-                    val result = runCatching {
-                        val tree = runCatching {
-                            GitHubApi.instance.getTree(
-                                owner = source.owner,
-                                repo = source.repo,
-                                tree = source.branch
-                            ).tree
-                        }.recoverCatching {
-                            val treeSha = resolveRepositoryTreeSha(source)
-                            GitHubApi.instance.getTree(
-                                owner = source.owner,
-                                repo = source.repo,
-                                tree = treeSha
-                            ).tree
-                        }.getOrThrow()
-                        source to buildDirectoryCachesFromGitHubTree(source, tree)
-                    }
-                    if (result.isSuccess) {
-                        val fileCount = result.getOrNull()?.second?.documentFileCount ?: 0
-                        onProgress?.invoke(progressCounter.addAndGet(fileCount))
-                    }
-                    result
-                }
-            }.awaitAll()
+        if (index.repositories.isEmpty() && index.files.isEmpty()) {
+            // 服务端尚未完成首次同步时索引为空；不缓存空索引，按失败处理让界面走重试。
+            throw IllegalStateException("资料索引为空")
         }
 
+        val progressCounter = AtomicInteger(0)
         val grouped = mutableMapOf("" to repositoryRootItems())
         val unsupportedPaths = mutableSetOf<String>()
-        repositoryCaches.mapNotNull { it.getOrNull() }.forEach { (_, cache) ->
+        repositorySources.forEach { source ->
+            if (index.repositories.none { it.id == source.id }) {
+                // 服务端暂时没同步到该仓库：不生成目录缓存，进入时会提示加载失败而不是空目录。
+                return@forEach
+            }
+            val cache = buildDirectoryCachesFromStorageIndex(source, index)
             grouped.putAll(cache.grouped)
             unsupportedPaths += cache.unsupportedDirectoryPaths
-        }
-        if (grouped.size == 1 && repositoryCaches.all { it.isFailure }) {
-            throw repositoryCaches.firstNotNullOfOrNull { it.exceptionOrNull() }
-                ?: IllegalStateException("无法构建目录索引")
+            onProgress?.invoke(progressCounter.addAndGet(cache.documentFileCount))
         }
         saveUnsupportedDirectoryPaths(unsupportedPaths)
         return grouped
@@ -552,109 +641,67 @@ object RepositoryManager {
         }
     }
 
-    private fun buildDirectoryCachesFromGitHubTree(
+    /**
+     * 把服务端索引映射成按目录分组的缓存条目。目录展示规则与旧版 GitHub tree 实现一致：
+     * 子树内有文档的目录正常展示；只有不支持格式的目录作为「暂不支持」占位。
+     */
+    private fun buildDirectoryCachesFromStorageIndex(
         source: RepositorySource,
-        tree: List<GitHubTreeItem>
+        index: StorageIndexResponse
     ): RepositoryIndexCache {
-        val allChildren = mutableMapOf<String, MutableList<GitHubTreeItem>>()
-        val allDirectories = mutableSetOf("")
+        val files = index.files.filter { it.repo == source.id }
+        val dirStates = index.dirs
+            .filter { it.repo == source.id }
+            .associate { normalizeRepositoryPath(it.path) to it.state }
 
-        tree.forEach { treeItem ->
-            val repositoryPath = normalizeRepositoryPath(treeItem.path)
-            if (repositoryPath.isEmpty()) return@forEach
-
-            val parent = repositoryPath.substringBeforeLast('/', "")
-            allChildren.getOrPut(parent) { mutableListOf() }.add(
-                treeItem.copy(path = repositoryPath)
-            )
-            allDirectories += parent
-            if (treeItem.type == "tree") {
-                allDirectories += repositoryPath
-            }
+        val filesByParent = files.groupBy { normalizeRepositoryPath(it.path).substringBeforeLast('/', "") }
+        val childDirsByParent = mutableMapOf<String, MutableList<String>>()
+        dirStates.keys.forEach { dirPath ->
+            val parent = dirPath.substringBeforeLast('/', "")
+            childDirsByParent.getOrPut(parent) { mutableListOf() }.add(dirPath)
         }
 
-        val displayChildren = mutableMapOf<String, MutableList<GitHubContentItem>>()
-        val displayableDirectories = mutableSetOf<String>()
+        val grouped = mutableMapOf<String, List<GitHubContentItem>>()
         val unsupportedDirectoryPaths = mutableSetOf<String>()
 
-        val directoriesByDepth = allDirectories.sortedByDescending { path ->
-            if (path.isEmpty()) 0 else path.count { it == '/' } + 1
-        }
-        directoriesByDepth.forEach { repositoryPath ->
-            val children = allChildren[repositoryPath].orEmpty()
-            val displayed = children.mapNotNull { child ->
-                val childPath = normalizeRepositoryPath(child.path)
-                val childName = childPath.substringAfterLast('/')
-                when {
-                    child.type == "blob" && isDocumentFile(childName) -> {
-                        GitHubContentItem(
-                            name = childName,
-                            path = virtualPath(source, childPath),
-                            type = "file",
-                            // GitHub's recursive tree already contains the index metadata. Do not
-                            // fetch every small file just to detect an LFS pointer; the actual LFS
-                            // size is resolved lazily when that file is opened or downloaded.
-                            size = child.size,
-                            downloadUrl = source.rawUrl(childPath),
-                            htmlUrl = source.githubUrl(childPath, tree = false),
-                            repositoryId = source.id,
-                            repositoryPath = childPath
-                        )
-                    }
-                    child.type == "tree" && childPath in displayableDirectories -> {
-                        GitHubContentItem(
-                            name = childName,
-                            path = virtualPath(source, childPath),
-                            type = "dir",
-                            htmlUrl = source.githubUrl(childPath, tree = true),
-                            repositoryId = source.id,
-                            repositoryPath = childPath
-                        )
-                    }
-                    else -> null
-                }
+        // 仓库根（""）不在服务端 dirs 里，补上以容纳直接放在根目录的文档。
+        (dirStates.keys + "").forEach { dirPath ->
+            val fileItems = filesByParent[dirPath].orEmpty().map { entry ->
+                val repositoryPath = normalizeRepositoryPath(entry.path)
+                GitHubContentItem(
+                    name = entry.name,
+                    path = virtualPath(source, repositoryPath),
+                    type = "file",
+                    size = entry.size,
+                    downloadUrl = source.rawUrl(repositoryPath),
+                    htmlUrl = source.githubUrl(repositoryPath, tree = false),
+                    repositoryId = source.id,
+                    repositoryPath = repositoryPath,
+                    id = entry.id
+                )
             }
-
-            val virtualDirectoryPath = virtualPath(source, repositoryPath)
-            displayChildren[virtualDirectoryPath] = displayed.toMutableList()
-            if (displayed.isNotEmpty()) {
-                displayableDirectories += repositoryPath
-            } else if (children.isNotEmpty()) {
-                unsupportedDirectoryPaths += virtualDirectoryPath
+            val dirItems = childDirsByParent[dirPath].orEmpty().map { childPath ->
+                GitHubContentItem(
+                    name = childPath.substringAfterLast('/'),
+                    path = virtualPath(source, childPath),
+                    type = "dir",
+                    htmlUrl = source.githubUrl(childPath, tree = true),
+                    repositoryId = source.id,
+                    repositoryPath = childPath,
+                    containsOnlyUnsupportedFiles = dirStates[childPath] == DIR_STATE_UNSUPPORTED
+                )
             }
-        }
-
-        displayChildren.forEach { (virtualDirectoryPath, children) ->
-            val resolved = resolveVirtualPath(virtualDirectoryPath) ?: return@forEach
-            children.addAll(
-                allChildren[resolved.repositoryPath].orEmpty().mapNotNull { child ->
-                    val childPath = normalizeRepositoryPath(child.path)
-                    if (child.type != "tree" || childPath in displayableDirectories) {
-                        return@mapNotNull null
-                    }
-                    val childVirtualPath = virtualPath(source, childPath)
-                    if (childVirtualPath !in unsupportedDirectoryPaths) return@mapNotNull null
-                    GitHubContentItem(
-                        name = childPath.substringAfterLast('/'),
-                        path = childVirtualPath,
-                        type = "dir",
-                        htmlUrl = source.githubUrl(childPath, tree = true),
-                        repositoryId = source.id,
-                        repositoryPath = childPath,
-                        containsOnlyUnsupportedFiles = true
-                    )
-                }
-            )
+            grouped[virtualPath(source, dirPath)] =
+                sortRepositoryItems((fileItems + dirItems).distinctBy { it.path })
+            if (dirPath.isNotEmpty() && dirStates[dirPath] == DIR_STATE_UNSUPPORTED) {
+                unsupportedDirectoryPaths += virtualPath(source, dirPath)
+            }
         }
 
         return RepositoryIndexCache(
-            grouped = displayChildren.mapValues { (_, items) ->
-                sortRepositoryItems(items.distinctBy { it.path })
-            },
+            grouped = grouped,
             unsupportedDirectoryPaths = unsupportedDirectoryPaths,
-            documentFileCount = tree.count { treeItem ->
-                treeItem.type == "blob" && isDocumentFile(treeItem.path.substringAfterLast('/'))
-            }
+            documentFileCount = files.size
         )
     }
 
@@ -690,7 +737,7 @@ object RepositoryManager {
             DownloadRecord(
                 path = path,
                 localName = localName,
-                localPath = File(getLegacyDownloadDir(AHUApplication.getApp()), localName).absolutePath
+                localPath = File(getLegacyDownloadDir(AppEnvironmentHolder.context()), localName).absolutePath
             )
         }
     }
@@ -785,164 +832,6 @@ object RepositoryManager {
         return accelerationSources.firstOrNull { it.id == selectedId } ?: accelerationSources.first()
     }
 
-    private fun isDocumentFile(name: String): Boolean {
-        val lower = name.lowercase()
-        return lower.endsWith(".pdf") || lower.endsWith(".doc") ||
-            lower.endsWith(".docx") || lower.endsWith(".ppt") ||
-            lower.endsWith(".pptx") || lower.endsWith(".xls") ||
-            lower.endsWith(".xlsx") || lower.endsWith(".txt") ||
-            lower.endsWith(".md")
-    }
-
-    private fun Response.readGitLfsPointer(): GitLfsPointer? {
-        val preview = runCatching {
-            peekBody(GIT_LFS_POINTER_MAX_BYTES.toLong()).string()
-        }.getOrNull() ?: return null
-        return parseGitLfsPointer(preview)
-    }
-
-    private fun Response.readGitLfsMarkdown(
-        source: RepositorySource,
-        accelerationSource: RepositoryAccelerationSource
-    ): String? {
-        val pointer = readGitLfsPointer() ?: return null
-        val download = resolveGitLfsDownload(source, pointer) ?: return null
-        buildLfsDownloadUrls(download.href, accelerationSource).forEach { url ->
-            val request = Request.Builder()
-                .url(url)
-                .apply {
-                    download.header?.forEach { (key, value) -> header(key, value) }
-                }
-                .build()
-            val result = downloadClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                response.body?.string()
-            }
-            if (result != null) return result
-        }
-        return null
-    }
-
-    private fun parseGitLfsPointer(content: String): GitLfsPointer? {
-        val lines = content.lineSequence()
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toList()
-        if (lines.firstOrNull() != GIT_LFS_POINTER_PREFIX) return null
-
-        val oid = lines.firstOrNull { it.startsWith("oid sha256:") }
-            ?.removePrefix("oid sha256:")
-            ?.trim()
-            ?.takeIf { it.matches(Regex("^[0-9a-fA-F]{64}$")) }
-            ?: return null
-        val size = lines.firstOrNull { it.startsWith("size ") }
-            ?.removePrefix("size ")
-            ?.trim()
-            ?.toLongOrNull()
-            ?: return null
-        return GitLfsPointer(oid = oid, size = size)
-    }
-
-    private fun resolveGitLfsDownload(
-        source: RepositorySource,
-        pointer: GitLfsPointer
-    ): GitLfsDownloadAction? {
-        val requestBody = Gson().toJson(
-            GitLfsBatchRequest(
-                objects = listOf(
-                    GitLfsBatchObjectRequest(
-                        oid = pointer.oid,
-                        size = pointer.size
-                    )
-                )
-            )
-        ).toRequestBody(GIT_LFS_BATCH_MEDIA_TYPE)
-
-        val request = Request.Builder()
-            .url(source.lfsBatchUrl())
-            .header("Accept", "application/vnd.git-lfs+json")
-            .header("User-Agent", "AHUTong-Android")
-            .post(requestBody)
-            .build()
-
-        return downloadClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val batchResponse = runCatching {
-                gson.fromJson(response.body?.string().orEmpty(), GitLfsBatchResponse::class.java)
-            }.getOrNull()
-            batchResponse?.objects?.firstOrNull { it.oid.equals(pointer.oid, ignoreCase = true) }
-                ?.actions?.download
-        }
-    }
-
-    private suspend fun downloadGitLfsFile(
-        urls: List<String>,
-        headers: Map<String, String>?,
-        path: String,
-        context: Context,
-        target: DownloadTarget,
-        previousRecord: DownloadRecord?,
-        pointer: GitLfsPointer,
-        onProgress: (Float) -> Unit
-    ): DownloadedFile? = withContext(Dispatchers.IO) {
-        urls.forEachIndexed { index, url ->
-            runCatching {
-                val request = Request.Builder().url(url).apply {
-                    headers?.forEach { (key, value) -> header(key, value) }
-                }.build()
-                downloadClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use null
-                    val body = response.body ?: return@use null
-                    val total = body.contentLength().takeIf { it > 0L } ?: pointer.size
-                    var downloadedBytes = 0L
-                    body.byteStream().use { input ->
-                        target.openOutputStream().use { output ->
-                            val buffer = ByteArray(8 * 1024)
-                            var read = input.read(buffer)
-                            while (read >= 0) {
-                                output.write(buffer, 0, read)
-                                downloadedBytes += read
-                                if (total > 0L) {
-                                    onProgress(downloadedBytes.toFloat() / total.toFloat())
-                                }
-                                read = input.read(buffer)
-                            }
-                            output.flush()
-                        }
-                    }
-                    target.markCompleted()
-                    if (target is DownloadTarget.MediaStoreTarget || previousRecord?.uri != null) {
-                        previousRecord?.delete(context)
-                    }
-                    removeDownloadRecord(path)
-                    val record = DownloadRecord(
-                        path = path,
-                        localName = target.relativePath,
-                        uri = target.uri?.toString(),
-                        localPath = target.displayPath,
-                        downloadTime = System.currentTimeMillis(),
-                        size = downloadedBytes.takeIf { it > 0L } ?: pointer.size
-                    )
-                    saveDownloadRecord(record)
-                    return@withContext record.toDownloadedFile(context)
-                }
-            }.getOrNull()?.let { return@withContext it }
-
-            if (index == urls.lastIndex) {
-                return@withContext null
-            }
-        }
-        null
-    }
-
-    private fun buildLfsDownloadUrls(
-        href: String,
-        accelerationSource: RepositoryAccelerationSource
-    ): List<String> {
-        val proxied = accelerationSource.proxyPrefix?.let { it + href }
-        return listOfNotNull(proxied, href).distinct()
-    }
-
     private fun matchesCurrentRepositorySources(items: List<GitHubContentItem>): Boolean {
         val cachedRoots = items.map { listOf(it.path, it.name, it.htmlUrl.orEmpty()) }
         val expectedRoots = repositoryRootItems().map { listOf(it.path, it.name, it.htmlUrl.orEmpty()) }
@@ -967,29 +856,6 @@ object RepositoryManager {
 
     private fun repositoryRootUrl(): String {
         return "$GITHUB_HOST/Kaltsit-cell/AHU-CS-Repository"
-    }
-
-    private suspend fun resolveRepositoryTreeSha(source: RepositorySource): String {
-        return withContext(Dispatchers.IO) {
-            val branchUrl = "https://api.github.com/repos/${source.owner}/${source.repo}/branches/${source.branch}"
-            val branchResponse = downloadClient.newCall(
-                Request.Builder()
-                    .url(branchUrl)
-                    .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "AHUTong-Android")
-                    .build()
-            ).execute()
-            branchResponse.use { branch ->
-                if (!branch.isSuccessful) {
-                    throw IllegalStateException("无法获取仓库树")
-                }
-                val treeJson = branch.body?.string().orEmpty()
-                val treeMatcher = Regex("\"tree\"\\s*:\\s*\\{\\s*\"sha\"\\s*:\\s*\"([0-9a-fA-F]{40})\"")
-                    .find(treeJson)
-                treeMatcher?.groupValues?.getOrNull(1)
-                    ?: throw IllegalStateException("无法解析仓库树")
-            }
-        }
     }
 
     private fun getUnsupportedDirectoryPaths(): Set<String> {
@@ -1066,7 +932,7 @@ object RepositoryManager {
 
         private fun querySize(uri: Uri): Long {
             return runCatching {
-                val context = AHUApplication.getApp()
+                val context = AppEnvironmentHolder.context()
                 context.contentResolver.query(
                     uri,
                     arrayOf(OpenableColumns.SIZE),
@@ -1170,10 +1036,6 @@ object RepositoryManager {
                 "$GITHUB_HOST/$owner/$repo/$kind/$branch/$encodedPath"
             }
         }
-
-        fun lfsBatchUrl(): String {
-            return "$GITHUB_HOST/$owner/$repo.git/info/lfs/objects/batch"
-        }
     }
 
     private data class ResolvedRepositoryPath(
@@ -1185,40 +1047,5 @@ object RepositoryManager {
         val grouped: Map<String, List<GitHubContentItem>>,
         val unsupportedDirectoryPaths: Set<String>,
         val documentFileCount: Int
-    )
-
-    private data class GitLfsPointer(
-        val oid: String,
-        val size: Long
-    )
-
-    private data class GitLfsBatchRequest(
-        val operation: String = "download",
-        val transfers: List<String> = listOf("basic"),
-        val objects: List<GitLfsBatchObjectRequest>
-    )
-
-    private data class GitLfsBatchObjectRequest(
-        val oid: String,
-        val size: Long
-    )
-
-    private data class GitLfsBatchResponse(
-        val objects: List<GitLfsBatchObjectResponse> = emptyList()
-    )
-
-    private data class GitLfsBatchObjectResponse(
-        val oid: String,
-        val size: Long = 0,
-        val actions: GitLfsBatchActions? = null
-    )
-
-    private data class GitLfsBatchActions(
-        val download: GitLfsDownloadAction? = null
-    )
-
-    private data class GitLfsDownloadAction(
-        val href: String,
-        val header: Map<String, String>? = null
     )
 }

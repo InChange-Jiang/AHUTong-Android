@@ -30,7 +30,7 @@ import androidx.compose.ui.draw.clip
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.screen.main.schedule.shortScheduleLocation
-import com.ahu.ahutong.ui.state.ScheduleViewModel
+import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -74,7 +74,7 @@ fun CourseStrip(
 
     // 焦点课：进行中的；否则下一节；全结束则最后一节；全未开始则第一节
     val focusIndex = remember(todayCourses, currentMinutes) {
-        val ranges = todayCourses.map(ScheduleViewModel::getCourseTimeRangeInMinutes)
+        val ranges = todayCourses.map(ScheduleSectionTimes::getCourseTimeRangeInMinutes)
         ranges.indexOfFirst { currentMinutes in it }
             .takeIf { it >= 0 }
             ?: ranges.indexOfFirst { currentMinutes < it.first }.takeIf { it >= 0 }
@@ -102,7 +102,7 @@ fun CourseStrip(
         val offset =
             (pagerState.currentPage - page + pagerState.currentPageOffsetFraction).absoluteValue
         val course = todayCourses[page]
-        val range = ScheduleViewModel.getCourseTimeRangeInMinutes(course)
+        val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
         val status = when {
             currentMinutes in range -> "进行中"
             currentMinutes < range.first -> "即将开始"

@@ -6,19 +6,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ahu.ahutong.data.session.AhuSession
+import com.ahu.ahutong.data.session.CredentialVault
 import com.ahu.ahutong.data.AHURepository
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.User
 import com.ahu.ahutong.ext.launchSafe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.ahu.ahutong.data.model.LoginOutcome
+import com.ahu.ahutong.core.common.toUserMessage
+import kotlinx.coroutines.CancellationException
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 
 /**
  * @Author: SinkDev
  * @Date: 2021/8/14-上午8:58
  * @Email: 468766131@qq.com
  */
-class LoginViewModel : ViewModel() {
+@HiltViewModel
+class LoginViewModel @Inject constructor(
+    private val session: AhuSession,
+    private val credentials: CredentialVault
+) : ViewModel() {
     var state by mutableStateOf(LoginState.Idle)
     var failureMessage by mutableStateOf("")
     var succeedMessage by mutableStateOf("")
@@ -30,20 +41,22 @@ class LoginViewModel : ViewModel() {
     fun loginWithCrawler(userID: String, password: String) = viewModelScope.launchSafe {
         try {
             state = LoginState.InProgress
+            // 切换账号前只经会话接缝清理旧 token/Cookie，再清旧账号的缓存与持久身份。
+            session.signOut()
+            AHUCache.clearAll()
             val response = withContext(Dispatchers.IO) {
-                AHURepository.loginWithCrawler(userID, password)
+                session.signIn(userID, password)
             }
 
-            when {
-                response.isSuccessful -> completeLogin(response.data, password)
-                response.code == AHURepository.WEB_VERIFICATION_REQUIRED_CODE &&
-                    response.data != null -> {
-                    pendingWebLoginUser = response.data
+            when (val outcome = response.valueOrNull()) {
+                is LoginOutcome.Success -> completeLogin(outcome.user, password)
+                is LoginOutcome.JwxtWebVerificationRequired -> {
+                    pendingWebLoginUser = outcome.user
                     state = LoginState.WebVerification
                 }
-                else -> {
+                null -> {
                     state = LoginState.Failed
-                    failureMessage = response.msg
+                    failureMessage = response.errorOrNull()?.toUserMessage().orEmpty()
                 }
             }
         } catch (e: Throwable) {
@@ -66,16 +79,19 @@ class LoginViewModel : ViewModel() {
             val importResult = withContext(Dispatchers.IO) {
                 AHURepository.importWebLoginCookies(cookiesJson)
             }
-            importResult.fold(
-                onSuccess = {
-                    pendingWebLoginUser = null
-                    completeLogin(user, password)
-                },
-                onFailure = {
-                    Log.e(TAG, "Failed to import WebView session", it)
-                    failWebVerification(it.message ?: "教务安全验证失败，请重试")
+            val importError = importResult.errorOrNull()
+            if (importError == null) {
+                pendingWebLoginUser = null
+                completeLogin(user, password) {
+                    session.completeWebVerification()
                 }
-            )
+            } else {
+                Log.e(
+                    TAG,
+                    "Failed to import WebView session: ${importError::class.java.simpleName}"
+                )
+                failWebVerification(importError.toUserMessage().ifBlank { "教务安全验证失败，请重试" })
+            }
         }
 
     fun failWebVerification(message: String) {
@@ -84,14 +100,34 @@ class LoginViewModel : ViewModel() {
         failureMessage = message
     }
 
-    private fun completeLogin(user: User, password: String) {
+    private suspend fun completeLogin(
+        user: User,
+        password: String,
+        afterPersist: suspend () -> Unit = {}
+    ) {
+        try {
+            // 凭据先落到 Keystore；任何一步失败都不能把界面推进到“登录成功”。
+            credentials.saveWisdomPassword(password)
+            AHUCache.saveCurrentUser(user)
+            AHUCache.setAgreementAccepted()
+            AHUCache.setBusinessAccepted()
+            AHUCache.setPrivacyAccepted()
+            afterPersist()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to persist authenticated session", error)
+            runCatching { session.signOut() }
+            runCatching { AHUCache.clearCurrentUser() }
+            runCatching { credentials.clearWisdomPassword() }
+            pendingWebLoginUser = null
+            state = LoginState.Failed
+            failureMessage = "无法安全保存登录信息，请重试"
+            return
+        }
+
         state = LoginState.Succeeded
         succeedMessage = "欢迎，${user.name}！"
-        AHUCache.saveCurrentUser(user)
-        AHUCache.saveWisdomPassword(password)
-        AHUCache.setAgreementAccepted()
-        AHUCache.setBusinessAccepted()
-        AHUCache.setPrivacyAccepted()
     }
 
     private companion object {

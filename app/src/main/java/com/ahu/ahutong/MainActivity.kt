@@ -1,8 +1,6 @@
 package com.ahu.ahutong
 
 import android.content.Intent
-import android.content.pm.PackageInfo
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -17,6 +15,8 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.ExperimentalAnimationApi
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,19 +36,25 @@ import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.LoginViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
+import com.ahu.ahutong.ui.state.PreferencesViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.ui.theme.AHUTheme
+import com.ahu.ahutong.ui.theme.AhuThemeConfig
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import com.ahu.ahutong.personalization.diagnostics.DiagnosticsContribution
 import com.ahu.ahutong.personalization.prefetch.PaymentQrOpenCommandStore
+import com.ahu.ahutong.personalization.recorder.BehaviorRecorder
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.action.ActionSource
 import java.io.File
-import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.session.AhuSessionState
+import com.ahu.ahutong.data.session.AhuSession
+import com.ahu.ahutong.data.update.ApkVerifier
 
 private const val DEBUG_BUILD_NOTICE_DURATION_MS = 3_000L
 private const val STARTUP_BACKGROUND_WORK_DELAY_MS = 250L
@@ -57,8 +63,10 @@ private const val STARTUP_BACKGROUND_WORK_DELAY_MS = 250L
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var behaviorRuntime: BehaviorPredictionRuntime
+    @Inject lateinit var behaviorRecorder: BehaviorRecorder
     @Inject lateinit var diagnosticsContribution: DiagnosticsContribution
     @Inject lateinit var paymentQrCommands: PaymentQrOpenCommandStore
+    @Inject lateinit var session: AhuSession
 
     val TAG = "MainActivity"
 
@@ -67,6 +75,7 @@ class MainActivity : ComponentActivity() {
     private val discoveryViewModel: DiscoveryViewModel by viewModels()
     private val scheduleViewModel: ScheduleViewModel by viewModels()
     private val aboutViewModel: AboutViewModel by viewModels()
+    private val preferencesViewModel: PreferencesViewModel by viewModels()
 
 
     @OptIn(ExperimentalAnimationApi::class)
@@ -77,9 +86,32 @@ class MainActivity : ComponentActivity() {
         if (intent?.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
 
         setContent {
-            AHUTheme {
+            val appUiTheme by preferencesViewModel.appUiTheme.collectAsState()
+            val themeColorHex by preferencesViewModel.themeColor.collectAsState()
+            val themeMode by preferencesViewModel.appThemeMode.collectAsState()
+            val isThemePreferenceReady by
+                preferencesViewModel.isUiThemePreferenceReady.collectAsState()
+            val componentSlotOverrides by
+                preferencesViewModel.componentSlotOverrides.collectAsState()
+            AHUTheme(
+                config = AhuThemeConfig(
+                    appUiTheme = appUiTheme,
+                    themeColorHex = themeColorHex,
+                    themeMode = themeMode,
+                    isPreferenceReady = isThemePreferenceReady,
+                    componentSlotOverrides = componentSlotOverrides
+                )
+            ) {
                 val navController = rememberNavController()
-                var isReLoginDialogShown by rememberSaveable { mutableStateOf(false) }
+                val sessionStatus by session.state.collectAsState()
+                var dismissedExpiredSession by rememberSaveable { mutableStateOf(false) }
+                LaunchedEffect(sessionStatus) {
+                    if (sessionStatus != AhuSessionState.Status.Expired) {
+                        dismissedExpiredSession = false
+                    }
+                }
+                val isReLoginDialogShown =
+                    sessionStatus == AhuSessionState.Status.Expired && !dismissedExpiredSession
 
 //                if (showHotUpdateDialog) {
 //                    HotUpdateDialog(
@@ -101,15 +133,14 @@ class MainActivity : ComponentActivity() {
                         apkLocalReady = mainViewModel.apkLocalReady.value,
                         onConfirm = {
                             mainViewModel.startApkDownload(
-                                this@MainActivity,
                                 installAfterDownload = true
                             )
                         },
                         onInstallLocal = {
-                            mainViewModel.installLocalApk(this@MainActivity)
+                            mainViewModel.installLocalApk()
                         },
                         onRedownload = {
-                            mainViewModel.startApkDownload(this@MainActivity, forceRedownload = true)
+                            mainViewModel.startApkDownload(forceRedownload = true)
                         },
                         onDismiss = {
                             mainViewModel.showApkUpdateDialog.value = false
@@ -123,7 +154,7 @@ class MainActivity : ComponentActivity() {
                 if (mainViewModel.showApkMirrorPrompt.value) {
                     ApkMirrorSourceDialog(
                         onUseMirror = {
-                            mainViewModel.switchApkDownloadToMirror(this@MainActivity)
+                            mainViewModel.switchApkDownloadToMirror()
                         },
                         onKeepOriginal = {
                             mainViewModel.keepPrimaryApkDownload()
@@ -148,10 +179,11 @@ class MainActivity : ComponentActivity() {
                     scheduleViewModel = scheduleViewModel,
                     aboutViewModel = aboutViewModel,
                     behaviorRuntime = behaviorRuntime,
+                    behaviorRecorder = behaviorRecorder,
                     diagnosticsContribution = diagnosticsContribution,
                     paymentQrCommands = paymentQrCommands,
                     isReLoginShown = isReLoginDialogShown,
-                    onReLoginDismiss = { isReLoginDialogShown = false }
+                    onReLoginDismiss = { dismissedExpiredSession = true }
                 )
             }
         }
@@ -166,7 +198,7 @@ class MainActivity : ComponentActivity() {
             // widget scheduling and network refreshes.
             delay(STARTUP_BACKGROUND_WORK_DELAY_MS)
             if (AHUCache.isPrivacyAccepted()) {
-                AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }?.let { behaviorRuntime.startProfile(it) }
+                SessionStore.currentUser()?.xh?.takeIf { it.isNotBlank() }?.let { behaviorRuntime.startProfile(it) }
             }
 
             val storageInitialized = withContext(Dispatchers.IO) {
@@ -178,8 +210,8 @@ class MainActivity : ComponentActivity() {
                 restoreRustCookies()
             }
 
-            if (AHUCache.isLogin() || AHUCache.getMockData()) {
-//                val user = AHUCache.getCurrentUser()
+            if (SessionStore.isLoggedIn() || AHUCache.getMockData()) {
+//                val user = SessionStore.currentUser()
 //                val pwd = AHUCache.getWisdomPassword()
 
                 discoveryViewModel.loadActivityBean()
@@ -188,7 +220,7 @@ class MainActivity : ComponentActivity() {
             }
 
             if (!BuildConfig.DEBUG) {
-                mainViewModel.checkApkUpdate(this@MainActivity)
+                mainViewModel.checkApkUpdate()
             }
         }
     }
@@ -307,7 +339,7 @@ class MainActivity : ComponentActivity() {
     private fun installApk(apkFile: File) {
         Log.i("ApkUpdate", "installApk called, file=${apkFile.absolutePath}")
 
-        validateApkBeforeInstall(apkFile)?.let { error ->
+        ApkVerifier.verifyBeforeInstall(apkFile)?.let { error ->
             Log.w("ApkUpdate", "blocked APK install: $error")
             mainViewModel.reportApkInstallError(error)
             Toast.makeText(this, error, Toast.LENGTH_LONG).show()
@@ -315,134 +347,26 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        val uri = FileProvider.getUriForFile(
-            this,
-            "${packageName}.fileprovider",
-            apkFile
-        )
-
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
         try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                apkFile
+            )
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             startActivity(intent)
             Log.i("ApkUpdate", "install intent started")
         } catch (e: Exception) {
             Log.e("ApkUpdate", "start install activity failed", e)
-            throw e
+            val message = "无法打开系统安装器，请稍后重试"
+            mainViewModel.reportApkInstallError(message)
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         }
     }
-
-    private fun validateApkBeforeInstall(apkFile: File): String? {
-        if (!apkFile.exists() || apkFile.length() <= 0L) {
-            return "安装包不存在或为空"
-        }
-
-        val canonicalApk = runCatching { apkFile.canonicalFile }.getOrElse {
-            return "安装包路径无效"
-        }
-        val trustedDirs = listOfNotNull(getExternalFilesDir(null), filesDir).mapNotNull {
-            runCatching { it.canonicalFile }.getOrNull()
-        }
-        val isInTrustedDir = trustedDirs.any { dir ->
-            canonicalApk.path == dir.path || canonicalApk.path.startsWith(dir.path + File.separator)
-        }
-        if (!isInTrustedDir) {
-            return "安装包位置不可信"
-        }
-
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            PackageManager.GET_SIGNING_CERTIFICATES
-        } else {
-            @Suppress("DEPRECATION")
-            PackageManager.GET_SIGNATURES
-        }
-
-        val archiveInfo = packageManager.getPackageArchiveInfo(canonicalApk.absolutePath, flags)
-            ?: return "安装包解析失败"
-        if (archiveInfo.packageName != packageName) {
-            return "安装包包名不匹配"
-        }
-
-        if (versionCodeOf(archiveInfo) <= currentVersionCode()) {
-            return "安装包版本不高于当前版本"
-        }
-
-        if (!hasMatchingSigningCertificate(archiveInfo, flags)) {
-            return "安装包签名与当前应用不一致"
-        }
-
-        return null
-    }
-
-    private fun hasMatchingSigningCertificate(archiveInfo: PackageInfo, flags: Int): Boolean {
-        val installedInfo = try {
-            packageManager.getPackageInfo(packageName, flags)
-        } catch (e: Exception) {
-            Log.w("ApkUpdate", "failed to read installed package signatures", e)
-            return false
-        }
-
-        val archiveSigners = signatureDigests(archiveInfo, includeHistory = false)
-        val installedSigners = signatureDigests(installedInfo, includeHistory = false)
-        if (archiveSigners.isEmpty() || installedSigners.isEmpty()) return false
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            return archiveSigners == installedSigners
-        }
-
-        val archiveSigningInfo = archiveInfo.signingInfo ?: return false
-        val installedSigningInfo = installedInfo.signingInfo ?: return false
-        if (archiveSigningInfo.hasMultipleSigners() || installedSigningInfo.hasMultipleSigners()) {
-            return archiveSigners == installedSigners
-        }
-
-        val archiveHistory = signatureDigests(archiveInfo, includeHistory = true)
-        val installedHistory = signatureDigests(installedInfo, includeHistory = true)
-        return archiveSigners.any { it in installedHistory } ||
-            installedSigners.any { it in archiveHistory }
-    }
-
-    private fun signatureDigests(info: PackageInfo, includeHistory: Boolean): Set<String> {
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val signingInfo = info.signingInfo ?: return emptySet()
-            if (includeHistory && !signingInfo.hasMultipleSigners()) {
-                signingInfo.signingCertificateHistory ?: signingInfo.apkContentsSigners
-            } else {
-                signingInfo.apkContentsSigners
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            info.signatures
-        } ?: return emptySet()
-
-        return signatures.map { signature ->
-            MessageDigest.getInstance("SHA-256")
-                .digest(signature.toByteArray())
-                .joinToString("") { "%02x".format(it) }
-        }.toSet()
-    }
-
-    private fun currentVersionCode(): Long {
-        val packageInfo = packageManager.getPackageInfo(packageName, 0)
-        return versionCodeOf(packageInfo)
-    }
-
-    private fun versionCodeOf(info: PackageInfo): Long {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.longVersionCode
-        } else {
-            @Suppress("DEPRECATION")
-            info.versionCode.toLong()
-        }
-    }
-
-    /**
-     * 启动 Rust 本地 HTTP 服务
-     */
     private fun startLocalService(): Boolean {
         if (!RustSDK.isNativeLoaded()) {
             Log.w("MainActivity", "Native library not loaded, skipping local service start")
@@ -451,7 +375,7 @@ class MainActivity : ComponentActivity() {
 
         try {
             val storagePath = File(filesDir, "rust-sdk").absolutePath
-            val seedCookies = AHUCache.getRustCookies()
+            val seedCookies = SessionStore.rustCookies()
             var usedStorageStartup = true
             val result = try {
                 RustSDK.startServerWithStorage(0, storagePath, seedCookies)
@@ -481,7 +405,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private suspend fun restoreRustCookies() {
-        val cookies = AHUCache.getRustCookies()
+        val cookies = SessionStore.rustCookies()
         if (cookies.isEmpty()) {
             Log.i("MainActivity", "No persisted Rust cookies to restore")
             return

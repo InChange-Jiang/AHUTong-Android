@@ -2,7 +2,12 @@ package com.ahu.ahutong.ui.state
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
+import com.ahu.ahutong.core.common.onFailure
+import com.ahu.ahutong.core.common.onSuccess
 import com.ahu.ahutong.data.EvaluationRepository
+import com.ahu.ahutong.core.common.toUserMessage
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.EvalAnswerOption
 import com.ahu.ahutong.data.model.EvalPreset
@@ -51,8 +56,10 @@ class EvaluationViewModel : ViewModel() {
             isLoading.value = true
             errorMessage.value = null
             try {
-                val items = EvaluationRepository.getSemesters().getOrElse {
-                    errorMessage.value = it.message ?: "加载学期失败"
+                val semestersResult = EvaluationRepository.getSemesters()
+                val items = semestersResult.valueOrNull()
+                if (items == null) {
+                    errorMessage.value = semestersResult.errorOrNull()?.toUserMessage() ?: "加载学期失败"
                     return@launch
                 }
                 semesters.value = items
@@ -66,7 +73,7 @@ class EvaluationViewModel : ViewModel() {
                 if (semesterId.isNotEmpty()) {
                     EvaluationRepository.getEvaluationList(semesterId)
                         .onSuccess { taskItems.value = it }
-                        .onFailure { errorMessage.value = it.message ?: "加载评教列表失败" }
+                        .onFailure { errorMessage.value = it.toUserMessage() }
                 }
             } finally {
                 isLoading.value = false
@@ -85,7 +92,7 @@ class EvaluationViewModel : ViewModel() {
             try {
                 EvaluationRepository.getEvaluationList(semesterId)
                     .onSuccess { taskItems.value = it }
-                    .onFailure { errorMessage.value = it.message ?: "加载评教列表失败" }
+                    .onFailure { errorMessage.value = it.toUserMessage() }
             } finally {
                 isLoading.value = false
             }
@@ -120,7 +127,7 @@ class EvaluationViewModel : ViewModel() {
                         presetQuestions.value = form.questions
                     }
                 }
-                .onFailure { errorMessage.value = it.message ?: "加载评教题目失败" }
+                .onFailure { errorMessage.value = it.toUserMessage() }
             isLoading.value = false
         }
     }
@@ -202,7 +209,7 @@ class EvaluationViewModel : ViewModel() {
             isPresetLoading.value = true
             EvaluationRepository.getQuestions(questionnaireId)
                 .onSuccess { presetQuestions.value = it.questions }
-                .onFailure { presetActionMessage.value = it.message ?: "加载预设题目失败" }
+                .onFailure { presetActionMessage.value = it.toUserMessage() }
             isPresetLoading.value = false
         }
     }
@@ -271,7 +278,7 @@ class EvaluationViewModel : ViewModel() {
                     loadEvaluationList()
                 }
                 .onFailure {
-                    presetActionMessage.value = it.message ?: "预设提交失败"
+                    presetActionMessage.value = it.toUserMessage()
                 }
             isSubmitting.value = false
         }
@@ -301,7 +308,7 @@ class EvaluationViewModel : ViewModel() {
                 if (result.isSuccess) {
                     successCount++
                 } else if (firstError == null) {
-                    firstError = result.exceptionOrNull()?.message ?: "预设提交失败"
+                    firstError = result.errorOrNull()?.toUserMessage() ?: "预设提交失败"
                 }
             }
 
@@ -341,11 +348,11 @@ class EvaluationViewModel : ViewModel() {
 
             val checkResult = EvaluationRepository.checkSubmit(request)
             if (checkResult.isFailure) {
-                submitMessage.value = checkResult.exceptionOrNull()?.message ?: "提交检查失败"
+                submitMessage.value = checkResult.errorOrNull()?.toUserMessage() ?: "提交检查失败"
                 isSubmitting.value = false
                 return@launch
             }
-            val checkMessage = checkResult.getOrNull().orEmpty()
+            val checkMessage = checkResult.valueOrNull().orEmpty()
             if (checkMessage.isNotBlank()) {
                 submitMessage.value = checkMessage
                 isSubmitting.value = false
@@ -359,7 +366,7 @@ class EvaluationViewModel : ViewModel() {
                     loadEvaluationList()
                 }
                 .onFailure {
-                    submitMessage.value = it.message ?: "提交失败"
+                    submitMessage.value = it.toUserMessage()
                 }
 
             isSubmitting.value = false
@@ -449,8 +456,11 @@ class EvaluationViewModel : ViewModel() {
     private suspend fun submitEvaluationWithPreset(
         task: EvalTask,
         teacher: EvalTeacher
-    ): Result<Unit> = runCatching {
-        val form = EvaluationRepository.getQuestions(task.evaluationQuestionnaireId).getOrThrow()
+    ): AhuResult<Unit> {
+        val form = when (val result = EvaluationRepository.getQuestions(task.evaluationQuestionnaireId)) {
+            is AhuResult.Success -> result.value
+            is AhuResult.Failure -> return result
+        }
         val presetAnswers = buildPresetAnswers(form.questions, preset.value)
         val request = buildSubmitRequest(
             task = task,
@@ -462,9 +472,19 @@ class EvaluationViewModel : ViewModel() {
             textAnswers = presetAnswers.textAnswers
         )
 
-        val checkMessage = EvaluationRepository.checkSubmit(request).getOrThrow()
-        check(checkMessage.isBlank()) { checkMessage }
-        EvaluationRepository.submit(request).getOrThrow()
+        val checkMessage = when (val result = EvaluationRepository.checkSubmit(request)) {
+            is AhuResult.Success -> result.value
+            is AhuResult.Failure -> return result
+        }
+        if (checkMessage.isNotBlank()) {
+            // 与仓储里 check(code == 0) 的语义一致：上游给了拒绝原因，用户文案就是它本身。
+            return AhuResult.Failure(AhuError.ProtocolChanged(checkMessage))
+        }
+
+        return when (val result = EvaluationRepository.submit(request)) {
+            is AhuResult.Success -> AhuResult.Success(Unit)
+            is AhuResult.Failure -> result
+        }
     }
 
     private fun buildPresetAnswers(

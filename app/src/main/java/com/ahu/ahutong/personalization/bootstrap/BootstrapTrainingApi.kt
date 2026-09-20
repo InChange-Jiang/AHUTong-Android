@@ -6,11 +6,11 @@ import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import okhttp3.ResponseBody
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Header
 import retrofit2.http.POST
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface BootstrapTrainingApi {
     @POST("/v1/bootstrap-training-data/credentials")
@@ -38,15 +38,15 @@ interface BootstrapTrainingApi {
             "/v1/bootstrap-training-data/delete"
         )
 
-        private val client = OkHttpClient.Builder()
+        private val client = AhuHttp.plain(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 30,
+            writeTimeoutSeconds = 30,
+            callTimeoutSeconds = 45,
+            followRedirects = false,
+            followSslRedirects = false
+        )
             .cookieJar(CookieJar.NO_COOKIES)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(45, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
             .addInterceptor { chain ->
                 val request = chain.request()
                 check(request.url.isHttps && request.url.host == "openahu.org" && request.url.encodedPath in allowedPaths) {
@@ -66,11 +66,6 @@ interface BootstrapTrainingApi {
             }
             .build()
 
-        val API: BootstrapTrainingApi = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(BootstrapTrainingApi::class.java)
+        val API: BootstrapTrainingApi = retrofit(BASE_URL, client).create(BootstrapTrainingApi::class.java)
     }
 }

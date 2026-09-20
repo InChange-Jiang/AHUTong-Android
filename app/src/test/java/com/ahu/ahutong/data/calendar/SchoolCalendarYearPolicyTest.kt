@@ -5,6 +5,11 @@ import org.junit.Test
 
 class SchoolCalendarYearPolicyTest {
     @Test
+    fun displayNameFormatsAcademicYearForSelection() {
+        assertEquals("2025—2026 学年", SchoolCalendarYearPolicy.displayName("2025-2026"))
+    }
+
+    @Test
     fun normalizeKeepsOnlyValidExistingAcademicYearIdentifiers() {
         assertEquals(
             listOf("2026-2027", "2025-2026", "2024-2025"),

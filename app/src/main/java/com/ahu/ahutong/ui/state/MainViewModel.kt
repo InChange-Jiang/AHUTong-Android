@@ -1,47 +1,73 @@
 package com.ahu.ahutong.ui.state
 
-import android.content.Context
-import android.webkit.CookieManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.ahu.ahutong.BuildConfig
-import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.data.server.AhuTong
-import com.ahu.ahutong.data.server.ApkUpdatePolicy
-import com.ahu.ahutong.data.server.model.ApkUpdateInfo
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import android.util.Log
 import androidx.compose.runtime.mutableStateOf
-import okhttp3.ResponseBody
-import retrofit2.Response
+import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.data.update.ApkDownloadEvent
+import com.ahu.ahutong.data.update.ApkUpdateChecker
+import com.ahu.ahutong.data.update.UpdateCheck
+import com.ahu.ahutong.data.update.UpdateCheckEntry
+import com.ahu.ahutong.data.update.ApkDownloader
+import com.ahu.ahutong.data.server.model.ApkUpdateInfo
+import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.File
-import java.io.BufferedOutputStream
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStream
-import java.security.MessageDigest
-import java.util.Locale
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-class MainViewModel : ViewModel() {
+@HiltViewModel
+class MainViewModel @Inject constructor(
+    private val downloader: ApkDownloader,
+    private val updateChecker: ApkUpdateChecker
+) : ViewModel() {
 
-    companion object {
-        private const val DOWNLOAD_BUFFER_SIZE = 64 * 1024
-        private const val PROGRESS_MIN_INTERVAL_MS = 1_000L
-        private const val PROGRESS_MIN_DELTA = 0.01f
-        private const val MIRROR_PROMPT_DELAY_MS = 5_000L
-        private const val MIRROR_PROMPT_PROGRESS_THRESHOLD = 0.30f
-        private const val DOWNLOAD_LOG_INTERVAL_MS = 3_000L
+    init {
+        // 下载器说的话翻译成界面状态：这里只做映射，规则（校验、镜像、重定向）都在 :data:update 里。
+        viewModelScope.launch {
+            downloader.events.collect { event ->
+                when (event) {
+                    ApkDownloadEvent.Started -> {
+                        apkDownloading.value = true
+                        apkErrorText.value = null
+                        apkProgress.value = null
+                        apkDownloadElapsedText.value = null
+                        showApkMirrorPrompt.value = false
+                    }
+                    is ApkDownloadEvent.Progress -> apkProgress.value = event.fraction
+                    ApkDownloadEvent.MirrorSuggested -> showApkMirrorPrompt.value = true
+                    is ApkDownloadEvent.Succeeded -> {
+                        apkDownloading.value = false
+                        apkProgress.value = null
+                        apkDownloadElapsedText.value = event.elapsedText
+                        showApkMirrorPrompt.value = false
+                        apkUsingMirrorSource.value = false
+                        apkLocalReady.value = true
+                        if (installAfterApkDownload) {
+                            downloadedApkFile.value = event.apkFile
+                        } else if (showDialogWhenApkDownloadCompletes) {
+                            showDialogWhenApkDownloadCompletes = false
+                            showApkUpdateDialog.value = true
+                        }
+                    }
+                    is ApkDownloadEvent.Failed -> {
+                        apkDownloading.value = false
+                        apkProgress.value = null
+                        apkDownloadElapsedText.value = null
+                        showApkMirrorPrompt.value = false
+                        apkUsingMirrorSource.value = false
+                        apkErrorText.value = event.message
+                        if (showDialogWhenApkDownloadCompletes) {
+                            showDialogWhenApkDownloadCompletes = false
+                            showApkUpdateDialog.value = true
+                        }
+                    }
+                }
+            }
+        }
     }
-
-    private val apkDownloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // App update UI states
     var showApkUpdateDialog = mutableStateOf(false)
@@ -57,106 +83,49 @@ class MainViewModel : ViewModel() {
     /** 本地已存在目标版本 APK，可直接安装 */
     var apkLocalReady = mutableStateOf(false)
 
-    private var apkDownloadJob: Job? = null
     private var installAfterApkDownload = false
     private var showDialogWhenApkDownloadCompletes = false
-
-    private val apkFileRegex = Regex("""^update-(\d+)\.apk(?:\.(?:part|meta))?$""")
-
-    /** 计算文件 SHA-256，返回小写 hex，必须在 IO 线程调用 */
-    private fun sha256Of(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-            var read = input.read(buffer)
-            while (read >= 0) {
-                digest.update(buffer, 0, read)
-                read = input.read(buffer)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    private var selectedUpdate: UpdateCheck.Available? = null
 
     /**
      * 启动时检查云端更新、清理残留 APK、检测本地缓存
      * 全部在 IO 线程执行，不阻塞主线程
      */
-    suspend fun checkApkUpdate(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun checkApkUpdate() = withContext(Dispatchers.IO) {
         if (BuildConfig.DEBUG) {
             Log.i("ApkUpdate", "startup update check disabled for debug build")
             return@withContext
         }
-
-        val dir = context.getExternalFilesDir(null) ?: context.filesDir
-
-        // 1. 清理版本号 <= 当前版本的残留 APK（安全校验文件名）
-        cleanStaleApks(dir)
-
-        // 2. 从云端获取最新版本信息
-        val info = runCatching { AhuTong.API.getApkUpdateInfo() }
-            .onFailure { Log.w("ApkUpdate", "startup update check request failed", it) }
-            .getOrNull() ?: return@withContext
-        val update = ApkUpdatePolicy.validate(info, BuildConfig.VERSION_CODE).getOrElse {
-            Log.w("ApkUpdate", "ignore invalid APK update metadata: ${it.message}")
-            return@withContext
-        }
-
-        // 3. 检查本地是否已有该版本的 APK，并校验 sha256
-        val localApk = File(dir, "update-${update.info.versionCode}.apk")
-        val localReady = if (localApk.exists() && localApk.length() > 0) {
-            verifyCachedApk(localApk, update.sha256, "local APK")
-        } else false
-
-        withContext(Dispatchers.Main) {
-            apkUpdateInfo.value = update.info
-            apkErrorText.value = null
-            apkLocalReady.value = localReady
-            if (!localReady) {
-                apkDownloadElapsedText.value = null
+        when (val check = updateChecker.check(BuildConfig.VERSION_CODE, UpdateCheckEntry.STARTUP)) {
+            is UpdateCheck.Available -> withContext(Dispatchers.Main) {
+                selectedUpdate = check
+                apkUpdateInfo.value = check.info
+                apkErrorText.value = null
+                apkLocalReady.value = check.localApk != null
+                if (check.localApk == null) {
+                    apkDownloadElapsedText.value = null
+                }
+                showApkUpdateDialog.value = true
+                if (check.localApk == null && !apkDownloading.value) {
+                    startApkDownload(installAfterDownload = false)
+                }
             }
-            showApkUpdateDialog.value = true
-            if (!localReady && !apkDownloading.value) {
-                startApkDownload(context.applicationContext, installAfterDownload = false)
-            }
+            // 启动检查对"没有更新"与"检查失败"都保持安静（与迁移前一致）。
+            UpdateCheck.UpToDate, is UpdateCheck.Failed -> Unit
         }
     }
-
-    /**
-     * 清理版本号 <= 当前版本的 APK，跳过不符合命名规范的文件
-     */
-    private fun cleanStaleApks(dir: File) {
-        val files = dir.listFiles() ?: return
-        for (file in files) {
-            val match = apkFileRegex.matchEntire(file.name) ?: continue
-            val versionCode = match.groupValues[1].toIntOrNull() ?: continue
-            if (versionCode <= BuildConfig.VERSION_CODE) {
-                Log.i("ApkUpdate", "deleting stale APK: ${file.name}")
-                file.delete()
-            }
-        }
-    }
-
     /**
      * 直接安装本地已缓存的 APK（用户点击"安装"按钮）
      */
-    fun installLocalApk(context: Context) {
-        val update = selectedValidatedUpdate() ?: return
+    fun installLocalApk() {
+        val update = selectedUpdate ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            val dir = context.getExternalFilesDir(null) ?: context.filesDir
-            val localApk = File(dir, "update-${update.info.versionCode}.apk")
-            if (!localApk.exists() || localApk.length() <= 0) {
+            val localApk = downloader.cachedApk(update.info.versionCode, update.sha256)
+            if (localApk == null) {
                 withContext(Dispatchers.Main) {
                     apkLocalReady.value = false
                     apkDownloadElapsedText.value = null
-                    apkErrorText.value = "本地文件已丢失，请重新下载"
-                }
-                return@launch
-            }
-            if (!verifyCachedApk(localApk, update.sha256, "install APK")) {
-                withContext(Dispatchers.Main) {
-                    apkLocalReady.value = false
-                    apkDownloadElapsedText.value = null
-                    apkErrorText.value = "本地文件已损坏，请重新下载"
+                    apkErrorText.value = "本地文件已丢失或损坏，请重新下载"
                 }
                 return@launch
             }
@@ -167,400 +136,47 @@ class MainViewModel : ViewModel() {
     }
 
     fun startApkDownload(
-        context: Context,
         forceRedownload: Boolean = false,
         installAfterDownload: Boolean = false
     ) {
-        val update = selectedValidatedUpdate() ?: return
+        val update = selectedUpdate ?: return
         if (apkDownloading.value) return
+        // 同步立起界面状态（与迁移前一致）：下载器随后用事件接管后续变化。
         apkDownloading.value = true
         apkErrorText.value = null
         apkProgress.value = null
         apkDownloadElapsedText.value = null
         showApkMirrorPrompt.value = false
         apkUsingMirrorSource.value = false
+        // 强制重下会先删掉本地包：立刻把「可安装」按下去，否则失败的下载会让界面继续
+        // 提供「安装」（点下去只会得到「本地文件已丢失」）。
+        if (forceRedownload) {
+            apkLocalReady.value = false
+        }
         installAfterApkDownload = installAfterDownload
-        val appContext = context.applicationContext
-
-        if (!forceRedownload) {
-            // 检查本地是否已存在该版本 APK 并校验完整性（IO 安全）
-            apkDownloadScope.launch {
-                val dir = appContext.getExternalFilesDir(null) ?: appContext.filesDir
-                val existingApk = File(dir, "update-${update.info.versionCode}.apk")
-                if (existingApk.exists() && existingApk.length() > 0) {
-                    if (!verifyCachedApk(existingApk, update.sha256, "cached APK")) {
-                        withContext(Dispatchers.Main) {
-                            apkLocalReady.value = false
-                            doApkDownload(appContext, update)
-                        }
-                        return@launch
-                    }
-                    Log.i("ApkUpdate", "APK already exists locally: ${existingApk.absolutePath}")
-                    withContext(Dispatchers.Main) {
-                        apkDownloading.value = false
-                        apkProgress.value = null
-                        apkDownloadElapsedText.value = null
-                        showApkMirrorPrompt.value = false
-                        apkUsingMirrorSource.value = false
-                        apkLocalReady.value = true
-                        if (installAfterApkDownload) {
-                            downloadedApkFile.value = existingApk
-                        } else if (showDialogWhenApkDownloadCompletes) {
-                            showDialogWhenApkDownloadCompletes = false
-                            showApkUpdateDialog.value = true
-                        }
-                    }
-                    return@launch
-                }
-                withContext(Dispatchers.Main) { doApkDownload(appContext, update) }
-            }
-        } else {
-            // 强制重新下载：先删除本地缓存
-            apkDownloadScope.launch {
-                val dir = appContext.getExternalFilesDir(null) ?: appContext.filesDir
-                val existingApk = File(dir, "update-${update.info.versionCode}.apk")
-                existingApk.delete()
-                File(dir, "${existingApk.name}.part").delete()
-                withContext(Dispatchers.Main) {
-                    apkLocalReady.value = false
-                    apkDownloadElapsedText.value = null
-                    doApkDownload(appContext, update)
-                }
-            }
-        }
-    }
-
-    private fun doApkDownload(
-        context: Context,
-        update: ApkUpdatePolicy.ValidatedUpdate,
-        useMirrorSource: Boolean = false
-    ) {
-        apkDownloading.value = true
-        apkErrorText.value = null
-        apkProgress.value = null
-        apkDownloadElapsedText.value = null
-        showApkMirrorPrompt.value = false
-        apkUsingMirrorSource.value = useMirrorSource
-
-        apkDownloadJob = apkDownloadScope.launch {
-            val downloadStartedAt = System.currentTimeMillis()
-            val dir = context.getExternalFilesDir(null) ?: context.filesDir
-            val outFile = File(dir, "update-${update.info.versionCode}.apk")
-            val partFile = File(dir, "${outFile.name}.part")
-            var mirrorPromptJob: Job? = null
-            try {
-                val downloadUrl = if (useMirrorSource) {
-                    ApkUpdatePolicy.mirrorDownloadUrl(update.downloadUrl).getOrElse {
-                        throw SecurityException("镜像下载地址无效")
-                    }
-                } else {
-                    update.downloadUrl
-                }
-
-                if (!useMirrorSource) {
-                    mirrorPromptJob = launch {
-                        delay(MIRROR_PROMPT_DELAY_MS)
-                        withContext(Dispatchers.Main.immediate) {
-                            val progressForPrompt = apkProgress.value ?: 0f
-                            if (apkDownloading.value &&
-                                !apkUsingMirrorSource.value &&
-                                !showApkMirrorPrompt.value &&
-                                progressForPrompt < MIRROR_PROMPT_PROGRESS_THRESHOLD
-                            ) {
-                                showApkMirrorPrompt.value = true
-                            }
-                        }
-                    }
-                }
-
-                Log.i(
-                    "ApkUpdate",
-                    "apk download start version=${update.info.versionCode}, " +
-                        "url=$downloadUrl, mirror=$useMirrorSource, partExists=${partFile.exists()}, " +
-                        "partBytes=${partFile.length()}"
-                )
-                val downloadedFile = downloadApkSingleStream(
-                    downloadUrl = downloadUrl,
-                    allowMirrorHost = useMirrorSource,
-                    partFile = partFile
-                )
-
-                val verifiedSha256 = replaceDownloadedApk(downloadedFile, outFile, update.sha256)
-                Log.i(
-                    "ApkUpdate",
-                    "apk download verified version=${update.info.versionCode}, " +
-                        "bytes=${outFile.length()}, sha256=$verifiedSha256"
-                )
-
-                withContext(Dispatchers.Main) {
-                    apkDownloading.value = false
-                    apkProgress.value = null
-                    apkDownloadElapsedText.value = formatDownloadElapsed(System.currentTimeMillis() - downloadStartedAt)
-                    showApkMirrorPrompt.value = false
-                    apkUsingMirrorSource.value = false
-                    apkLocalReady.value = true
-                    if (installAfterApkDownload) {
-                        downloadedApkFile.value = outFile
-                    } else if (showDialogWhenApkDownloadCompletes) {
-                        showDialogWhenApkDownloadCompletes = false
-                        showApkUpdateDialog.value = true
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                if (e is SecurityException) {
-                    partFile.delete()
-                }
-                Log.w("ApkUpdate", "apk download failed", e)
-                withContext(Dispatchers.Main) {
-                    apkDownloading.value = false
-                    apkProgress.value = null
-                    apkDownloadElapsedText.value = null
-                    showApkMirrorPrompt.value = false
-                    apkUsingMirrorSource.value = false
-                    apkErrorText.value = e.message ?: "下载失败"
-                    if (showDialogWhenApkDownloadCompletes) {
-                        showDialogWhenApkDownloadCompletes = false
-                        showApkUpdateDialog.value = true
-                    }
-                }
-            } finally {
-                mirrorPromptJob?.cancel()
-            }
-        }
+        downloader.start(
+            versionCode = update.info.versionCode,
+            downloadUrl = update.downloadUrl,
+            sha256 = update.sha256,
+            forceRedownload = forceRedownload
+        )
     }
 
     fun keepPrimaryApkDownload() {
         showApkMirrorPrompt.value = false
     }
 
-    fun switchApkDownloadToMirror(context: Context) {
-        val update = selectedValidatedUpdate() ?: return
+    fun switchApkDownloadToMirror() {
+        val update = selectedUpdate ?: return
         showApkMirrorPrompt.value = false
         if (!apkDownloading.value || apkUsingMirrorSource.value) return
-
-        val appContext = context.applicationContext
-        apkDownloadScope.launch {
-            val previousDownload = apkDownloadJob
-            previousDownload?.cancel()
-            // Cancelling the coroutine alone cannot interrupt a blocking ResponseBody read. Close
-            // every call on the dedicated APK client before waiting, so switching sources does not
-            // stall until the network read timeout expires.
-            AhuTong.cancelApkDownloads()
-            previousDownload?.join()
-            withContext(Dispatchers.Main) {
-                if (apkLocalReady.value) {
-                    apkDownloading.value = false
-                    apkProgress.value = null
-                    apkUsingMirrorSource.value = false
-                } else {
-                    doApkDownload(appContext, update, useMirrorSource = true)
-                }
-            }
-        }
-    }
-
-    private suspend fun downloadApkSingleStream(
-        downloadUrl: String,
-        allowMirrorHost: Boolean,
-        partFile: File
-    ): File {
-        val response = openApkDownloadResponse(downloadUrl, allowMirrorHost = allowMirrorHost)
-        if (!response.isSuccessful) {
-            closeDownloadResponse(response)
-            throw IOException("下载失败：HTTP ${response.code()}")
-        }
-
-        val body = response.body() ?: run {
-            closeDownloadResponse(response)
-            throw IOException("下载内容为空")
-        }
-
-        val total = body.contentLength()
-        Log.i(
-            "ApkUpdate",
-            "single stream response code=${response.code()}, totalBytes=$total, " +
-                "url=${response.raw().request.url}"
+        apkUsingMirrorSource.value = true
+        downloader.switchToMirror(
+            versionCode = update.info.versionCode,
+            downloadUrl = update.downloadUrl,
+            sha256 = update.sha256
         )
-        if (total > ApkUpdatePolicy.MAX_APK_BYTES) {
-            body.close()
-            throw IOException("安装包过大，请稍后重试")
-        }
-
-        withContext(Dispatchers.Main) {
-            apkProgress.value = if (total > 0) 0f else null
-        }
-        partFile.delete()
-        var completed = 0L
-        var lastEmit = System.currentTimeMillis()
-        var lastSpeedLog = lastEmit
-        var lastSpeedBytes = 0L
-        val startedAt = lastEmit
-        var lastProgress = 0f
-        if (total > 0) {
-            emitApkProgress(0f)
-        }
-        body.use { responseBody ->
-            responseBody.byteStream().use { input: InputStream ->
-                BufferedOutputStream(FileOutputStream(partFile), DOWNLOAD_BUFFER_SIZE).use { output ->
-                    val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
-                    var read = input.read(buffer)
-                    while (read >= 0) {
-                        output.write(buffer, 0, read)
-                        completed += read
-                        if (completed > ApkUpdatePolicy.MAX_APK_BYTES) {
-                            throw IOException("安装包超过大小限制")
-                        }
-                        if (total > 0) {
-                            val now = System.currentTimeMillis()
-                            val progress = (completed.toDouble() / total.toDouble())
-                                .coerceIn(0.0, 1.0)
-                                .toFloat()
-                            if (now - lastSpeedLog >= DOWNLOAD_LOG_INTERVAL_MS) {
-                                val intervalBytes = completed - lastSpeedBytes
-                                Log.i(
-                                    "ApkUpdate",
-                                    "single stream progress $completed/$total, " +
-                                        "interval=${speedText(intervalBytes, now - lastSpeedLog)}, " +
-                                        "avg=${speedText(completed, now - startedAt)}"
-                                )
-                                lastSpeedLog = now
-                                lastSpeedBytes = completed
-                            }
-                            if (progress - lastProgress >= PROGRESS_MIN_DELTA ||
-                                now - lastEmit >= PROGRESS_MIN_INTERVAL_MS ||
-                                completed == total
-                            ) {
-                                emitApkProgress(progress)
-                                lastProgress = progress
-                                lastEmit = now
-                            }
-                        }
-                        read = input.read(buffer)
-                    }
-                    output.flush()
-                }
-            }
-        }
-
-        if (total > 0 && completed != total) {
-            throw IOException("下载不完整（${completed}/${total}），请重试")
-        }
-        if (!partFile.exists() || partFile.length() <= 0L) {
-            throw IOException("下载内容为空")
-        }
-        val elapsed = System.currentTimeMillis() - startedAt
-        Log.i(
-            "ApkUpdate",
-            "single stream complete bytes=$completed, elapsedMs=$elapsed, " +
-                "avg=${speedText(completed, elapsed)}"
-        )
-
-        return partFile
     }
-
-    private suspend fun openApkDownloadResponse(
-        initialUrl: String,
-        allowMirrorHost: Boolean = false
-    ): Response<ResponseBody> {
-        var currentUrl = initialUrl
-        repeat(ApkUpdatePolicy.MAX_DOWNLOAD_REDIRECTS + 1) { redirectCount ->
-            val response = AhuTong.APK_DOWNLOAD_API.downloadByUrl(currentUrl)
-            val finalUrl = response.raw().request.url.toString()
-            ApkUpdatePolicy.validateDownloadUrl(finalUrl, allowMirrorHost = allowMirrorHost).getOrElse {
-                closeDownloadResponse(response)
-                throw SecurityException("下载地址不受信任")
-            }
-
-            val code = response.code()
-            if (code in 300..399) {
-                val location = response.headers()["Location"]
-                closeDownloadResponse(response)
-                if (location.isNullOrBlank()) {
-                    throw IOException("下载重定向地址为空")
-                }
-                if (redirectCount >= ApkUpdatePolicy.MAX_DOWNLOAD_REDIRECTS) {
-                    throw IOException("下载重定向次数过多")
-                }
-                currentUrl = ApkUpdatePolicy.validateDownloadUrl(
-                    rawUrl = location,
-                    baseUrl = finalUrl,
-                    allowMirrorHost = allowMirrorHost
-                ).getOrElse {
-                    throw SecurityException("下载重定向到不受信任地址")
-                }
-                return@repeat
-            }
-
-            return response
-        }
-        throw IOException("下载重定向次数过多")
-    }
-
-    private fun closeDownloadResponse(response: Response<ResponseBody>) {
-        response.body()?.close()
-        response.errorBody()?.close()
-    }
-
-    private fun speedText(bytes: Long, elapsedMillis: Long): String {
-        if (elapsedMillis <= 0L) return "n/a"
-        val kibPerSecond = bytes * 1000.0 / elapsedMillis / 1024.0
-        return String.format(Locale.US, "%.1f KiB/s", kibPerSecond)
-    }
-
-    private fun formatDownloadElapsed(elapsedMillis: Long): String {
-        val totalSeconds = ((elapsedMillis.coerceAtLeast(0L) + 999L) / 1000L).coerceAtLeast(1L)
-        val minutes = totalSeconds / 60L
-        val seconds = totalSeconds % 60L
-        return "${minutes}分${seconds}秒"
-    }
-
-    private fun replaceDownloadedApk(
-        partFile: File,
-        outFile: File,
-        expectedSha256: String
-    ): String {
-        val sourceHash = runCatching { sha256Of(partFile) }.getOrNull()
-            ?: throw SecurityException("文件校验失败，请重试")
-        if (!sourceHash.equals(expectedSha256, ignoreCase = true)) {
-            Log.w(
-                "ApkUpdate",
-                "download sha256 mismatch: expected=$expectedSha256, got=$sourceHash"
-            )
-            partFile.delete()
-            throw SecurityException("文件校验失败，请重试")
-        }
-
-        if (outFile.exists() && !outFile.delete()) {
-            throw IOException("无法替换旧安装包")
-        }
-
-        val renamed = partFile.renameTo(outFile)
-        if (!renamed) {
-            partFile.inputStream().use { input ->
-                FileOutputStream(outFile).use { output ->
-                    input.copyTo(output)
-                }
-            }
-            if (!partFile.delete()) {
-                Log.w("ApkUpdate", "failed to delete temporary APK: ${partFile.name}")
-            }
-            // A cross-filesystem fallback copy is uncommon, but its destination still needs an
-            // independent integrity check. The normal atomic rename path reuses the source hash.
-            if (!verifyCachedApk(outFile, expectedSha256, "copied APK")) {
-                throw SecurityException("文件校验失败，请重试")
-            }
-        }
-        return sourceHash
-    }
-
-    private suspend fun emitApkProgress(progress: Float) {
-        withContext(Dispatchers.Main.immediate) {
-            apkProgress.value = progress.coerceIn(0f, 1f)
-        }
-    }
-
     fun continueApkDownloadInBackground() {
         if (apkDownloading.value) {
             showDialogWhenApkDownloadCompletes = true
@@ -569,7 +185,6 @@ class MainViewModel : ViewModel() {
     }
 
     fun checkApkUpdateManually(
-        context: Context,
         onResult: (String) -> Unit
     ) {
         if (apkUpdateChecking.value) {
@@ -578,40 +193,35 @@ class MainViewModel : ViewModel() {
         }
 
         apkUpdateChecking.value = true
-        val appContext = context.applicationContext
 
         viewModelScope.launch(Dispatchers.IO) {
             val resultText = try {
-                val dir = appContext.getExternalFilesDir(null) ?: appContext.filesDir
-                cleanStaleApks(dir)
-
-                val info = AhuTong.API.getApkUpdateInfo()
-                val update = ApkUpdatePolicy.validate(info, BuildConfig.VERSION_CODE).getOrElse { error ->
-                    return@launch finishManualUpdateCheck(
-                        if (ApkUpdatePolicy.isNoUpdateFailure(error)) {
-                            "已是最新版本"
-                        } else {
-                            "检查更新失败：${error.message ?: "更新信息无效"}"
-                        },
-                        onResult
+                when (
+                    val check = updateChecker.check(
+                        BuildConfig.VERSION_CODE,
+                        UpdateCheckEntry.MANUAL
                     )
+                ) {
+                    is UpdateCheck.Available -> {
+                        withContext(Dispatchers.Main) {
+                            selectedUpdate = check
+                            apkUpdateInfo.value = check.info
+                            apkErrorText.value = null
+                            apkLocalReady.value = check.localApk != null
+                            showApkUpdateDialog.value = true
+                        }
+                        "发现新版本 ${check.info.versionName}"
+                    }
+                    UpdateCheck.UpToDate -> {
+                        "已是最新版本"
+                    }
+                    is UpdateCheck.Failed -> {
+                        "检查更新失败：" + (
+                            check.reason
+                                ?: if (check.invalidMetadata) "更新信息无效" else "请稍后重试"
+                            )
+                    }
                 }
-
-                val localApk = File(dir, "update-${update.info.versionCode}.apk")
-                val localReady = if (localApk.exists() && localApk.length() > 0L) {
-                    verifyCachedApk(localApk, update.sha256, "manual check local APK")
-                } else {
-                    false
-                }
-
-                withContext(Dispatchers.Main) {
-                    apkUpdateInfo.value = update.info
-                    apkErrorText.value = null
-                    apkLocalReady.value = localReady
-                    showApkUpdateDialog.value = true
-                }
-
-                "发现新版本 ${update.info.versionName}"
             } catch (e: Exception) {
                 Log.w("ApkUpdate", "manual update check failed", e)
                 "检查更新失败：${e.message ?: "请稍后重试"}"
@@ -620,7 +230,6 @@ class MainViewModel : ViewModel() {
             finishManualUpdateCheck(resultText, onResult)
         }
     }
-
     private suspend fun finishManualUpdateCheck(
         resultText: String,
         onResult: (String) -> Unit
@@ -629,26 +238,6 @@ class MainViewModel : ViewModel() {
             apkUpdateChecking.value = false
             onResult(resultText)
         }
-    }
-
-    private fun selectedValidatedUpdate(): ApkUpdatePolicy.ValidatedUpdate? {
-        val info = apkUpdateInfo.value ?: return null
-        return ApkUpdatePolicy.validate(info, BuildConfig.VERSION_CODE).getOrElse {
-            apkErrorText.value = it.message ?: "更新信息校验失败"
-            apkLocalReady.value = false
-            Log.w("ApkUpdate", "invalid APK update metadata: ${it.message}")
-            null
-        }
-    }
-
-    private fun verifyCachedApk(file: File, expectedSha256: String, label: String): Boolean {
-        val hash = runCatching { sha256Of(file) }.getOrNull()
-        val match = hash.equals(expectedSha256, ignoreCase = true)
-        if (!match) {
-            Log.w("ApkUpdate", "$label sha256 mismatch, expected=$expectedSha256, got=$hash, deleting")
-            file.delete()
-        }
-        return match
     }
 
     fun reportApkInstallError(message: String) {
@@ -660,15 +249,8 @@ class MainViewModel : ViewModel() {
         downloadedApkFile.value = null
     }
 
-    fun logout() {
-        AHUCache.logout()
-        CookieManager.getInstance().removeAllCookies(null)
-        CookieManager.getInstance().flush()
-    }
-
     override fun onCleared() {
-        AhuTong.cancelApkDownloads()
-        apkDownloadScope.cancel()
+        downloader.cancel()
         super.onCleared()
     }
 }

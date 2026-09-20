@@ -1,13 +1,12 @@
 package com.ahu.ahutong.data.weather
 
-import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.data.network.NetworkLogging
 import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface WeatherApi {
 
@@ -23,26 +22,17 @@ interface WeatherApi {
     ): WeatherResponse
 
     companion object {
-        private val loggingInterceptor = HttpLoggingInterceptor().apply {
-            redactHeader("Authorization")
-            redactHeader("Cookie")
-            redactHeader("Set-Cookie")
-            level = HttpLoggingInterceptor.Level.BASIC
-        }
+        private val loggingInterceptor = NetworkLogging.debugInterceptor(NetworkLogging.Level.Basic)
 
-        private val okHttpClient = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
+        private val okHttpClient = AhuHttp.plain(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 15
+        )
             .apply {
-                if (BuildConfig.DEBUG) addInterceptor(loggingInterceptor)
+                loggingInterceptor?.let { addInterceptor(it) }
             }
             .build()
 
-        val API: WeatherApi = Retrofit.Builder()
-            .baseUrl("https://uapis.cn/")
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(WeatherApi::class.java)
+        val API: WeatherApi = retrofit("https://uapis.cn/", okHttpClient).create(WeatherApi::class.java)
     }
 }

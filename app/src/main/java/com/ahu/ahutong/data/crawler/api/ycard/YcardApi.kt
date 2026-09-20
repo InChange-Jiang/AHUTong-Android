@@ -1,7 +1,8 @@
 package com.ahu.ahutong.data.crawler.api.ycard
 
 import android.util.Log
-import com.ahu.ahutong.BuildConfig
+import com.ahu.ahutong.data.network.NetworkLogging
+import com.ahu.ahutong.data.network.campusCookies
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
@@ -13,11 +14,9 @@ import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
-import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Call
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.Response
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
@@ -26,6 +25,7 @@ import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.Query
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface YcardApi {
 
@@ -113,13 +113,7 @@ interface YcardApi {
         internal const val LOGIN_TARGET_URL = "https://ycard.ahu.edu.cn/plat/?name=loginTransit"
 
 
-        private val loggingInterceptor = HttpLoggingInterceptor().apply {
-            redactHeader("Authorization")
-            redactHeader("Synjones-Auth")
-            redactHeader("Cookie")
-            redactHeader("Set-Cookie")
-            level = HttpLoggingInterceptor.Level.HEADERS
-        }
+        private val loggingInterceptor = NetworkLogging.debugInterceptor()
 
         private val cookieJar = CookieManager.cookieJar
 
@@ -174,16 +168,15 @@ interface YcardApi {
             }
         }
 
-        val okHttpClient = OkHttpClient.Builder()
-            .cookieJar(cookieJar)
-            .followRedirects(true)
-            .followSslRedirects(true)
+        val okHttpClient = AhuHttp.plain(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 10,
+            writeTimeoutSeconds = 10
+        )
+            .campusCookies(CookieManager.cookieJar)
             .addInterceptor(interceptor = authInterceptor)
-            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .apply {
-                if (BuildConfig.DEBUG) addInterceptor(loggingInterceptor)
+                loggingInterceptor?.let { addInterceptor(it) }
             }
             .build()
 
@@ -192,27 +185,24 @@ interface YcardApi {
          * redirect all the way into loginTransit can cycle back through neusoftCas before the
          * caller has extracted the one-shot ticket.
          */
-        internal val loginRedirectClient = OkHttpClient.Builder()
+        internal val loginRedirectClient = AhuHttp.plain(
+            connectTimeoutSeconds = 10,
+            readTimeoutSeconds = 10,
+            writeTimeoutSeconds = 10,
+            followRedirects = false,
+            followSslRedirects = false
+        )
             .cookieJar(cookieJar)
-            .followRedirects(false)
-            .followSslRedirects(false)
-            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
-            .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
             .build()
 
-        private fun createApi(client: OkHttpClient): YcardApi = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(YcardApi::class.java)
+        private fun createApi(client: OkHttpClient): YcardApi =
+            retrofit(BASE_URL, client).create(YcardApi::class.java)
 
         val API = createApi(okHttpClient)
 
         private val bathroomClient = okHttpClient.newBuilder()
                 // toAppitem carries the bearer token in its URL. Do not print that URL in debug logs.
-                .apply { interceptors().remove(loggingInterceptor) }
+                .apply { loggingInterceptor?.let { interceptors().remove(it) } }
                 .addInterceptor(bathroomMiniProgramInterceptor)
                 .addInterceptor(bathroomTimingInterceptor)
                 .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)

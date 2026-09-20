@@ -87,9 +87,12 @@ class AppActionCatalogTest {
         val userDirectory = requireNotNull(System.getProperty("user.dir"))
         val repositoryRoot = generateSequence(File(userDirectory)) { it.parentFile }
             .first { File(it, "app/src/main/java").isDirectory }
-        val sourceRoot = File(repositoryRoot, "app/src/main/java")
         val catalogPath = "personalization${File.separator}action${File.separator}AppAction.kt"
-        val sources = sourceRoot.walkTopDown()
+        // 生产代码已经分布在多个模块里（feature / data / core），动作的调用点因此要在
+        // 每个模块的源集里找——只扫 :app 会在文件搬进模块后以"没有调用点"的形式误报。
+        val sources = moduleSourceRoots(repositoryRoot)
+            .asSequence()
+            .flatMap { it.walkTopDown() }
             .filter { it.isFile && it.extension == "kt" && !it.path.endsWith(catalogPath) }
             .joinToString("\n") { it.readText() }
         AppActionCatalog.specs
@@ -110,4 +113,17 @@ class AppActionCatalogTest {
         assertTrue(home[AppActionCatalog.outputIndex.getValue(AppActionCatalog.OTHER_OUTPUT_ID)])
         assertTrue(home[AppActionCatalog.outputIndex.getValue(AppActionCatalog.NONE_OUTPUT_ID)])
     }
+
+    /**
+     * 生产代码分布在多个模块里（:app、:core:*、:data:*、:feature:*），
+     * 因此按"每个模块的源集根"逐个查找，而不是写死 app 的路径。
+     */
+    private fun moduleSourceRoots(repositoryRoot: File): List<File> =
+        listOf(File(repositoryRoot, "app/src/main/java")) +
+            listOf("core", "data", "feature").flatMap { parent ->
+                File(repositoryRoot, parent).listFiles().orEmpty()
+                    .sortedBy { it.name }
+                    .map { File(it, "src/main/java") }
+                    .filter { it.isDirectory }
+            }
 }

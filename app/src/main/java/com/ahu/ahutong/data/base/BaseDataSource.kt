@@ -1,6 +1,7 @@
 package com.ahu.ahutong.data.base
 
-import com.ahu.ahutong.data.AHUResponse
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
 import com.ahu.ahutong.data.crawler.api.adwmh.AdwmhApi
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
@@ -30,75 +31,75 @@ interface BaseDataSource {
      * getSchedule
      * @param schoolYear String 2020-2021
      * @param schoolTerm String 1,2
-     * @return AHUResponse<List<Course>>
+     * @return AhuResult<List<Course>>
      */
-    suspend fun getSchedule(schoolYear: String, schoolTerm: String): AHUResponse<List<Course>>
+    suspend fun getSchedule(schoolYear: String, schoolTerm: String): AhuResult<List<Course>>
 
     /**
      * getSchedule (auto get schedule of this semester)
      */
-    suspend fun getSchedule() : AHUResponse<List<Course>>
+    suspend fun getSchedule() : AhuResult<List<Course>>
 
     /**
      * getSchedule (auto get schedule of next semester)
      */
-    suspend fun getNextSchedule() : AHUResponse<List<Course>>
+    suspend fun getNextSchedule() : AhuResult<List<Course>>
 
-    suspend fun getGrade(): AHUResponse<Grade>
+    suspend fun getGrade(): AhuResult<Grade>
 
-    suspend fun getGpaRankFromHtml(studentId: String): AHUResponse<GpaRankInfo>
+    suspend fun getGpaRankFromHtml(studentId: String): AhuResult<GpaRankInfo>
 
-    suspend fun getAllCampus(): AHUResponse<AllCampus>
-    suspend fun getAllLostFoundType(): AHUResponse<AllLostFoundType>
+    suspend fun getAllCampus(): AhuResult<AllCampus>
+    suspend fun getAllLostFoundType(): AhuResult<AllLostFoundType>
 
     suspend fun getLostFoundList(
         pageNo: Int = 1,
         pageSize: Int = 20,
         state: Int = 1
-    ): AHUResponse<LostFoundResponse>
+    ): AhuResult<LostFoundResponse>
 
     suspend fun publishLostFound(
         request: LostFoundPublishRequest
-    ): AHUResponse<Any>
+    ): AhuResult<Any>
 
     suspend fun deleteLostFound(
         id: String
-    ): AHUResponse<Any>
+    ): AhuResult<Any>
 
-    suspend fun getCardMoney(): AHUResponse<Card>
+    suspend fun getCardMoney(): AhuResult<Card>
 
-    suspend fun getBathRooms(): AHUResponse<List<BathRoom>>
+    suspend fun getBathRooms(): AhuResult<List<BathRoom>>
 
     /**
      * get exam info
      */
-    suspend fun getExamInfo(studentID: String, studentName: String): AHUResponse<List<Exam>>
+    suspend fun getExamInfo(studentID: String, studentName: String): AhuResult<List<Exam>>
 
 
     /**
      * get account info by tel and bathroom
      */
-    suspend fun getBathroomTelInfo(bathroom:String,tel: String): AHUResponse<BathroomTelInfo>
+    suspend fun getBathroomTelInfo(bathroom:String,tel: String): AhuResult<BathroomTelInfo>
 
 
     /**
      * get card info for charge
      */
-    suspend fun getCardInfo(): AHUResponse<CardInfo>
+    suspend fun getCardInfo(): AhuResult<CardInfo>
 
 
     /**
      * gets third-party order data before executing payment
      */
 
-    suspend fun getOrderThirdData(request : RequestBody): AHUResponse<Response<ResponseBody>>
+    suspend fun getOrderThirdData(request : RequestBody): AhuResult<Response<ResponseBody>>
 
-    suspend fun pay(request : RequestBody): AHUResponse<Response<ResponseBody>>
+    suspend fun pay(request : RequestBody): AhuResult<Response<ResponseBody>>
 
-    suspend fun getSchoolCalendar(): AHUResponse<Response<ResponseBody>>
+    suspend fun getSchoolCalendar(): AhuResult<Response<ResponseBody>>
 
-    suspend fun getSchoolCalendarYears(): AHUResponse<SchoolCalendarYearsResponse>
+    suspend fun getSchoolCalendarYears(): AhuResult<SchoolCalendarYearsResponse>
 
-    suspend fun getSchoolCalendar(year: String): AHUResponse<Response<ResponseBody>>
+    suspend fun getSchoolCalendar(year: String): AhuResult<Response<ResponseBody>>
 
 }

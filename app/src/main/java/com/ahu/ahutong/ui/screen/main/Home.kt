@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen.main
 
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -54,7 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
@@ -108,16 +109,17 @@ private data class ActiveHomeWidgetDrag(
 @Composable
 fun Home(
     discoveryViewModel: DiscoveryViewModel = viewModel(),
-    scheduleViewModel: ScheduleViewModel = viewModel(),
+    scheduleViewModel: ScheduleViewModel = hiltViewModel(),
     navController: NavHostController,
     behaviorRuntime: BehaviorPredictionRuntime,
+    isActive: Boolean,
     onOpenSchedule: () -> Unit = { navController.navigate("schedule") },
     homeEditEnabled: Boolean = false,
     enterEditModeRequest: Boolean = false,
     onEnterEditModeRequestConsumed: () -> Unit = {}
 ) {
     val density = LocalDensity.current
-    val schedule = scheduleViewModel.schedule.observeAsState().value?.getOrNull() ?: emptyList()
+    val schedule = scheduleViewModel.schedule.observeAsState().value?.valueOrNull() ?: emptyList()
     val scheduleConfig by scheduleViewModel.scheduleConfig.observeAsState()
     val localScheduleConfig by produceState<ScheduleConfigBean?>(
         initialValue = null,
@@ -463,6 +465,7 @@ fun Home(
                 transitionBalance = discoveryViewModel.transitionBalance,
                 onRefreshBalance = discoveryViewModel::refreshCardBalance,
                 navController = navController,
+                isHomeActive = isActive,
                 slots = homeWidgetSlots,
                 isEditing = isEditingHome,
                 highlightedSlot = highlightedSlot,

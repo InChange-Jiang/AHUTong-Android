@@ -67,6 +67,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import top.yukonga.miuix.kmp.icon.icons.useful.Cancel
 import top.yukonga.miuix.kmp.icon.icons.useful.Refresh
 import top.yukonga.miuix.kmp.icon.icons.useful.Search
+import com.ahu.ahutong.core.designsystem.R as DesignSystemR
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -517,12 +518,12 @@ fun LostFound(
             listState = listState,
             trailingContent = {
                 AppTitleIconButton(
-                    icon = R.drawable.ic_refresh,
+                    icon = DesignSystemR.drawable.ic_refresh,
                     contentDescription = "刷新失物招领",
                     onClick = lostFoundViewModel::refreshList
                 )
                 AppTitleIconButton(
-                    icon = if (searchExpanded) null else R.drawable.ic_find,
+                    icon = if (searchExpanded) null else DesignSystemR.drawable.ic_find,
                     imageVector = if (searchExpanded) Icons.Default.Close else null,
                     contentDescription = if (searchExpanded) "关闭搜索" else "搜索",
                     onClick = {

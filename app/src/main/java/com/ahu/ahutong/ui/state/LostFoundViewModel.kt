@@ -11,6 +11,7 @@ import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundItem
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.core.common.toUserMessage
 import com.ahu.ahutong.personalization.preset.PresetCandidate
 import com.ahu.ahutong.personalization.preset.PresetInteractionToken
 import com.ahu.ahutong.personalization.preset.PresetSubmission
@@ -27,6 +28,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.ahu.ahutong.data.session.SessionStore
 
 @HiltViewModel
 class LostFoundViewModel @Inject constructor(
@@ -75,7 +77,7 @@ class LostFoundViewModel @Inject constructor(
     var isLoadingMore by mutableStateOf(false)
         private set
     val currentUserName: String
-        get() = AHUCache.getCurrentUser()?.xh ?: "null"
+        get() = SessionStore.currentUser()?.xh ?: "null"
 
     var errorMessage by mutableStateOf<String?>(null)
 
@@ -123,16 +125,17 @@ class LostFoundViewModel @Inject constructor(
             val result =
                 AHURepository.getAllCampus()
 
-            if (result.code == 0) {
-                allCampus = result.data
+            val campusPayload = result.valueOrNull()
+            if (campusPayload != null) {
+                allCampus = campusPayload
 
                 AHUCache.saveLostFoundCampus(
-                    result.data.`object`
+                    campusPayload.`object`
                 )
 
                 errorMessage = null
             } else {
-                errorMessage = result.msg
+                errorMessage = result.errorOrNull()?.toUserMessage()
             }
         } catch (t: Throwable) {
             // 没缓存时才报错
@@ -173,16 +176,17 @@ class LostFoundViewModel @Inject constructor(
             val result =
                 AHURepository.getAllLostFoundType()
 
-            if (result.code == 0) {
-                allLostFoundType = result.data
+            val typePayload = result.valueOrNull()
+            if (typePayload != null) {
+                allLostFoundType = typePayload
 
                 AHUCache.saveLostFoundType(
-                    result.data.`object`
+                    typePayload.`object`
                 )
 
                 errorMessage = null
             } else {
-                errorMessage = result.msg
+                errorMessage = result.errorOrNull()?.toUserMessage()
             }
         } catch (t: Throwable) {
             if (allLostFoundType == null) {
@@ -242,8 +246,9 @@ class LostFoundViewModel @Inject constructor(
                     state = requestedState
                 )
                 if (currentState != requestedState) return@launch
-                if (result.code == 0) {
-                    val pageData = result.data.data
+                val pagePayload = result.valueOrNull()
+                if (pagePayload != null) {
+                    val pageData = pagePayload.data
                     currentPage = pageData.pageNum
                     totalPages = pageData.pages
                     lostFoundList = pageData.list
@@ -251,7 +256,7 @@ class LostFoundViewModel @Inject constructor(
                     errorMessage = null
                     reportListContent(pageData.list.size, fresh = true)
                 } else {
-                    errorMessage = result.msg
+                    errorMessage = result.errorOrNull()?.toUserMessage()
                     reportListError()
                 }
             } catch (t: Throwable) {
@@ -286,9 +291,10 @@ class LostFoundViewModel @Inject constructor(
                     )
 
                 if (currentState != requestedState) return@launch
-                if (result.code == 0) {
+                val refreshPayload = result.valueOrNull()
+                if (refreshPayload != null) {
                     val pageData =
-                        result.data.data
+                        refreshPayload.data
 
                     currentPage =
                         pageData.pageNum
@@ -311,7 +317,7 @@ class LostFoundViewModel @Inject constructor(
                     errorMessage = null
                     reportListContent(pageData.list.size, fresh = true)
                 } else {
-                    errorMessage = result.msg
+                    errorMessage = result.errorOrNull()?.toUserMessage()
                     reportListError()
                 }
             } catch (t: Throwable) {
@@ -343,8 +349,9 @@ class LostFoundViewModel @Inject constructor(
                 )
 
                 if (currentState != requestedState) return@launch
-                if (result.code == 0) {
-                    val pageData = result.data.data
+                val morePayload = result.valueOrNull()
+                if (morePayload != null) {
+                    val pageData = morePayload.data
 
                     currentPage = pageData.pageNum
                     totalPages = pageData.pages
@@ -360,7 +367,7 @@ class LostFoundViewModel @Inject constructor(
 
                     errorMessage = null
                 } else {
-                    errorMessage = result.msg
+                    errorMessage = result.errorOrNull()?.toUserMessage()
                 }
             } catch (t: Throwable) {
                 errorMessage = t.message ?: "加载更多失败"
@@ -400,7 +407,7 @@ class LostFoundViewModel @Inject constructor(
                         auditresult = 1
                     )
                 )
-                check(response.isSuccessful) { response.msg ?: "发布失败" }
+                check(response.isSuccess) { response.errorOrNull()?.toUserMessage() ?: "发布失败" }
             }
             if (result.isSuccess) {
                 refreshList()
@@ -420,7 +427,7 @@ class LostFoundViewModel @Inject constructor(
             deletingPostIds = deletingPostIds + id
             val result = runCatching {
                 val response = AHURepository.deleteLostFound(id)
-                check(response.isSuccessful) { response.msg ?: "删除失败" }
+                check(response.isSuccess) { response.errorOrNull()?.toUserMessage() ?: "删除失败" }
             }
             if (result.isSuccess) {
                 lostFoundList = lostFoundList.filterNot { it.id == id }
@@ -466,9 +473,11 @@ class LostFoundViewModel @Inject constructor(
                 pageSize = MY_POST_PAGE_SIZE,
                 state = state
             )
-            check(response.isSuccessful) { response.msg ?: "加载帖子失败" }
-            posts += response.data.data.list
-            pages = response.data.data.pages.coerceAtLeast(1)
+            check(response.isSuccess) { response.errorOrNull()?.toUserMessage() ?: "加载帖子失败" }
+            val payload = response.valueOrNull()
+                ?: error(response.errorOrNull()?.toUserMessage() ?: "加载帖子失败")
+            posts += payload.data.list
+            pages = payload.data.pages.coerceAtLeast(1)
             page++
         } while (page <= pages)
         return posts

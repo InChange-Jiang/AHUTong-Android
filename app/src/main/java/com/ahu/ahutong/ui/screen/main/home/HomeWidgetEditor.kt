@@ -91,6 +91,7 @@ fun HomeWidgetSlotLayout(
     transitionBalance: Double,
     onRefreshBalance: () -> Unit,
     navController: NavHostController,
+    isHomeActive: Boolean,
     slots: List<String?>,
     isEditing: Boolean,
     highlightedSlot: Int?,
@@ -108,6 +109,7 @@ fun HomeWidgetSlotLayout(
             transitionBalance = transitionBalance,
             onRefreshBalance = onRefreshBalance,
             navController = navController,
+            isHomeActive = isHomeActive,
             slots = slots,
             isEditing = isEditing,
             highlightedSlot = highlightedSlot,
@@ -325,6 +327,7 @@ private fun RadiantHomeWidgetSlotLayout(
     transitionBalance: Double,
     onRefreshBalance: () -> Unit,
     navController: NavHostController,
+    isHomeActive: Boolean,
     slots: List<String?>,
     isEditing: Boolean,
     highlightedSlot: Int?,
@@ -347,6 +350,7 @@ private fun RadiantHomeWidgetSlotLayout(
             transitionBalance = transitionBalance,
             onRefreshBalance = onRefreshBalance,
             navController = navController,
+            isHomeActive = isHomeActive,
             enabled = !isEditing,
             modifier = Modifier.fillMaxWidth()
         )

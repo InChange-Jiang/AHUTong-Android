@@ -87,6 +87,7 @@ import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import top.yukonga.miuix.kmp.icon.icons.useful.Settings
+import com.ahu.ahutong.core.designsystem.R as DesignSystemR
 
 @Composable
 fun Evaluation(
@@ -283,7 +284,7 @@ private fun EvaluationListScreen(
         trailingContent = {
             Box {
                 AppTitleIconButton(
-                    icon = R.drawable.ic_filter,
+                    icon = DesignSystemR.drawable.ic_filter,
                     contentDescription = "选择学期",
                     onClick = { semesterExpanded = true }
                 )
@@ -314,7 +315,7 @@ private fun EvaluationListScreen(
                 }
             }
             AppTitleIconButton(
-                icon = R.drawable.ic_config,
+                icon = DesignSystemR.drawable.ic_config,
                 contentDescription = "评教预设",
                 onClick = { presetDialogShown = true }
             )
@@ -540,7 +541,7 @@ private fun EvaluationFormScreen(viewModel: EvaluationViewModel) {
         modifier = Modifier.fillMaxSize(),
         trailingContent = {
             AppTitleIconButton(
-                icon = R.drawable.ic_config,
+                icon = DesignSystemR.drawable.ic_config,
                 contentDescription = "评教预设",
                 onClick = { presetDialogShown = true }
             )

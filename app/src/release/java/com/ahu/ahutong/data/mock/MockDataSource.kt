@@ -1,6 +1,7 @@
 package com.ahu.ahutong.data.mock
 
-import com.ahu.ahutong.data.AHUResponse
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
 import com.ahu.ahutong.data.base.BaseDataSource
 import com.ahu.ahutong.data.crawler.model.adwnh.AllCampus
 import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
@@ -25,68 +26,64 @@ class MockDataSource : BaseDataSource {
     override suspend fun getSchedule(
         schoolYear: String,
         schoolTerm: String
-    ): AHUResponse<List<Course>> = unavailable()
+    ): AhuResult<List<Course>> = unavailable()
 
-    override suspend fun getSchedule(): AHUResponse<List<Course>> = unavailable()
+    override suspend fun getSchedule(): AhuResult<List<Course>> = unavailable()
 
-    override suspend fun getNextSchedule(): AHUResponse<List<Course>> = unavailable()
+    override suspend fun getNextSchedule(): AhuResult<List<Course>> = unavailable()
 
-    override suspend fun getGrade(): AHUResponse<Grade> = unavailable()
+    override suspend fun getGrade(): AhuResult<Grade> = unavailable()
 
-    override suspend fun getGpaRankFromHtml(studentId: String): AHUResponse<GpaRankInfo> = unavailable()
+    override suspend fun getGpaRankFromHtml(studentId: String): AhuResult<GpaRankInfo> = unavailable()
 
-    override suspend fun getAllCampus(): AHUResponse<AllCampus> = unavailable()
+    override suspend fun getAllCampus(): AhuResult<AllCampus> = unavailable()
 
-    override suspend fun getAllLostFoundType(): AHUResponse<AllLostFoundType> = unavailable()
+    override suspend fun getAllLostFoundType(): AhuResult<AllLostFoundType> = unavailable()
 
     override suspend fun getLostFoundList(
         pageNo: Int,
         pageSize: Int,
         state: Int
-    ): AHUResponse<LostFoundResponse> = unavailable()
+    ): AhuResult<LostFoundResponse> = unavailable()
 
     override suspend fun publishLostFound(
         request: LostFoundPublishRequest
-    ): AHUResponse<Any> = unavailable()
+    ): AhuResult<Any> = unavailable()
 
-    override suspend fun deleteLostFound(id: String): AHUResponse<Any> = unavailable()
+    override suspend fun deleteLostFound(id: String): AhuResult<Any> = unavailable()
 
-    override suspend fun getCardMoney(): AHUResponse<Card> = unavailable()
+    override suspend fun getCardMoney(): AhuResult<Card> = unavailable()
 
-    override suspend fun getBathRooms(): AHUResponse<List<BathRoom>> = unavailable()
+    override suspend fun getBathRooms(): AhuResult<List<BathRoom>> = unavailable()
 
     override suspend fun getExamInfo(
         studentID: String,
         studentName: String
-    ): AHUResponse<List<Exam>> = unavailable()
+    ): AhuResult<List<Exam>> = unavailable()
 
     override suspend fun getBathroomTelInfo(
         bathroom: String,
         tel: String
-    ): AHUResponse<BathroomTelInfo> = unavailable()
+    ): AhuResult<BathroomTelInfo> = unavailable()
 
-    override suspend fun getCardInfo(): AHUResponse<CardInfo> = unavailable()
+    override suspend fun getCardInfo(): AhuResult<CardInfo> = unavailable()
 
     override suspend fun getOrderThirdData(
         request: RequestBody
-    ): AHUResponse<Response<ResponseBody>> = unavailable()
+    ): AhuResult<Response<ResponseBody>> = unavailable()
 
     override suspend fun pay(
         request: RequestBody
-    ): AHUResponse<Response<ResponseBody>> = unavailable()
+    ): AhuResult<Response<ResponseBody>> = unavailable()
 
-    override suspend fun getSchoolCalendar(): AHUResponse<Response<ResponseBody>> = unavailable()
+    override suspend fun getSchoolCalendar(): AhuResult<Response<ResponseBody>> = unavailable()
 
-    override suspend fun getSchoolCalendarYears(): AHUResponse<SchoolCalendarYearsResponse> = unavailable()
+    override suspend fun getSchoolCalendarYears(): AhuResult<SchoolCalendarYearsResponse> = unavailable()
 
-    override suspend fun getSchoolCalendar(year: String): AHUResponse<Response<ResponseBody>> = unavailable()
+    override suspend fun getSchoolCalendar(year: String): AhuResult<Response<ResponseBody>> = unavailable()
 
-    private fun <T> unavailable(): AHUResponse<T> =
-        AHUResponse<T>().apply {
-            code = -1
-            msg = "Mock data source is debug-only."
-            data = null
-        }
+    private fun <T> unavailable(): AhuResult<T> =
+        AhuResult.Failure(AhuError.Server(-1, "Mock data source is debug-only."))
 }
 
 object MockCampusData {

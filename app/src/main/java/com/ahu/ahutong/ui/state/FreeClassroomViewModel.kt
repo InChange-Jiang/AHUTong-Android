@@ -10,7 +10,7 @@ import com.ahu.ahutong.personalization.semantic.ContentStateBucket
 import com.ahu.ahutong.personalization.semantic.ErrorTypeBucket
 import com.ahu.ahutong.personalization.semantic.ResultCountBucket
 import com.ahu.ahutong.personalization.semantic.SemanticDomain
-import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
+import com.ahu.ahutong.data.FreeClassroomGateway
 import com.ahu.ahutong.data.crawler.model.jwxt.DateTimeSegmentCmd
 import com.ahu.ahutong.data.crawler.model.jwxt.FreeRoom
 import com.ahu.ahutong.data.crawler.model.jwxt.GetBuildingsResponseItem
@@ -167,7 +167,7 @@ class FreeClassroomViewModel @Inject constructor(
                 MockCampusData.freeRooms(campusId, mockBuildingIds.toList())
             } else {
                 buildingQueries.flatMap { buildingId ->
-                    val response = JwxtApi.API.getFreeRooms(
+                    val response = FreeClassroomGateway.freeRooms(
                         GetFreeRoomsRequest(
                             buildingId = buildingId,
                             campusId = campusId.toString(),
@@ -303,7 +303,7 @@ class FreeClassroomViewModel @Inject constructor(
             val data = if (AHUCache.getMockData()) {
                 MockCampusData.buildings(campusId)
             } else {
-                JwxtApi.API.getBuildings(campusId = campusId)
+                FreeClassroomGateway.buildings(campusId = campusId)
             }
             val sortedData = data.sortedBy { it.nameZh }
             buildingsCache[campusId] = sortedData

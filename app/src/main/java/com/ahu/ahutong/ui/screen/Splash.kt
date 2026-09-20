@@ -35,9 +35,11 @@ import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.SplashViewModel
 import com.ahu.ahutong.ui.state.BootstrapTrainingOnboardingState
 import com.ahu.ahutong.ui.state.TelemetryOnboardingState
+import com.ahu.ahutong.ui.theme.LiquidGlassSurfaceLevel
 import com.kyant.monet.a1
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
+import com.ahu.ahutong.data.session.SessionStore
 
 @Composable
 fun Splash(
@@ -60,7 +62,7 @@ fun Splash(
         if (agreementAccepted && privacyAccepted && businessAccepted &&
             telemetryChoice != null && bootstrapTrainingChoice != null
         ) {
-            if (AHUCache.isLogin()) {
+            if (SessionStore.isLoggedIn()) {
                 navController.navigate("home") {
                     popUpTo("splash") { inclusive = true }
                 }

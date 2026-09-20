@@ -6,13 +6,11 @@ import com.ahu.ahutong.data.server.model.ApkUpdateInfo
 import com.ahu.ahutong.data.server.model.Captcha
 import com.ahu.ahutong.data.server.model.GrayFeatureDecision
 import com.ahu.ahutong.data.server.model.SchoolCalendarYearsResponse
-import okhttp3.Dispatcher
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import com.ahu.ahutong.data.network.retrofit
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
@@ -20,8 +18,8 @@ import retrofit2.http.Body
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
-import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
+import com.ahu.ahutong.data.network.AhuHttp
 
 interface AhuTong {
 
@@ -52,24 +50,17 @@ interface AhuTong {
     @GET("/download/{filename}")
     suspend fun downloadFile(@Path(value = "filename", encoded = true) filename: String): retrofit2.Response<ResponseBody>
 
-    @Streaming
-    @GET
-    suspend fun downloadByUrl(@Url fileUrl: String): retrofit2.Response<ResponseBody>
-
 
     companion object {
         val BASE_URL = "https://openahu.org"
 
 
-        val okHttpClient = OkHttpClient
-            .Builder()
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(2, TimeUnit.MINUTES)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(15, TimeUnit.MINUTES)
-            .retryOnConnectionFailure(true)
-            .followRedirects(true)
-            .followSslRedirects(true)
+        val okHttpClient = AhuHttp.plain(
+            connectTimeoutSeconds = 20,
+            readTimeoutSeconds = 120,
+            writeTimeoutSeconds = 30,
+            callTimeoutSeconds = 900
+        )
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
                     .header("User-Agent", "AHUTong/${BuildConfig.VERSION_NAME} (Android)")
@@ -79,8 +70,6 @@ interface AhuTong {
             }
             .build()
 
-        private val apkDownloadOkHttpClient = createApkDownloadClient(okHttpClient)
-
         private val grayOkHttpClient = okHttpClient.newBuilder()
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(3, TimeUnit.SECONDS)
@@ -88,26 +77,12 @@ interface AhuTong {
             .callTimeout(5, TimeUnit.SECONDS)
             .build()
 
-        private fun createApi(client: OkHttpClient) = Retrofit.Builder()
-            .addConverterFactory(GsonConverterFactory.create())
-            .client(client)
-            .baseUrl(BASE_URL)
-            .build().create(AhuTong::class.java)
+        private fun createApi(client: OkHttpClient) = retrofit(BASE_URL, client).create(AhuTong::class.java)
 
         val API = createApi(okHttpClient)
-        val APK_DOWNLOAD_API = createApi(apkDownloadOkHttpClient)
         val GRAY_API = createApi(grayOkHttpClient)
 
-        fun cancelApkDownloads() {
-            apkDownloadOkHttpClient.dispatcher.cancelAll()
-        }
     }
 }
 
-internal fun createApkDownloadClient(baseClient: OkHttpClient): OkHttpClient =
-    baseClient.newBuilder()
-        // Cancelling an APK or switching its mirror must not cancel ordinary API calls.
-        .dispatcher(Dispatcher())
-        .followRedirects(false)
-        .followSslRedirects(false)
-        .build()
+

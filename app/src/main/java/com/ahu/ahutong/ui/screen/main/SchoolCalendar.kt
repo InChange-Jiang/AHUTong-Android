@@ -128,8 +128,8 @@ fun SchoolCalendar(navController: NavHostController) {
                     } else {
                         AHURepository.getSchoolCalendar(year)
                     }
-                    val response = result.data
-                    if (!result.isSuccessful || response?.isSuccessful != true) return@runCatching null
+                    val response = result.valueOrNull()
+                    if (response?.isSuccessful != true) return@runCatching null
                     val body = response.body() ?: return@runCatching null
                     FileUtils.saveResponseBodyToFileAtomically(context, body, fileName) {
                         progress = it
@@ -163,9 +163,8 @@ fun SchoolCalendar(navController: NavHostController) {
                 errorMessage = null
             }
 
-            val response = runCatching { AHURepository.getSchoolCalendarYears() }.getOrNull()
-            val catalog = response?.data
-            val years = if (response?.isSuccessful == true && catalog != null) {
+            val catalog = runCatching { AHURepository.getSchoolCalendarYears() }.getOrNull()?.valueOrNull()
+            val years = if (catalog != null) {
                 SchoolCalendarYearPolicy.normalize(catalog.years)
             } else {
                 emptyList()

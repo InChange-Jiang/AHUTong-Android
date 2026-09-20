@@ -34,62 +34,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-data class PresetCandidate(
-    val opportunityId: String,
-    val presetId: String,
-    val domain: SemanticDomain,
-    val localPayloadJson: String,
-    val coarseFeaturesJson: String,
-    val statScore: Float,
-    val tinyScore: Float,
-    val effectiveScore: Float,
-    val reason: String,
-    val candidateFingerprint: String = "",
-    val checkpointId: String? = null,
-    val featureVector: FloatArray = FloatArray(0),
-    val recentBaselineScore: Float = 0f,
-    val frequencyBaselineScore: Float = 0f,
-    val promotionHoldout: Boolean = false,
-    val candidateOrdinal: Int = 0,
-    val occurredEpochDay: Long? = null
-)
-
-data class PresetSubmission(
-    val domain: SemanticDomain,
-    val localPayloadJson: String,
-    val coarseFeaturesJson: String,
-    val stableFingerprintSource: String
-)
-
-enum class PresetInteractionState {
-    EXPOSED,
-    APPLIED,
-    QUERY_CONFIRMED,
-    REPLACED,
-    REMOVED,
-    EXPIRED_NO_LABEL
-}
-
-enum class PresetFeedbackSource {
-    NATURAL_COMMIT,
-    ASSISTED_QUERY_CONFIRMED,
-    ASSISTED_REPLACED,
-    ASSISTED_REMOVED
-}
-
-data class PresetInteractionToken(
-    val interactionId: String,
-    val domain: SemanticDomain,
-    val opportunityId: String,
-    val candidateId: String,
-    val candidateFingerprint: String
-)
-
-data class AppliedPreset(
-    val localPayloadJson: String,
-    val interactionToken: PresetInteractionToken
-)
-
 internal object PresetReplayPolicy {
     fun select(
         samples: List<PresetTrainingSampleEntity>,

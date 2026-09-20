@@ -1,8 +1,7 @@
 package com.ahu.ahutong.data.crawler
 
 import android.util.Log
-import com.ahu.ahutong.AHUApplication
-import com.ahu.ahutong.data.AHUResponse
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.data.base.BaseDataSource
 import com.ahu.ahutong.data.crawler.api.adwmh.AdwmhApi
 import com.ahu.ahutong.data.crawler.api.jwxt.JwxtApi
@@ -40,6 +39,11 @@ import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.model.GpaRankInfo
 import com.ahu.ahutong.data.server.model.SchoolCalendarYearsResponse
 import java.io.File
+import com.ahu.ahutong.core.common.AhuError
+import com.ahu.ahutong.core.common.AhuResult
+import com.ahu.ahutong.core.common.toUserMessage
+import com.ahu.ahutong.data.crawler.model.adwnh.toAhuResult
+import com.ahu.ahutong.data.toAhuError
 
 class SdkDataSource : BaseDataSource {
 
@@ -54,11 +58,11 @@ class SdkDataSource : BaseDataSource {
     override suspend fun getSchedule(
         schoolYear: String,
         schoolTerm: String
-    ): AHUResponse<List<Course>> {
+    ): AhuResult<List<Course>> {
         return crawlerFallback.getSchedule(schoolYear, schoolTerm)
     }
 
-    override suspend fun getSchedule(): AHUResponse<List<Course>> {
+    override suspend fun getSchedule(): AhuResult<List<Course>> {
         // 优先使用 HTTP 客户端
         val httpClient = getHttpClient()
         if (httpClient != null) {
@@ -66,11 +70,7 @@ class SdkDataSource : BaseDataSource {
             val result = httpClient.getSchedule()
             if (result.isSuccess) {
                 val data = result.getOrNull()
-                if (data != null) return AHUResponse<List<Course>>().apply {
-                    code = 0
-                    this.data = data
-                    msg = "Success"
-                }
+                if (data != null) return AhuResult.Success(data)
             }
 
             Log.w("LocalServiceClient", "[getSchedule] HTTP failed, fallback to JNI: ${result.exceptionOrNull()?.message}")
@@ -82,11 +82,7 @@ class SdkDataSource : BaseDataSource {
         if (result.isSuccess) {
             val data = result.getOrNull()
             if (data != null) {
-                return AHUResponse<List<Course>>().apply {
-                    code = 0
-                    this.data = data
-                    msg = "Success"
-                }
+                return AhuResult.Success(data)
             } else {
                 Log.w("LocalServiceClient", "[getSchedule] JNI returned null, fallback to Android crawler")
             }
@@ -97,11 +93,11 @@ class SdkDataSource : BaseDataSource {
         return crawlerFallback.getSchedule()
     }
 
-    override suspend fun getNextSchedule(): AHUResponse<List<Course>> {
+    override suspend fun getNextSchedule(): AhuResult<List<Course>> {
         return CrawlerDataSource().getNextSchedule()
     }
 
-    override suspend fun getGrade(): AHUResponse<Grade> {
+    override suspend fun getGrade(): AhuResult<Grade> {
         val profiles = resolveGradeProfiles()
 
         // 优先使用 HTTP 客户端
@@ -116,7 +112,7 @@ class SdkDataSource : BaseDataSource {
             if (result.isSuccess) {
                 val data = result.getOrThrow()
                 return convertGradeResponse(data).also {
-                    cacheSingleProfileGrade(profiles, it.data)
+                    cacheSingleProfileGrade(profiles, it.valueOrNull())
                 }
             }
 
@@ -128,7 +124,7 @@ class SdkDataSource : BaseDataSource {
             val jniResult = RustSDK.getGradeSafe()
             if (jniResult.isSuccess) {
                 return convertGradeResponse(jniResult.getOrThrow()).also {
-                    cacheSingleProfileGrade(profiles, it.data)
+                    cacheSingleProfileGrade(profiles, it.valueOrNull())
                 }
             }
 
@@ -146,23 +142,25 @@ class SdkDataSource : BaseDataSource {
         val result = RustSDK.getGradeSafe()
         if (result.isSuccess) {
             return convertGradeResponse(result.getOrThrow()).also {
-                cacheSingleProfileGrade(profiles, it.data)
+                cacheSingleProfileGrade(profiles, it.valueOrNull())
             }
         }
 
         return try {
             crawlerFallback.getGrade()
         } catch (e: Exception) {
-            val response = AHUResponse<Grade>()
-            response.code = -1
             val msg = result.exceptionOrNull()?.message
                 ?: "获取成绩失败"
-            response.msg = if (msg.contains("error decoding response body", ignoreCase = true)) {
-                "教务系统返回异常（可能登录失效），请重新登录后重试"
-            } else {
-                msg
-            }
-            response
+            AhuResult.Failure(
+                AhuError.Server(
+                    -1,
+                    if (msg.contains("error decoding response body", ignoreCase = true)) {
+                        "教务系统返回异常（可能登录失效），请重新登录后重试"
+                    } else {
+                        msg
+                    }
+                )
+            )
         }
     }
 
@@ -179,13 +177,13 @@ class SdkDataSource : BaseDataSource {
     private suspend fun getHttpGradesForProfiles(
         httpClient: LocalServiceClient,
         profiles: List<GradeStudentProfile>
-    ): AHUResponse<Grade>? {
+    ): AhuResult<Grade>? {
         Log.d("LocalServiceClient", "[getGrade] multi-profile HTTP fetch count=${profiles.size}")
         val perProfileGrades = linkedMapOf<GradeStudentProfile, Grade?>()
         profiles.forEach { profile ->
             val result = httpClient.getGrade(profile.id)
             val grade = if (result.isSuccess) {
-                convertGradeResponse(result.getOrThrow()).data
+                convertGradeResponse(result.getOrThrow()).valueOrNull()
             } else {
                 Log.w(
                     "LocalServiceClient",
@@ -212,8 +210,7 @@ class SdkDataSource : BaseDataSource {
     }
 
 
-    override suspend fun getGpaRankFromHtml(studentId: String): AHUResponse<GpaRankInfo> {
-        val response = AHUResponse<GpaRankInfo>()
+    override suspend fun getGpaRankFromHtml(studentId: String): AhuResult<GpaRankInfo> {
         val maskedStudentId = studentId.maskStudentId()
         Log.i(TAG, "getGpaRankFromHtml start studentId=$maskedStudentId")
         try {
@@ -225,10 +222,8 @@ class SdkDataSource : BaseDataSource {
                     "finalUrl=${htmlResponse.raw().request.url.toString().redactStudentId(studentId)}"
             )
             if (!htmlResponse.isSuccessful || htmlResponse.body() == null) {
-                response.code = -1
-                response.msg = "获取成绩排名页面失败"
                 Log.w(TAG, "getGpaRankFromHtml empty/non-success body studentId=$maskedStudentId")
-                return response
+                return AhuResult.Failure(AhuError.Server(-1, "获取成绩排名页面失败"))
             }
 
             val html = htmlResponse.body()!!.string()
@@ -251,63 +246,41 @@ class SdkDataSource : BaseDataSource {
                     "semesters=${gpaRankInfo.gpaSemesterSubs.size}"
             )
 
-            response.code = 0
-            response.msg = "success"
-            response.data = gpaRankInfo
-            return response
+            return AhuResult.Success(gpaRankInfo)
 
         } catch (e: Exception) {
             Log.w(TAG, "getGpaRankFromHtml failed studentId=$maskedStudentId", e)
-            response.code = -1
-            response.msg = "解析失败：${e.message}"
-            return response
+            return AhuResult.Failure(AhuError.ProtocolChanged("解析失败：${e.message}"))
         }
     }
 
-    override suspend fun getAllCampus(): AHUResponse<AllCampus> {
-        val response = AHUResponse<AllCampus>()
+    override suspend fun getAllCampus(): AhuResult<AllCampus> {
         try {
             // 直接请求 JSON 接口
             val campusList = AdwmhApi.API.getAllcampus()
 
-            // 封装返回
-            response.code = 0
-            response.msg = "success"
-            response.data = campusList
-            return response
+            return AhuResult.Success(campusList)
 
         } catch (e: Exception) {
-            e.printStackTrace()
-            response.code = -1
-            response.msg = "解析校区列表失败：${e.message}"
-            return response
+            return AhuResult.Failure(e.toAhuError())
         }
     }
 
-    override suspend fun getAllLostFoundType(): AHUResponse<AllLostFoundType> {
-        val response = AHUResponse<AllLostFoundType>()
+    override suspend fun getAllLostFoundType(): AhuResult<AllLostFoundType> {
         try {
             // 直接请求 JSON 接口
             val typeList = AdwmhApi.API.getAlllostfoundtype()
-            // 封装返回
-            response.code = 0
-            response.msg = "success"
-            response.data = typeList
-            return response
+            return AhuResult.Success(typeList)
 
         } catch (e: Exception) {
-            e.printStackTrace()
-            response.code = -1
-            response.msg = "解析失败：${e.message}"
-            return response
+            return AhuResult.Failure(e.toAhuError())
         }
     }
     override suspend fun getLostFoundList(
         pageNo: Int,
         pageSize: Int,
         state: Int
-    ): AHUResponse<LostFoundResponse> {
-        val response = AHUResponse<LostFoundResponse>()
+    ): AhuResult<LostFoundResponse> {
         try {
             // 直接请求 JSON 接口
             val List = AdwmhApi.API.getLostFoundList(
@@ -316,27 +289,21 @@ class SdkDataSource : BaseDataSource {
                 state
             )
             // 封装返回
-            response.code = 0
-            response.msg = "success"
-            response.data = List
-            return response
+            return AhuResult.Success(List)
 
         } catch (e: Exception) {
-            e.printStackTrace()
-            response.code = -1
-            response.msg = "解析失败：${e.message}"
-            return response
+            return AhuResult.Failure(e.toAhuError())
         }
     }
     override suspend fun publishLostFound(
         request: LostFoundPublishRequest
-    ): AHUResponse<Any> {
-        return AdwmhApi.API.publishLostFound(request)
+    ): AhuResult<Any> {
+        return AdwmhApi.API.publishLostFound(request).toAhuResult()
     }
     override suspend fun deleteLostFound(
         id: String
-    ): AHUResponse<Any> {
-        return AdwmhApi.API.deleteLostFound(id)
+    ): AhuResult<Any> {
+        return AdwmhApi.API.deleteLostFound(id).toAhuResult()
     }
 
     private fun convertJsToJson(js: String): String {
@@ -344,179 +311,52 @@ class SdkDataSource : BaseDataSource {
             .replace(Regex("'"), "\"")                // 单引号 → 双引号
     }
 
-    private fun mergeProfileGrades(grades: List<Grade>): AHUResponse<Grade> {
-        val termGradeList = grades
-            .flatMap { it.termGradeList ?: emptyList() }
-
-        val grade = Grade()
-        grade.totalCredit = termGradeList.sumOf {
-            it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-        }.toString()
-        grade.totalGradePoint = termGradeList.sumOf {
-            val avg = it.termGradePointAverage?.toDoubleOrNull() ?: 0.0
-            val credit = it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-            avg * credit
-        }.toString()
-
-        val weightedGradePointSum = termGradeList.sumOf {
-            val avg = it.termGradePointAverage?.toDoubleOrNull() ?: 0.0
-            val credit = it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-            avg * credit
-        }
-        grade.totalGradePointAverage = if (grade.totalCredit.toDouble() > 0) {
-            "%.2f".format(weightedGradePointSum / grade.totalCredit.toDouble())
-        } else {
-            "0.0"
-        }
-        grade.termGradeList = termGradeList
-
-        return AHUResponse<Grade>().apply {
-            code = 0
-            msg = "Success"
-            data = grade
-        }
+    private fun mergeProfileGrades(grades: List<Grade>): AhuResult<Grade> {
+        val termGradeList = grades.flatMap { it.termGradeList ?: emptyList() }
+        return AhuResult.Success(GradeMapper.aggregate(termGradeList))
     }
 
+    /** 转换 GradeResponse 为 Grade（聚合算术见 GradeMapper，与爬虫网关共用同一份实现）。 */
+    private fun convertGradeResponse(data: GradeResponse): AhuResult<Grade> =
+        AhuResult.Success(GradeMapper.fromNativeResponse(data))
 
-    /**
-     * 转换 GradeResponse 为 Grade
-     */
-    private fun convertGradeResponse(data: GradeResponse): AHUResponse<Grade> {
-        val map = hashMapOf<String, Grade.TermGradeListBean>()
-
-        data.semesterId2studentGrades?.values?.forEach { gradeList ->
-            val newGradeList = mutableListOf<Grade.TermGradeListBean.GradeListBean>()
-            var termName: String? = null
-
-            gradeList.forEach { it ->
-
-                termName = termName ?: it.semesterName
-                val grade = Grade.TermGradeListBean.GradeListBean()
-                grade.course = it.courseName ?: ""
-                grade.credit = (it.credits ?: 0.0).toString()
-                grade.grade = it.gaGrade ?: ""
-                grade.gradePoint = (it.gp ?: 0.0).toString()
-                grade.courseNature = it.courseType ?: ""
-                grade.courseNum = it.courseCode ?: ""
-                grade.gradeDetail = it.gradeDetail ?: ""
-                grade.semesterId = it.semesterId ?: 0
-                newGradeList.add(grade)
-            }
-
-            termName?.let {
-
-                val names = termName.split("-")
-                if (names.size < 3) { //2023-2024-1
-                    return@forEach
-                }
-
-                val termGradeList = Grade.TermGradeListBean()
-                termGradeList.gradeList = newGradeList
-                termGradeList.term = names[2]
-                termGradeList.schoolYear = "${names[0]}-${names[1]}"
-                termGradeList.termGradePoint = newGradeList.sumOf { it ->
-                    it.grade?.toDoubleOrNull() ?: 0.0
-                }.toString()
-                termGradeList.termTotalCredit = newGradeList.sumOf { it ->
-                    it.credit?.toDoubleOrNull() ?: 0.0
-                }.toString()
-                val totalGradePointWeighted = newGradeList.sumOf {
-                    (it.gradePoint?.toDoubleOrNull() ?: 0.0) * (it.credit?.toDoubleOrNull() ?: 0.0)
-                }
-
-                termGradeList.termGradePointAverage = if (termGradeList.termTotalCredit.toDouble() > 0) {
-                    "%.2f".format(totalGradePointWeighted / termGradeList.termTotalCredit.toDouble())
-                } else {
-                    "0.0"
-                }
-
-                map[it] = termGradeList
-            }
-
-        }
-
-        val response = AHUResponse<Grade>()
-        val termGradeList =  map.values.toList()
-        val grade = Grade()
-
-        grade.totalCredit = termGradeList.sumOf {
-            it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-        }.toString()
-
-        grade.totalGradePoint =termGradeList.sumOf {
-            val avg = it.termGradePointAverage?.toDoubleOrNull() ?: 0.0
-            val credit = it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-            avg * credit
-        }.toString()
-
-        val weightedGradePointSum = termGradeList.sumOf {
-            val avg = it.termGradePointAverage?.toDoubleOrNull() ?: 0.0
-            val credit = it.termTotalCredit?.toDoubleOrNull() ?: 0.0
-            avg * credit
-        }
-
-
-        grade.totalGradePointAverage =if (grade.totalCredit.toDouble() > 0) {
-            "%.2f".format(weightedGradePointSum / grade.totalCredit.toDouble())
-        } else {
-            "0.0"
-        }
-
-        grade.termGradeList = termGradeList
-
-
-        response.data = grade
-        response.code = 0
-
-
-        return response
-    }
-
-    override suspend fun getCardMoney(): AHUResponse<Card> {
+    override suspend fun getCardMoney(): AhuResult<Card> {
         getHttpClient()?.let { httpClient ->
             Log.d("LocalServiceClient", "[getCardMoney] Using HTTP client")
             val result = httpClient.getBalance()
             if (result.isSuccess) {
-                return AHUResponse<Card>().apply {
-                    code = 0
-                    data = result.getOrThrow()
-                    msg = "Success"
-                }
+                return AhuResult.Success(result.getOrThrow())
             }
             Log.w("LocalServiceClient", "[getCardMoney] HTTP failed, fallback to JNI: ${result.exceptionOrNull()?.message}")
         }
 
         val jniResult = RustSDK.getBalanceSafe()
         if (jniResult.isSuccess) {
-            return AHUResponse<Card>().apply {
-                code = 0
-                data = jniResult.getOrThrow()
-                msg = "Success"
-            }
+            return AhuResult.Success(jniResult.getOrThrow())
         }
 
         Log.w("LocalServiceClient", "[getCardMoney] JNI failed, fallback to Android crawler: ${jniResult.exceptionOrNull()?.message}")
         return crawlerFallback.getCardMoney()
     }
 
-    override suspend fun getBathRooms(): AHUResponse<List<BathRoom>> {
+    override suspend fun getBathRooms(): AhuResult<List<BathRoom>> {
         return crawlerFallback.getBathRooms()
     }
 
-    override suspend fun getExamInfo(studentID: String, studentName: String): AHUResponse<List<Exam>> {
+    override suspend fun getExamInfo(studentID: String, studentName: String): AhuResult<List<Exam>> {
         // The Android crawler understands the current server-rendered exam page. The bundled
         // service can still expose the legacy payload shape and currently spends several seconds
         // before reporting that it cannot parse it, so use it only as a recovery path.
         val crawlerResult = crawlerFallback.getExamInfo(studentID, studentName)
-        if (crawlerResult.code == 0) {
+        if (crawlerResult.isSuccess) {
             return crawlerResult
         }
 
         Log.w(
             "LocalServiceClient",
-            "[getExamInfo] Android crawler failed, trying local service: ${crawlerResult.msg}"
+            "[getExamInfo] Android crawler failed, trying local service: " +
+                crawlerResult.errorOrNull()?.toUserMessage().orEmpty()
         )
-        val response = AHUResponse<List<Exam>>()
         try {
             val httpClient = getHttpClient()
             val result = if (httpClient != null) {
@@ -526,48 +366,38 @@ class SdkDataSource : BaseDataSource {
                 Log.d("LocalServiceClient", "[getExamInfo] Fallback to JNI")
                 RustSDK.getExamInfoSafe()
             }
-            if (result.isSuccess) {
-                response.code = 0
-                response.data = result.getOrNull()
-            } else {
-                Log.w(
-                    "LocalServiceClient",
-                    "[getExamInfo] Local service recovery failed: ${result.exceptionOrNull()?.message}"
-                )
-                return crawlerResult
+            val recovered = result.getOrNull()
+            if (result.isSuccess && recovered != null) {
+                return AhuResult.Success(recovered)
             }
+            Log.w(
+                "LocalServiceClient",
+                "[getExamInfo] Local service recovery failed: ${result.exceptionOrNull()?.message}"
+            )
+            return crawlerResult
         } catch (e: Exception) {
             Log.w("LocalServiceClient", "[getExamInfo] Local service recovery threw", e)
             return crawlerResult
         }
-        return response
     }
 
     override suspend fun getBathroomTelInfo(
         bathroom: String,
         tel: String
-    ): AHUResponse<BathroomTelInfo> {
-
-        val response = AHUResponse<BathroomTelInfo>()
-
+    ): AhuResult<BathroomTelInfo> {
         val (feeitemid, appId) = when (bathroom) {
             "竹园/龙河" -> "409" to "55"
             "桔园/蕙园" -> "430" to "56"
 
-            else -> {
-                response.code = -1
-                response.msg = "目前没有这个浴室啊"
-                response.data = null
-                return response
-            }
+            else -> return AhuResult.Failure(AhuError.Server(-1, "目前没有这个浴室啊"))
         }
 
         val initialization = YcardApi.initializeBathroomFeeItem(feeitemid, appId)
         if (!initialization.isSuccessful) {
-            response.code = initialization.code()
-            response.msg = "浴室缴费会话初始化失败"
             initialization.errorBody()?.close()
-            return response
+            return AhuResult.Failure(
+                AhuError.Server(initialization.code(), "浴室缴费会话初始化失败")
+            )
         }
         initialization.body()?.close()
 
@@ -591,48 +421,35 @@ class SdkDataSource : BaseDataSource {
             val bathroomInfo = Gson().fromJson(responseJson, BathroomTelInfo::class.java)
 
             bathroomInfo?.let {
-                response.code = 0
-                response.data = it
-                response.msg = "success"
-                return response
+                return AhuResult.Success(it)
             }
-            response.code = -1
-            response.msg = "数据返回错误"
-
-        } else {
-            response.code = -1
-            response.msg = "请求接口失败"
+            return AhuResult.Failure(AhuError.Server(-1, "数据返回错误"))
         }
 
-        return response
+        return res.toClosedFailure("请求接口失败")
     }
 
-    override suspend fun getCardInfo(): AHUResponse<CardInfo> {
-        val response = AHUResponse<CardInfo>()
+    override suspend fun getCardInfo(): AhuResult<CardInfo> {
         val result = YcardApi.authorizedCall { loadCardRecharge() }
         val body = result.body()
-        if (result.isSuccessful && body != null) {
-            response.data = body
-            response.code = 0
-            response.msg = "success"
+        return if (result.isSuccessful && body != null) {
+            AhuResult.Success(body)
         } else {
-            response.code = result.code().takeIf { it != 0 } ?: -1
-            response.msg = "校园卡信息加载失败：${result.message()}"
+            result.toClosedFailure("校园卡信息加载失败：${result.message()}")
         }
-        return response
     }
 
-    override suspend fun getOrderThirdData(request : RequestBody): AHUResponse<Response<ResponseBody>> {
-        val response = AHUResponse<Response<ResponseBody>>()
-        response.data = YcardApi.authorizedCall { getOrderThirdData(request.toFormBody()) }
-        response.code = if (response.data?.isSuccessful == true) 0 else -1
-        response.msg = response.data?.message().orEmpty()
-        return response
+    override suspend fun getOrderThirdData(request : RequestBody): AhuResult<Response<ResponseBody>> {
+        val call = YcardApi.authorizedCall { getOrderThirdData(request.toFormBody()) }
+        return if (call.isSuccessful) {
+            AhuResult.Success(call)
+        } else {
+            call.toClosedFailure()
+        }
     }
 
-    override suspend fun pay(request: RequestBody): AHUResponse<Response<ResponseBody>> {
-        val response = AHUResponse<Response<ResponseBody>>()
-        response.data = when (request) {
+    override suspend fun pay(request: RequestBody): AhuResult<Response<ResponseBody>> {
+        val call = when (request) {
             is BathroomPayInfoRequest -> YcardApi.authorizedCall(YcardApi.BATHROOM_API) {
                 getPayInfo(request.orderId)
             }
@@ -644,17 +461,17 @@ class SdkDataSource : BaseDataSource {
             }
             else -> YcardApi.authorizedCall { pay(request.toFormBody()) }
         }
-        response.code = if (response.data?.isSuccessful == true) 0 else -1
-        response.msg = response.data?.message().orEmpty()
-        return response
+        return if (call.isSuccessful) {
+            AhuResult.Success(call)
+        } else {
+            call.toClosedFailure()
+        }
     }
 
-    override suspend fun getSchoolCalendar(): AHUResponse<Response<ResponseBody>> {
-        val response = AHUResponse<Response<ResponseBody>>()
-
+    override suspend fun getSchoolCalendar(): AhuResult<Response<ResponseBody>> {
         if (RustSDK.isNativeLoaded()) {
             try {
-                val context = AHUApplication.getApp()
+                val context = AppEnvironmentHolder.context()
                 val dir = File(context.filesDir, "images")
                 if (!dir.exists()) dir.mkdirs()
                 val file = File(dir, "xiaoli-rust-download.jpg")
@@ -662,13 +479,12 @@ class SdkDataSource : BaseDataSource {
 
                 val ok = RustSDK.downloadSchoolCalendar(file.absolutePath)
                 if (ok && file.exists() && file.length() > 0L) {
-                    response.code = 0
-                    response.msg = "success"
-                    response.data = Response.success(
-                        file.inputStream().source().buffer()
-                            .asResponseBody("image/jpeg".toMediaType(), file.length())
+                    return AhuResult.Success(
+                        Response.success(
+                            file.inputStream().source().buffer()
+                                .asResponseBody("image/jpeg".toMediaType(), file.length())
+                        )
                     )
-                    return response
                 }
                 Log.w(TAG, "downloadSchoolCalendar returned false or empty file, fallback to Android API")
             } catch (e: Throwable) {
@@ -679,10 +495,10 @@ class SdkDataSource : BaseDataSource {
         return crawlerFallback.getSchoolCalendar()
     }
 
-    override suspend fun getSchoolCalendarYears(): AHUResponse<SchoolCalendarYearsResponse> =
+    override suspend fun getSchoolCalendarYears(): AhuResult<SchoolCalendarYearsResponse> =
         crawlerFallback.getSchoolCalendarYears()
 
-    override suspend fun getSchoolCalendar(year: String): AHUResponse<Response<ResponseBody>> =
+    override suspend fun getSchoolCalendar(year: String): AhuResult<Response<ResponseBody>> =
         crawlerFallback.getSchoolCalendar(year)
 
 

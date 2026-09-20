@@ -21,9 +21,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
-import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.kyant.monet.a1
 import com.kyant.monet.withNight
 
@@ -57,14 +57,14 @@ private fun RadiantAtAGlance(
     enabled: Boolean
 ) {
     val currentCourse = todayCourses.find {
-        currentMinutes in ScheduleViewModel.getCourseTimeRangeInMinutes(it)
+        currentMinutes in ScheduleSectionTimes.getCourseTimeRangeInMinutes(it)
     }
     val currentCourseIndex = todayCourses.indexOfFirst {
-        val range = ScheduleViewModel.getCourseTimeRangeInMinutes(it)
+        val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(it)
         currentMinutes in range || currentMinutes < range.first
     }.takeIf { it != -1 } ?: todayCourses.lastIndex
     val hasRemainingCourses = todayCourses.isNotEmpty() &&
-        currentMinutes <= ScheduleViewModel.getCourseTimeRangeInMinutes(todayCourses.last()).last
+        currentMinutes <= ScheduleSectionTimes.getCourseTimeRangeInMinutes(todayCourses.last()).last
     val headline = when {
         currentCourse != null -> "正在上课 · ${currentCourse.name}"
         hasRemainingCourses -> "下节课是 ${todayCourses[currentCourseIndex].name}"
@@ -73,14 +73,14 @@ private fun RadiantAtAGlance(
     }
     val subtitle = when {
         currentCourse != null -> {
-            val duration = ScheduleViewModel.getCourseTimeRangeInMinutes(currentCourse).last -
+            val duration = ScheduleSectionTimes.getCourseTimeRangeInMinutes(currentCourse).last -
                 currentMinutes
             "距下课还有 ${formatCourseDuration(duration)}"
         }
 
         hasRemainingCourses -> {
             val nextCourse = todayCourses[currentCourseIndex]
-            val duration = ScheduleViewModel.getCourseTimeRangeInMinutes(nextCourse).first -
+            val duration = ScheduleSectionTimes.getCourseTimeRangeInMinutes(nextCourse).first -
                 currentMinutes
             "还有 ${formatCourseDuration(duration)}，在 ${nextCourse.location}"
         }

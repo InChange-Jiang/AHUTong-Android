@@ -1,7 +1,7 @@
 package com.ahu.ahutong.data.mock
 
 import android.content.Context
-import com.ahu.ahutong.AHUApplication
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 
 data class MockEditableEndpointOption(
     val key: String,
@@ -139,5 +139,5 @@ object MockOverrideStore {
         prefs().all.keys
 
     private fun prefs() =
-        AHUApplication.getApp().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        AppEnvironmentHolder.context().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }

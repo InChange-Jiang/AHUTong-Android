@@ -11,6 +11,8 @@ import com.ahu.ahutong.data.crawler.model.jwxt.FreeRoom
 import com.ahu.ahutong.data.crawler.model.jwxt.GetBuildingsResponseItem
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
 import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCount
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverPage
 import com.ahu.ahutong.data.model.BathRoom
 import com.ahu.ahutong.data.model.BathroomTelInfo
 import com.ahu.ahutong.data.model.Card
@@ -67,6 +69,17 @@ class MockDataSource : BaseDataSource {
     ): AhuResult<BathroomTelInfo> = unavailable()
 
     override suspend fun getCardInfo(): AhuResult<CardInfo> = unavailable()
+
+    override suspend fun getBillPage(
+        page: Int,
+        size: Int,
+        timeFrom: String?,
+        timeTo: String?,
+        type: Int?
+    ): AhuResult<TurnoverPage> = unavailable()
+
+    override suspend fun getBillSummary(timeFrom: String, timeTo: String): AhuResult<TurnoverCount> =
+        unavailable()
 
     override suspend fun getOrderThirdData(
         request: RequestBody

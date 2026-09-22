@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,6 +30,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.model.ycard.TurnoverRecord
 import com.ahu.ahutong.ui.components.AppCard
+import com.ahu.ahutong.ui.components.AppButton
+import com.ahu.ahutong.ui.components.AppButtonVariant
+import com.ahu.ahutong.ui.components.AppFilterChip
+import com.ahu.ahutong.ui.components.AppModalBottomSheet
+import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppDialog
 import com.ahu.ahutong.ui.components.AppDialogAction
 import com.ahu.ahutong.ui.components.AppPageScaffold
@@ -56,12 +62,14 @@ fun Billing(
     val hasMore by viewModel.hasMore.collectAsState()
     val loadingMore by viewModel.loadingMore.collectAsState()
     var detailRecord by remember { mutableStateOf<TurnoverRecord?>(null) }
+    var showFilter by remember { mutableStateOf(false) }
 
     AppPageScaffold(
         title = "账单",
         onBack = onBack,
         modifier = Modifier.fillMaxSize(),
         actions = listOf(
+            TrailingAction(Icons.Outlined.FilterList, "筛选") { showFilter = true },
             TrailingAction(Icons.Outlined.Refresh, "刷新") { viewModel.refresh() }
         ),
         lazyContent = {
@@ -132,6 +140,132 @@ fun Billing(
     detailRecord?.let { record ->
         BillingDetailDialog(record = record, onDismiss = { detailRecord = null })
     }
+
+    if (showFilter) {
+        BillingFilterSheet(
+            viewModel = viewModel,
+            onDismiss = { showFilter = false }
+        )
+    }
+}
+
+/** 筛选抽屉：月份 / 类型 / 金额三栏目，可交集，再次点击置空即全选。 */
+@Composable
+private fun BillingFilterSheet(
+    viewModel: BillingViewModel,
+    onDismiss: () -> Unit
+) {
+    val initMonth by viewModel.monthFilter.collectAsState()
+    val initType by viewModel.typeFilter.collectAsState()
+    val initAmount by viewModel.amountRange.collectAsState()
+
+    var monthSel by remember { mutableStateOf(initMonth) }
+    var typeSel by remember { mutableStateOf(initType) }
+    var minText by remember {
+        mutableStateOf(initAmount.first?.let { fenToYuanText(it) } ?: "")
+    }
+    var maxText by remember {
+        mutableStateOf(initAmount.second?.let { fenToYuanText(it) } ?: "")
+    }
+
+    fun apply(
+        month: BillingViewModel.MonthFilter?,
+        type: Boolean?,
+        minFen: Long?,
+        maxFen: Long?
+    ) {
+        viewModel.applyFilters(month, type, minFen, maxFen)
+        onDismiss()
+    }
+
+    AppModalBottomSheet(
+        title = "筛选账单",
+        onDismissRequest = onDismiss
+    ) {
+        Text(
+            text = "月份",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                BillingViewModel.MonthFilter.THIS_MONTH to "本月",
+                BillingViewModel.MonthFilter.LAST_MONTH to "上月",
+                BillingViewModel.MonthFilter.LAST_3_MONTHS to "近三月"
+            ).forEach { (value, label) ->
+                AppFilterChip(
+                    selected = monthSel == value,
+                    onClick = { monthSel = if (monthSel == value) null else value },
+                    label = { Text(label) }
+                )
+            }
+        }
+        Text(
+            text = "类型",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(true to "支出", false to "收入").forEach { (value, label) ->
+                AppFilterChip(
+                    selected = typeSel == value,
+                    onClick = { typeSel = if (typeSel == value) null else value },
+                    label = { Text(label) }
+                )
+            }
+        }
+        Text(
+            text = "金额（元）",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppTextField(
+                value = minText,
+                onValueChange = { minText = it },
+                label = "最低",
+                modifier = Modifier.weight(1f)
+            )
+            Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AppTextField(
+                value = maxText,
+                onValueChange = { maxText = it },
+                label = "最高",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            AppButton(
+                onClick = { apply(null, null, null, null) },
+                variant = AppButtonVariant.Secondary,
+                modifier = Modifier.weight(1f)
+            ) { Text("清空全部") }
+            AppButton(
+                onClick = {
+                    apply(
+                        monthSel,
+                        typeSel,
+                        minText.toDoubleOrNull()?.let { (it * 100).toLong() },
+                        maxText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    )
+                },
+                variant = AppButtonVariant.Primary,
+                modifier = Modifier.weight(1f)
+            ) { Text("应用") }
+        }
+    }
+}
+
+/** 分 → 元文本（整数元不带小数点）。 */
+private fun fenToYuanText(fen: Long): String {
+    val yuan = fen / 100.0
+    return if (yuan % 1.0 == 0.0) yuan.toLong().toString() else yuan.toString()
 }
 
 /** 本月收支汇总头卡。金额单位：分。 */

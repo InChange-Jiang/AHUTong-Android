@@ -20,7 +20,7 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import com.ahu.ahutong.data.model.AppUiTheme
 
-private val primaryDestinationOrder = listOf("home", "schedule", "tools", "settings")
+private val primaryDestinationOrder = listOf("home", "schedule", "xuexiaotong", "settings")
 
 private fun isPrimaryDestinationTransition(fromRoute: String?, toRoute: String?): Boolean =
     fromRoute in primaryDestinationOrder && toRoute in primaryDestinationOrder

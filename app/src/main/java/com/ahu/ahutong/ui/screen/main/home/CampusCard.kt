@@ -250,77 +250,51 @@ private fun CardView(
                 .fillMaxHeight()
                 .background(96.n1 withNight 10.n1)
         )
-        // 账单入口（与充值按钮同款形态，位于其左侧）
-        Box(
+        // 账单/充值：纵向叠放在单按钮宽度内（小屏不再吃掉半个卡片），图标 16dp 横排文字
+        Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .width(76.dp)
-                .then(
-                    if (enabled) {
-                        Modifier.clickable {
-                            navController.navigate("billing")
-                        }
-                    } else {
-                        Modifier
-                    }
-                )
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
+                .width(84.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_card_billing),
-                    contentDescription = "账单",
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = "账单",
-                    fontWeight = FontWeight.Medium,
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .background(96.n1 withNight 10.n1)
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(76.dp)
-                .then(
-                    if (enabled) {
-                        Modifier.clickable {
-                            navController.navigate("card_balance_deposit")
-                        }
-                    } else {
-                        Modifier
-                    }
-                )
-                .padding(8.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_income),
-                    contentDescription = "充值",
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = "充值",
-                    fontWeight = FontWeight.Medium,
-                    style = MaterialTheme.typography.labelSmall
-                )
+            listOf(
+                Triple(R.drawable.ic_card_billing, "账单", "billing"),
+                Triple(R.drawable.ic_income, "充值", "card_balance_deposit")
+            ).forEachIndexed { index, (iconId, label, route) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .then(
+                            if (enabled) {
+                                Modifier.clickable { navController.navigate(route) }
+                            } else {
+                                Modifier
+                            }
+                        ),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        painter = painterResource(iconId),
+                        contentDescription = label,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = label,
+                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                if (index == 0) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp)
+                            .height(1.dp)
+                            .background(96.n1 withNight 20.n1)
+                    )
+                }
             }
         }
     }

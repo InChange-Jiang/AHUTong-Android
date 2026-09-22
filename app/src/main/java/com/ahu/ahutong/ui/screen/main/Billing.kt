@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.screen.main
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -95,11 +96,25 @@ fun Billing(
                             )
                         }
                     } else {
-                        items(records, key = { it.orderId }) { record ->
-                            BillingRecordItem(
-                                record = record,
-                                onClick = { detailRecord = record }
-                            )
+                        // 细则收进同一张卡片，条目间分隔线（不再一条一卡）
+                        item(key = "list") {
+                            AppCard(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                            ) {
+                                records.forEachIndexed { index, record ->
+                                    BillingRecordItem(
+                                        record = record,
+                                        onClick = { detailRecord = record }
+                                    )
+                                    if (index < records.lastIndex) {
+                                        androidx.compose.material3.HorizontalDivider(
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            color = 92.n1 withNight 22.n1
+                                        )
+                                    }
+                                }
+                            }
                         }
                         item(key = "footer") {
                             BillingListFooter(
@@ -122,7 +137,7 @@ fun Billing(
 /** 本月收支汇总头卡。金额单位：分。 */
 @Composable
 private fun BillingSummaryCard(expensesFen: Long?, incomeFen: Long?) {
-    AppCard(modifier = Modifier.fillMaxWidth()) {
+    AppCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
@@ -161,12 +176,11 @@ private fun BillingSummaryCard(expensesFen: Long?, incomeFen: Long?) {
 
 @Composable
 private fun BillingRecordItem(record: TurnoverRecord, onClick: () -> Unit) {
-    AppCard(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = 16.dp, vertical = 12.dp
-        ),
-        onClick = onClick
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

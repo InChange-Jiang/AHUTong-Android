@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
@@ -113,7 +114,7 @@ fun CourseStrip(
         AppCard(
             onClick = onOpenSchedule,
             modifier = Modifier
-                .height(88.dp)
+                .heightIn(min = 88.dp)
                 .zIndex(1f - offset)
                 .graphicsLayer {
                     val t = offset.coerceIn(0f, 1.5f)

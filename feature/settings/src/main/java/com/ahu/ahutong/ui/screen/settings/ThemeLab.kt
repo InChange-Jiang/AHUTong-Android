@@ -102,7 +102,7 @@ fun ThemeLab(
                 title = "界面风格",
                 subtitle = "整套组件与交互风格的基线；下方槽位可在此基础上逐件混搭",
                 selected = appUiTheme,
-                choices = AppUiTheme.entries.map { SettingsChoice(it, it.displayName) },
+                choices = AppUiTheme.entries.filter { it != AppUiTheme.LIQUID_GLASS }.map { SettingsChoice(it, it.displayName) },
                 onSelected = viewModel::setAppUiTheme,
                 showDivider = false
             )

@@ -69,11 +69,15 @@ fun CourseDetailDialog(
                             courses == (course.weekIndexes.size - 1) * 2 && course.weekIndexes.first()%2==0 -> "${course.weekIndexes.first()} - ${course.weekIndexes.last()} (单周)"    // [2,4,6,8]
                             else -> course.weekIndexes.toString()  //[1,2,3,5,6,7,11]
                         }
-                    }周的周${numToChinese[course.weekday]}，第 ${course.startTime}-${course.startTime + course.length - 1} 节课${
-                        ScheduleSectionTimes.getCourseClockRange(course)?.let { "（$it）" }.orEmpty()
-                    }",
+                    }周的周${numToChinese[course.weekday]}，第 ${course.startTime}-${course.startTime + course.length - 1} 节课",
                     style = MaterialTheme.typography.titleMedium
                 )
+                ScheduleSectionTimes.getCourseClockRange(course)?.let { clockRange ->
+                    Text(
+                        text = clockRange,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
             Box(
                 modifier = Modifier

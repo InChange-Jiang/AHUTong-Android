@@ -45,8 +45,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -79,6 +77,7 @@ import com.ahu.ahutong.data.xuexiaotong.ChaoxingSession
 import com.ahu.ahutong.data.xuexiaotong.CourseProgress
 import com.ahu.ahutong.data.xuexiaotong.CustomEvent
 import com.ahu.ahutong.data.xuexiaotong.Work
+import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
 import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
@@ -777,11 +776,10 @@ private fun BottomSheetSwitchItem(label: String, checked: Boolean, onToggle: () 
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, modifier = Modifier.weight(1f), fontSize = 14.sp)
-        Switch(
+        AppToggle(
             checked = checked,
             onCheckedChange = { onToggle() },
-            modifier = Modifier.scale(0.78f),
-            colors = SwitchDefaults.colors(checkedTrackColor = MaterialTheme.colorScheme.primary)
+            contentDescription = label
         )
     }
 }

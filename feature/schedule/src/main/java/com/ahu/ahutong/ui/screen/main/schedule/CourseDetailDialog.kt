@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.data.model.Course
+import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import com.ahu.ahutong.ui.components.AppDialogSurface
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
@@ -68,7 +69,9 @@ fun CourseDetailDialog(
                             courses == (course.weekIndexes.size - 1) * 2 && course.weekIndexes.first()%2==0 -> "${course.weekIndexes.first()} - ${course.weekIndexes.last()} (单周)"    // [2,4,6,8]
                             else -> course.weekIndexes.toString()  //[1,2,3,5,6,7,11]
                         }
-                    }周的周${numToChinese[course.weekday]}，第 ${course.startTime}-${course.startTime + course.length - 1} 节课",
+                    }周的周${numToChinese[course.weekday]}，第 ${course.startTime}-${course.startTime + course.length - 1} 节课${
+                        ScheduleSectionTimes.getCourseClockRange(course)?.let { "（$it）" }.orEmpty()
+                    }",
                     style = MaterialTheme.typography.titleMedium
                 )
             }

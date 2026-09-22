@@ -46,6 +46,14 @@ object ScheduleSectionTimes {
             clock.substring(separator + 1).toInt()
     }
 
+    /** 课程的钟表时间范围，如 "08:00-09:35"；节次未知时返回 null。 */
+    fun getCourseClockRange(course: Course): String? {
+        if (course.length <= 0) return null
+        val first = timetable[course.startTime] ?: return null
+        val last = timetable[course.startTime + course.length - 1] ?: return null
+        return "${first.substringBefore('-')}-${last.substringAfter('-')}"
+    }
+
     fun getCourseTimeRangeInMinutes(course: Course): IntRange {
         val startSection = course.startTime
         val sectionCount = course.length

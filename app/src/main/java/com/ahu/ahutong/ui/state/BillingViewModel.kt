@@ -136,10 +136,14 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     private fun loadPage(page: Int) {
         viewModelScope.launch {
             _loadingMore.value = true
-            // 不传时间参数：服务端默认返回当月数据
+            // 显式传设备当前月区间——「服务端默认当月」跟的是服务器时钟，
+            // 设备时间（mock 时间）对它无感，必须本地算好传过去
+            val (from, to) = currentMonthRange
             when (val result = AHURepository.getBillPage(
                 page = page,
                 size = PAGE_SIZE,
+                timeFrom = from,
+                timeTo = to,
                 type = _typeFilter.value?.let { if (it) 2 else 1 }
             )) {
                 is AhuResult.Success -> {

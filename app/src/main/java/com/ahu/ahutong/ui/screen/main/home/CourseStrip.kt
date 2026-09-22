@@ -17,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -123,6 +124,9 @@ fun CourseStrip(
                     scaleX = 1f - 0.12f * t
                     scaleY = 1f - 0.12f * t
                     alpha = 1f - 0.45f * t
+                    // alpha<1 会触发离屏提升(saveLayer) 隐式裁剪越界的玻璃阴影；
+                    // ModulateAlpha 直接调制绘制命令，跳过离屏缓冲（调研文档已源码级核实）
+                    compositingStrategy = CompositingStrategy.ModulateAlpha
                 }
         )
     }

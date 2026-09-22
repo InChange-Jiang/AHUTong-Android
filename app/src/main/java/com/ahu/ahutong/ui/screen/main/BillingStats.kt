@@ -66,33 +66,37 @@ fun BillingStats(
         title = "账单统计",
         onBack = onBack,
         modifier = Modifier.fillMaxSize(),
-        content = {
+        lazyContent = {
         when (val s = state) {
             is BillingStatsViewModel.StatsState.Loading -> {
-                AppStateCard.Loading(message = "正在分析本月账单…")
+                item { AppStateCard.Loading(message = "正在分析本月账单…") }
             }
             is BillingStatsViewModel.StatsState.Error -> {
-                AppStateCard.Error(message = s.message, onRetry = { viewModel.refresh() })
+                item { AppStateCard.Error(message = s.message, onRetry = { viewModel.refresh() }) }
             }
             is BillingStatsViewModel.StatsState.Ready -> {
                 val summary = s.report.currentMonth
                 if (summary == null || summary.expenseCount == 0) {
-                    AppStateCard.Empty(
-                        message = "本月暂无消费记录",
-                        subtitle = "有消费后这里会生成统计分析"
-                    )
+                    item {
+                        AppStateCard.Empty(
+                            message = "本月暂无消费记录",
+                            subtitle = "有消费后这里会生成统计分析"
+                        )
+                    }
                 } else {
-                    StatsOverviewCard(summary)
-                    StatsTrendChart(
-                        summary = summary,
-                        onDayClick = { detailDay = it }
-                    )
-                    StatsFoodSplit(summary)
-                    StatsCanteenRank(summary)
-                    StatsMealDistribution(summary)
-                    StatsNonCanteenCategories(summary)
-                    StatsMerchantTop(summary)
-                    StatsHighDays(summary, onDayClick = { detailDay = it })
+                    item { StatsOverviewCard(summary) }
+                    item {
+                        StatsTrendChart(
+                            summary = summary,
+                            onDayClick = { detailDay = it }
+                        )
+                    }
+                    item { StatsFoodSplit(summary) }
+                    item { StatsCanteenRank(summary) }
+                    item { StatsMealDistribution(summary) }
+                    item { StatsNonCanteenCategories(summary) }
+                    item { StatsMerchantTop(summary) }
+                    item { StatsHighDays(summary, onDayClick = { detailDay = it }) }
                 }
             }
         }

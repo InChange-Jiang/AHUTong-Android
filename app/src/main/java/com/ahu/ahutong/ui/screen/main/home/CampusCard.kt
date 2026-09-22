@@ -250,6 +250,46 @@ private fun CardView(
                 .fillMaxHeight()
                 .background(96.n1 withNight 10.n1)
         )
+        // 账单入口（与充值按钮同款形态，位于其左侧）
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(76.dp)
+                .then(
+                    if (enabled) {
+                        Modifier.clickable {
+                            navController.navigate("billing")
+                        }
+                    } else {
+                        Modifier
+                    }
+                )
+                .padding(8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_card_billing),
+                    contentDescription = "账单",
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = "账单",
+                    fontWeight = FontWeight.Medium,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(96.n1 withNight 10.n1)
+        )
         Box(
             modifier = Modifier
                 .fillMaxHeight()

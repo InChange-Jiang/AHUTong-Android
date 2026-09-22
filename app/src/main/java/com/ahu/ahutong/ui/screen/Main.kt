@@ -43,6 +43,7 @@ import com.ahu.ahutong.appwidget.ScheduleAppWidgetReceiver
 import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
 import com.ahu.ahutong.ui.screen.main.BathroomDeposit
+import com.ahu.ahutong.ui.screen.main.Billing
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
@@ -446,6 +447,10 @@ fun Main(
 
             animatedComposable("card_balance_deposit") {
                 CardBalanceDeposit(navController = navController)
+            }
+
+            animatedComposable("billing") {
+                Billing(onBack = { navController.popBackStack() })
             }
 
             animatedComposable("bathroom_deposit") {

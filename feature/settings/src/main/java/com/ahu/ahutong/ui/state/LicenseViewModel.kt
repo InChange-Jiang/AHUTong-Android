@@ -13,12 +13,6 @@ class LicenseViewModel : ViewModel() {
     val license by lazy {
         listOf(
             License(
-                "Ahu_Plus",
-                "yoki-Clark",
-                "https://github.com/yoki-Clark/Ahu_Plus",
-                "该仓库由于作者策略暂时关闭，更新后会同步到新仓库"
-            ),
-            License(
                 "AndroidX",
                 "Google",
                 "https://source.android.com",
@@ -115,6 +109,12 @@ class LicenseViewModel : ViewModel() {
                 "InChange-Jiang",
                 "https://github.com/InChange-Jiang/Xuexiaotong",
                 "Apache License 2.0"
+            ),
+            License(
+                "Ahu_Plus",
+                "yoki-Clark",
+                "https://github.com/yoki-Clark/Ahu_Plus",
+                "该仓库由于作者策略暂时关闭，更新后会同步到新仓库"
             ),
             License(
                 "More...",

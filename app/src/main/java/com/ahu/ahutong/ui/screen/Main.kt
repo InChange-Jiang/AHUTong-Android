@@ -22,6 +22,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
@@ -69,6 +72,7 @@ import com.ahu.ahutong.ui.screen.main.Weather
 import com.ahu.ahutong.ui.screen.xuexiaotong.XuexiaotongScreen
 import com.ahu.ahutong.ui.screen.settings.Contributors
 import com.ahu.ahutong.ui.screen.settings.Debug
+import com.ahu.ahutong.ui.screen.settings.PrivacyPolicyScreen
 import com.ahu.ahutong.ui.screen.settings.License
 import com.ahu.ahutong.R
 import androidx.compose.ui.res.stringResource
@@ -402,6 +406,17 @@ fun Main(
                     mainViewModel = mainViewModel,
                     scheduleViewModel = scheduleViewModel
                 )
+            }
+            animatedComposable("settings__privacy_policy") {
+                val res = LocalContext.current.resources
+                val policyMarkdown by produceState<String?>(null) {
+                    value = withContext(Dispatchers.IO) {
+                        res.openRawResource(R.raw.privacy_policy).bufferedReader().use { it.readText() }
+                    }
+                }
+                policyMarkdown?.let {
+                    PrivacyPolicyScreen(markdown = it, onBack = { navController.popBackStack() })
+                }
             }
             animatedComposable("settings__license") {
                 License(

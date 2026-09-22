@@ -52,3 +52,7 @@ dependencies {
     implementation(libs.kyant0.backdrop)
     implementation(libs.kyant0.capsule)
 }
+
+dependencies {
+    testImplementation(kotlin("test"))
+}

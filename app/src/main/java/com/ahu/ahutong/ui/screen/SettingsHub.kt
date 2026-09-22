@@ -29,6 +29,7 @@ fun SettingsHub(
         onNavigateToThemeLab = { navController.navigate("settings__theme_lab") },
         onNavigateToDebug = { navController.navigate("debug") },
         onNavigateToLicense = { navController.navigate("settings__license") },
+        onNavigateToPrivacyPolicy = { navController.navigate("settings__privacy_policy") },
         onNavigateToContributors = { navController.navigate("settings__contributors") },
         onDataCleared = { navController.navigate("login") { popUpTo(0) } },
         onCheckUpdate = mainViewModel::checkApkUpdateManually,

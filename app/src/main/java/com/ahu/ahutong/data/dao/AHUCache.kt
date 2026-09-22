@@ -620,6 +620,14 @@ object AHUCache {
         userPutString("privacyAccepted", true.toString())
     }
 
+    /** 隐私政策版本：政策更新后递增 CURRENT_PRIVACY_POLICY_VERSION 触发重新征得同意。 */
+    fun privacyPolicyVersion(): Int =
+        userGetString("privacyPolicyVersion")?.toIntOrNull() ?: 0
+
+    fun savePrivacyPolicyVersion(version: Int) {
+        userPutString("privacyPolicyVersion", version.toString())
+    }
+
     fun isBusinessAccepted(): Boolean{
         userGetString("businessAccepted")?.toBooleanStrictOrNull()?.let { return it }
         val value = kv.getBoolean("businessAccepted",false)

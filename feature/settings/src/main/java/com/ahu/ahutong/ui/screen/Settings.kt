@@ -86,6 +86,7 @@ fun Settings(
     onNavigateToThemeLab: () -> Unit = {},
     onNavigateToDebug: () -> Unit,
     onNavigateToLicense: () -> Unit,
+    onNavigateToPrivacyPolicy: () -> Unit = {},
     onNavigateToContributors: () -> Unit,
     onDataCleared: () -> Unit,
     onCheckUpdate: ((String) -> Unit) -> Unit,
@@ -253,6 +254,16 @@ fun Settings(
             modifier = Modifier.padding(horizontal = 16.dp),
             backdrop = backdrop
         ) {
+            SettingsActionRow(
+                title = "隐私政策",
+                leadingIcon = when {
+                    useMiuixIcons -> MiuixIcons.Useful.Info
+                    isRadiant -> null
+                    else -> Icons.AutoMirrored.Outlined.Article
+                },
+                leadingPainter = if (isRadiant) painterResource(R.drawable.ic_privacy_safe) else null,
+                onClick = onNavigateToPrivacyPolicy
+            )
             SettingsActionRow(
                 title = licenseTitle,
                 leadingIcon = when {

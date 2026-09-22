@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -52,6 +53,7 @@ import java.util.Locale
 @Composable
 fun Billing(
     onBack: () -> Unit,
+    onOpenStats: () -> Unit = {},
     viewModel: BillingViewModel = hiltViewModel()
 ) {
     val records by viewModel.records.collectAsState()
@@ -67,6 +69,7 @@ fun Billing(
         onBack = onBack,
         modifier = Modifier.fillMaxSize(),
         actions = listOf(
+            TrailingAction(Icons.Outlined.QueryStats, "统计") { onOpenStats() },
             TrailingAction(Icons.Outlined.FilterList, "筛选") { showFilter = true },
             TrailingAction(Icons.Outlined.Refresh, "刷新") { viewModel.refresh() }
         ),

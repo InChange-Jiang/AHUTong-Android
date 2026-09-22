@@ -44,6 +44,7 @@ import com.ahu.ahutong.data.gray.GrayFeatures
 import com.ahu.ahutong.data.gray.GrayReleaseManager
 import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.Billing
+import com.ahu.ahutong.ui.screen.main.BillingStats
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
@@ -450,7 +451,14 @@ fun Main(
             }
 
             animatedComposable("billing") {
-                Billing(onBack = { navController.popBackStack() })
+                Billing(
+                    onBack = { navController.popBackStack() },
+                    onOpenStats = { navController.navigate("billing_stats") }
+                )
+            }
+
+            animatedComposable("billing_stats") {
+                BillingStats(onBack = { navController.popBackStack() })
             }
 
             animatedComposable("bathroom_deposit") {

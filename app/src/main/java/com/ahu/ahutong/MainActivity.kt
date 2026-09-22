@@ -55,9 +55,12 @@ import com.ahu.ahutong.data.session.SessionStore
 import com.ahu.ahutong.data.session.AhuSessionState
 import com.ahu.ahutong.data.session.AhuSession
 import com.ahu.ahutong.data.update.ApkVerifier
+import com.ahu.ahutong.data.debug.DebugClock
+import java.time.LocalDate
 
 private const val DEBUG_BUILD_NOTICE_DURATION_MS = 3_000L
 private const val STARTUP_BACKGROUND_WORK_DELAY_MS = 250L
+private const val DAY_WATCH_INTERVAL_MS = 60_000L
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -76,6 +79,10 @@ class MainActivity : ComponentActivity() {
     private val scheduleViewModel: ScheduleViewModel by viewModels()
     private val aboutViewModel: AboutViewModel by viewModels()
     private val preferencesViewModel: PreferencesViewModel by viewModels()
+
+    /** 最近一次确认的日期：常开跨过午夜时靠它发现「该按新的一天重算了」。 */
+    @Volatile
+    private var lastKnownDate: LocalDate? = null
 
 
     @OptIn(ExperimentalAnimationApi::class)
@@ -112,6 +119,15 @@ class MainActivity : ComponentActivity() {
                 }
                 val isReLoginDialogShown =
                     sessionStatus == AhuSessionState.Status.Expired && !dismissedExpiredSession
+
+                // 日界守望：前台常开跨过午夜时，每分钟对一次日期，跨天即按新的一天重算
+                // （周次/星期几/今日课程/课程提醒排期都挂在 loadConfig 上）。
+                LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(DAY_WATCH_INTERVAL_MS)
+                        checkDayRollover()
+                    }
+                }
 
 //                if (showHotUpdateDialog) {
 //                    HotUpdateDialog(
@@ -228,6 +244,30 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         behaviorRuntime.setForeground(true, true)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 回到前台立即对一次日期：后台挂过午夜的用户回来的第一眼就该是新的一天。
+        checkDayRollover()
+    }
+
+    /**
+     * 跨天 rollover：scheduleConfig 只随 loadConfig 写入，不触发它就会把「今天」停在昨天。
+     * CurrentWeekResolver 本身按当天无状态推算，这里只负责「跨天了就重载」这个触发。
+     * loadConfig 内部会顺带重排课程提醒。
+     */
+    private fun checkDayRollover() {
+        val today = DebugClock.nowLocalDate()
+        if (lastKnownDate == null) {
+            lastKnownDate = today
+            return
+        }
+        if (today == lastKnownDate) return
+        lastKnownDate = today
+        if (SessionStore.isLoggedIn() || AHUCache.getMockData()) {
+            scheduleViewModel.loadConfig()
+        }
     }
 
     override fun onStop() {

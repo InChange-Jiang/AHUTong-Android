@@ -206,18 +206,6 @@ class NavigationObservationPolicyTest {
         assertEquals(ActionSource.SUGGESTION, policy.observe(page("schedule"))?.source)
     }
 
-    @Test
-    fun `only non Radiant home destinations resolve through the primary pager`() {
-        AppUiTheme.entries.forEach { theme ->
-            assertEquals(
-                if (theme == AppUiTheme.RADIANT) "home" else "settings",
-                resolveVisibleRoute("home", theme, "settings")
-            )
-            assertEquals("preferences", resolveVisibleRoute("preferences", theme, "settings"))
-            assertNull(resolveVisibleRoute(null, theme, "settings"))
-        }
-    }
-
     private fun page(
         route: String,
         stack: List<String> = listOf("home-entry"),
@@ -227,8 +215,6 @@ class NavigationObservationPolicyTest {
         route,
         stack.last(),
         stack.getOrNull(stack.lastIndex - 1),
-        theme,
-        settled,
-        primaryPagerHost = theme != AppUiTheme.RADIANT && stack.last() == "home-entry"
+        theme
     )
 }

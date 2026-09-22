@@ -167,7 +167,22 @@ class AhuSessionContractTest {
         }
 
     @Test
-    fun `a failed refresh expires the session instead of retrying`() = runBlocking {
+    fun `a rejected refresh expires the session`() = runBlocking {
+        val subject = session(
+            login = FakeSessionSignIn(AhuResult.Failure(AhuError.Unauthorized("密码错误"))),
+            credentials = FakeCredentialVault("stored-secret"),
+            account = FakeSessionAccount(user)
+        )
+        AhuSessionState.markAuthenticated()
+
+        val refreshed = subject.ensureFresh(SessionRefreshCoordinator.currentGeneration())
+
+        assertFalse(refreshed)
+        assertEquals(AhuSessionState.Status.Expired, subject.state.value)
+    }
+
+    @Test
+    fun `a transient refresh failure does not expire the session`() = runBlocking {
         val subject = session(
             login = FakeSessionSignIn(AhuResult.Failure(AhuError.Network)),
             credentials = FakeCredentialVault("stored-secret"),
@@ -178,7 +193,8 @@ class AhuSessionContractTest {
         val refreshed = subject.ensureFresh(SessionRefreshCoordinator.currentGeneration())
 
         assertFalse(refreshed)
-        assertEquals(AhuSessionState.Status.Expired, subject.state.value)
+        // 网络抖动不该弹重新登录：保持已认证，冷却窗外下个请求会自愈
+        assertEquals(AhuSessionState.Status.Authenticated, subject.state.value)
     }
 
     @Test

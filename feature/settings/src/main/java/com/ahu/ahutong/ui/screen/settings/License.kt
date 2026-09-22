@@ -79,7 +79,8 @@ fun License(
                             .clickable {
                                 if (license.licenseAsset != null || license.noticeAsset != null) {
                                     selectedLicense = license
-                                } else {
+                                } else if (license.name != "Ahu_Plus") {
+                                    // Ahu_Plus 仓库按作者策略暂时关闭，不做链接跳转
                                     openSource(license)
                                 }
                             }

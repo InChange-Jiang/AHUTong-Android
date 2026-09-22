@@ -15,20 +15,42 @@ import okhttp3.Request
  * 会话层在自己的实现里写 AhuSessionState。
  */
 object SessionRefreshCoordinator {
+
+    /**
+     * 一次续期尝试的结局。
+     *
+     * 失败分两类，待遇不同：
+     * - [TRANSIENT]：网络抖动、超时、上游 5xx 等可自愈失败。封禁带冷却窗
+     *   （[TRANSIENT_COOLDOWN_MS]），窗外第一个请求获准再试——旧实现（0492acc 之前）
+     *   正是靠"下个请求再试"自愈的，永久封禁会把一次校园网抖动变成强制重新登录；
+     * - [REJECTED]：凭据被明确拒绝（Unauthorized / 4xx）或本机没有凭据。
+     *   重试无意义且可能触发风控，封禁到下一次真实登录（[onAuthenticated]）。
+     */
+    enum class RefreshOutcome { SUCCESS, TRANSIENT, REJECTED }
+
+    enum class FailureKind { TRANSIENT, REJECTED }
+
     private val refreshMutex = Mutex()
 
     @Volatile
     private var generation = 0L
 
     /**
-     * 已经失败过的那一代。
-     *
-     * ADR 0002：一次会话失效只允许自动续期一次。成功会推进代号，后到的请求直接复用；
-     * 失败若不记下来，排队等锁的每个请求都会拿着同一个代号再登一次（N 个 401 就是 N 次密码登录，
-     * 每次还各有一份 30 秒预算）。记下失败之后，同一代的后续请求立刻拿到「续期失败」。
+     * 失败记忆：防惊群（同一代的并发 401 只真正续期一次），但不再永久封禁——
+     * [TRANSIENT] 失败过了冷却窗就放行一次新尝试；只有 [REJECTED] 才封到人工重登。
      */
     @Volatile
     private var failedGeneration: Long? = null
+
+    @Volatile
+    private var failedKind: FailureKind? = null
+
+    @Volatile
+    private var failedAtMillis: Long = 0L
+
+    /** 登出后置真：匿名代号禁止自动续期，直到下一次真实登录。 */
+    @Volatile
+    private var refreshDisabled = false
 
     fun currentGeneration(): Long = generation
 
@@ -40,6 +62,8 @@ object SessionRefreshCoordinator {
     suspend fun onAuthenticated(action: () -> Unit = {}) = refreshMutex.withLock {
         generation += 1
         failedGeneration = null
+        failedKind = null
+        refreshDisabled = false
         action()
     }
 
@@ -48,12 +72,14 @@ object SessionRefreshCoordinator {
         generation += 1
         // 退出后的匿名代号禁止自动续期；否则残留清理完成前的新请求还能拿旧凭据重登。
         // 下一次真实登录会由 onAuthenticated 推进代号并解除这道闸。
-        failedGeneration = generation
+        refreshDisabled = true
+        failedGeneration = null
+        failedKind = null
         action()
     }
 
     /** 只让仍属于当前会话代号的结果提交副作用；与手动登录的代号推进原子互斥。 */
-    suspend fun commitIfCurrent(observedGeneration: Long, action: () -> Unit): Boolean =
+    suspend fun commitIfCurrent(observedGeneration: Long, action: suspend () -> Unit): Boolean =
         refreshMutex.withLock {
             if (generation != observedGeneration) return@withLock false
             action()
@@ -78,29 +104,56 @@ object SessionRefreshCoordinator {
     suspend fun refreshIfNeeded(
         observedGeneration: Long,
         timeoutMillis: Long = REFRESH_TIMEOUT_MS,
-        refresh: suspend () -> Boolean
+        transientCooldownMillis: Long = TRANSIENT_COOLDOWN_MS,
+        nowMillis: Long = System.currentTimeMillis(),
+        refresh: suspend () -> RefreshOutcome
     ): Boolean = refreshMutex.withLock {
-        // 当前代号若由失败续期或主动退出封禁，任何旧/新请求都不得被告知“可以重试”。
-        if (failedGeneration == generation) return@withLock false
+        if (refreshDisabled) return@withLock false
         if (generation != observedGeneration) return@withLock true
-        // ADR 0002 的有界刷新：单次续期带总超时，超时即当失败——不重试，也不推进代号。
-        val refreshed = try {
-            withTimeout(timeoutMillis) { refresh() }
-        } catch (e: TimeoutCancellationException) {
-            false
-        }
-        if (!refreshed) {
-            failedGeneration = observedGeneration
-            return@withLock false
+
+        if (failedGeneration == generation) {
+            // 凭据被拒：封到人工重登；瞬时失败：冷却窗内快速失败（防惊群），窗外放行一次再试。
+            if (failedKind == FailureKind.REJECTED) return@withLock false
+            if (nowMillis - failedAtMillis < transientCooldownMillis) return@withLock false
         }
 
-        generation += 1
-        failedGeneration = null
-        true
+        // ADR 0002 的有界刷新：单次续期带总超时；超时按瞬时失败处理（可冷却重试），不推进代号。
+        val outcome = try {
+            withTimeout(timeoutMillis) { refresh() }
+        } catch (e: TimeoutCancellationException) {
+            RefreshOutcome.TRANSIENT
+        }
+        when (outcome) {
+            RefreshOutcome.SUCCESS -> {
+                generation += 1
+                failedGeneration = null
+                failedKind = null
+                true
+            }
+            RefreshOutcome.TRANSIENT -> {
+                failedGeneration = generation
+                failedKind = FailureKind.TRANSIENT
+                failedAtMillis = nowMillis
+                false
+            }
+            RefreshOutcome.REJECTED -> {
+                failedGeneration = generation
+                failedKind = FailureKind.REJECTED
+                false
+            }
+        }
+    }
+
+    /** 供会话层区分「这次失败要不要宣告过期」：只有 [FailureKind.REJECTED] 才该弹重新登录。 */
+    suspend fun failureKindOf(observedGeneration: Long): FailureKind? = refreshMutex.withLock {
+        if (failedGeneration == observedGeneration) failedKind else null
     }
 
     /** 单次续期的总预算：一次完整登录的合理上限，超了就不再等（ADR 0002）。 */
     const val REFRESH_TIMEOUT_MS = 30_000L
+
+    /** 瞬时失败的冷却窗：窗内同代请求快速失败防惊群，窗外放行一次自愈尝试。 */
+    const val TRANSIENT_COOLDOWN_MS = 15_000L
 }
 
 internal data class SessionRequestGeneration(val value: Long)

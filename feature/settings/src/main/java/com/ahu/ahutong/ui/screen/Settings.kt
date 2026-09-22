@@ -225,7 +225,7 @@ fun Settings(
                     else -> Icons.Outlined.Tune
                 },
                 leadingPainter = if (isRadiant) {
-                    painterResource(R.drawable.ic_topic)
+                    painterResource(R.drawable.ic_settings_palette)
                 } else {
                     null
                 },

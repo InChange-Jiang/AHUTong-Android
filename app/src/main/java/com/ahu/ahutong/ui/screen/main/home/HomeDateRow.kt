@@ -19,9 +19,13 @@ import java.util.Locale
 
 @Composable
 fun HomeDateRow(
+    dateText: String? = null,
     trailingContent: @Composable RowScope.() -> Unit = {}
 ) {
-    val date = SimpleDateFormat("MM-dd / EE", Locale.CHINA).format(DebugClock.nowDate())
+    // dateText 由主页分钟级 ticker 驱动：常开跨过午夜也能刷新；
+    // 缺省回退为组合内现算（首帧 ticker 尚未赋值时不留白）。
+    val date = dateText?.takeIf { it.isNotBlank() }
+        ?: SimpleDateFormat("MM-dd / EE", Locale.CHINA).format(DebugClock.nowDate())
     Row(
         modifier = Modifier
             .fillMaxWidth()

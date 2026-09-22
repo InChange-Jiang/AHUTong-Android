@@ -137,18 +137,26 @@ object TokenManager {
         casLoginUrl: String?
     ): Boolean {
         val refreshed = SessionRefreshCoordinator.refreshIfNeeded(observedGeneration) {
-            val user = SessionStore.currentUser() ?: return@refreshIfNeeded false
+            val user = SessionStore.currentUser()
+                ?: return@refreshIfNeeded SessionRefreshCoordinator.RefreshOutcome.REJECTED
             val password = SecureCredentialVault.wisdomPassword()?.takeIf { it.isNotBlank() }
-                ?: return@refreshIfNeeded false
+                ?: return@refreshIfNeeded SessionRefreshCoordinator.RefreshOutcome.REJECTED
 
-            val serviceLoginUrl = casLoginUrl ?: return@refreshIfNeeded false
+            val serviceLoginUrl = casLoginUrl
+                ?: return@refreshIfNeeded SessionRefreshCoordinator.RefreshOutcome.REJECTED
 
             Log.i(TAG, "Refreshing central CAS session for campus-card token")
-            AHURepository.refreshCentralCasSession(
-                username = user.xh.toString(),
-                password = password,
-                casLoginUrl = serviceLoginUrl
-            )
+            // CAS 刷新只回 Boolean，失败按瞬时处理（多为网络/协议抖动），冷却窗外可再试。
+            if (AHURepository.refreshCentralCasSession(
+                    username = user.xh.toString(),
+                    password = password,
+                    casLoginUrl = serviceLoginUrl
+                )
+            ) {
+                SessionRefreshCoordinator.RefreshOutcome.SUCCESS
+            } else {
+                SessionRefreshCoordinator.RefreshOutcome.TRANSIENT
+            }
         }
         // 与 RepositoryAhuSession 同一约定：续期成功由会话层写登录态。
         if (refreshed) {
@@ -159,9 +167,11 @@ object TokenManager {
             }
         } else {
             SessionRefreshCoordinator.commitIfCurrent(observedGeneration) {
-                // 续期失败（含超时）：登录态不能还停在「已认证」。若手动登录已推进代号，
-                // 这个旧失败不会进入提交块，也就不能覆盖新会话。
-                if (AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
+                // 只有凭据被明确拒绝才宣告过期；瞬时失败保持静默，冷却窗外自愈。
+                // 若手动登录已推进代号，这个旧失败不会进入提交块，也就不能覆盖新会话。
+                val rejected = SessionRefreshCoordinator.failureKindOf(observedGeneration) ==
+                    SessionRefreshCoordinator.FailureKind.REJECTED
+                if (rejected && AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
                     AhuSessionState.markExpired()
                 }
             }

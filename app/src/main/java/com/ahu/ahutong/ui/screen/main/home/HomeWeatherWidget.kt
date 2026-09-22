@@ -27,6 +27,11 @@ import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.WeatherHomeConfig
 import com.ahu.ahutong.ui.state.WeatherHomeMode
 import com.kyant.monet.a1
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.res.painterResource
+import com.ahu.ahutong.R
+import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
 import kotlinx.coroutines.Dispatchers
@@ -276,48 +281,46 @@ private fun CompactHomeWeatherCard(
     hasError: Boolean,
     onClick: () -> Unit
 ) {
-    val shape = SmoothRoundedCornerShape(18.dp)
-    Card(
+    // 标题栏胶囊形态：图标 + 温度 + 雨情。无雨主题色、有雨黄色。
+    val rainKeywords = listOf("雨", "雷", "雪", "冰雹")
+    val hasRain = weather?.let { w ->
+        rainKeywords.any { (w.weather ?: "").contains(it) }
+    } == true
+    val contentColor = when {
+        weather == null || hasError -> 55.n1 withNight 70.n1
+        hasRain -> Color(0xFFF5C542) // 有雨：暖黄
+        else -> MaterialTheme.colorScheme.primary // 无雨：主题色
+    }
+    Row(
         modifier = modifier
-            .widthIn(min = 154.dp, max = 178.dp)
-            .height(48.dp)
             .appLiquidGlassSurface(
-                shape = shape,
+                shape = ContinuousCapsule,
                 fallbackColor = 100.n1 withNight 20.n1
             )
-            .clickable(onClick = onClick),
-        shape = shape,
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            val w = weather
-            when {
-                w != null && !hasError -> CompactHomeWeatherContent(w)
-                hasError -> CompactHomeWeatherUnavailable()
-                else -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        AppCircularProgressIndicator(
-                            size = 16.dp,
-                            strokeWidth = 2.dp,
-                            color = 70.a1 withNight 85.a1
-                        )
-                        Text(
-                            text = "天气",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = 50.n1 withNight 80.n1
-                        )
-                    }
-                }
-            }
-        }
+        Icon(
+            painter = painterResource(
+                if (hasRain) R.drawable.ic_home_umbrella else R.drawable.ic_home_weather
+            ),
+            contentDescription = if (hasRain) "有雨" else "天气",
+            modifier = Modifier.size(15.dp),
+            tint = contentColor
+        )
+        Text(
+            text = when {
+                weather != null && !hasError ->
+                    "${weather.temperature?.toInt() ?: "--"}° ${if (hasRain) "雨" else "无雨"}"
+                hasError -> "--"
+                else -> "…"
+            },
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            color = contentColor
+        )
     }
 }
 

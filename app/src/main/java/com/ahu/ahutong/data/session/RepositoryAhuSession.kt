@@ -1,6 +1,7 @@
 package com.ahu.ahutong.data.session
 
 import android.util.Log
+import com.ahu.ahutong.core.common.AhuError
 import com.ahu.ahutong.core.common.AhuResult
 import com.ahu.ahutong.data.crawler.net.SessionRefreshCoordinator
 import com.ahu.ahutong.data.model.LoginOutcome
@@ -54,9 +55,10 @@ class RepositoryAhuSession(
 
     override suspend fun ensureFresh(observedGeneration: Long): Boolean {
         val refreshed = SessionRefreshCoordinator.refreshIfNeeded(observedGeneration) {
-            val user = account.currentUser() ?: return@refreshIfNeeded false
+            val user = account.currentUser()
+                ?: return@refreshIfNeeded SessionRefreshCoordinator.RefreshOutcome.REJECTED
             val password = credentials.wisdomPassword()?.takeIf { it.isNotBlank() }
-                ?: return@refreshIfNeeded false
+                ?: return@refreshIfNeeded SessionRefreshCoordinator.RefreshOutcome.REJECTED
 
             Log.i(TAG, "Refreshing expired first-party session")
             val loginResult = login.signIn(
@@ -64,13 +66,13 @@ class RepositoryAhuSession(
                 password = password,
                 preferNative = false
             )
-            if (loginResult.valueOrNull() !is LoginOutcome.Success) {
-                Log.w(TAG, "Session refresh failed")
-                return@refreshIfNeeded false
+            if (loginResult.valueOrNull() is LoginOutcome.Success) {
+                residue.clearDerivedToken()
+                SessionRefreshCoordinator.RefreshOutcome.SUCCESS
+            } else {
+                Log.w(TAG, "Session refresh failed: ${loginResult.errorOrNull()}")
+                loginResult.errorOrNull().toRefreshOutcome()
             }
-
-            residue.clearDerivedToken()
-            true
         }
         // 续期成功即回到已认证：协调器只负责并发与代号，登录态的写入留在会话层。
         if (refreshed) {
@@ -82,13 +84,31 @@ class RepositoryAhuSession(
         } else {
             SessionRefreshCoordinator.commitIfCurrent(observedGeneration) {
                 // 手动登录可能已经推进代号；旧失败无权覆盖那个新会话。
-                if (AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
+                // 只有凭据被明确拒绝（REJECTED）才宣告过期、触发重新登录引导；
+                // 瞬时失败（网络抖动/超时）保持静默——冷却窗外下个请求会自动再试，
+                // 这是 0492acc 之前旧实现的自愈体验，不该退化成「抖一下就逼用户重登」。
+                val rejected = SessionRefreshCoordinator.failureKindOf(observedGeneration) ==
+                    SessionRefreshCoordinator.FailureKind.REJECTED
+                if (rejected && AhuSessionState.status.value != AhuSessionState.Status.Anonymous) {
                     AhuSessionState.markExpired()
                 }
             }
         }
         return refreshed
     }
+
+    private fun AhuError?.toRefreshOutcome(): SessionRefreshCoordinator.RefreshOutcome =
+        when (this) {
+            is AhuError.Unauthorized -> SessionRefreshCoordinator.RefreshOutcome.REJECTED
+            is AhuError.Server ->
+                if (code in 400..499) {
+                    SessionRefreshCoordinator.RefreshOutcome.REJECTED
+                } else {
+                    SessionRefreshCoordinator.RefreshOutcome.TRANSIENT
+                }
+            // Network / Timeout / ProtocolChanged / Unknown / null：一律按瞬时可自愈处理。
+            else -> SessionRefreshCoordinator.RefreshOutcome.TRANSIENT
+        }
 
     private companion object {
         const val TAG = "AhuSession"

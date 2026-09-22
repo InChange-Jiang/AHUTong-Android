@@ -153,9 +153,11 @@ private fun BillingFilterSheet(
     viewModel: BillingViewModel,
     onDismiss: () -> Unit
 ) {
+    val initAllTime by viewModel.allTime.collectAsState()
     val initType by viewModel.typeFilter.collectAsState()
     val initAmount by viewModel.amountRange.collectAsState()
 
+    var allTimeSel by remember { mutableStateOf(initAllTime) }
     var typeSel by remember { mutableStateOf(initType) }
     var minText by remember {
         mutableStateOf(initAmount.first?.let { fenToYuanText(it) } ?: "")
@@ -171,7 +173,7 @@ private fun BillingFilterSheet(
             AppDialogAction(
                 "清空全部",
                 onClick = {
-                    viewModel.applyFilters(null, null, null)
+                    viewModel.applyFilters(false, null, null, null)
                     onDismiss()
                 }
             ),
@@ -180,6 +182,7 @@ private fun BillingFilterSheet(
                 style = AppDialogActionStyle.Primary,
                 onClick = {
                     viewModel.applyFilters(
+                        allTimeSel,
                         typeSel,
                         minText.toDoubleOrNull()?.let { (it * 100).toLong() },
                         maxText.toDoubleOrNull()?.let { (it * 100).toLong() }
@@ -189,6 +192,20 @@ private fun BillingFilterSheet(
             )
         ),
         content = {
+            Text(
+                text = "时间",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(false to "当月", true to "全部时间").forEach { (value, label) ->
+                    AppFilterChip(
+                        selected = allTimeSel == value,
+                        onClick = { allTimeSel = value },
+                        label = { Text(label) }
+                    )
+                }
+            }
             Text(
                 text = "类型",
                 style = MaterialTheme.typography.labelLarge,

@@ -47,6 +47,10 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     private val _typeFilter = MutableStateFlow<Boolean?>(null)
     val typeFilter: StateFlow<Boolean?> = _typeFilter.asStateFlow()
 
+    /** 时间筛选：false=当月（不传参，服务器月份） true=全部时间（分页可达历史账单）。 */
+    private val _allTime = MutableStateFlow(false)
+    val allTime: StateFlow<Boolean> = _allTime.asStateFlow()
+
     /** 展示用流水 = 原始记录 ∩ 金额区间。 */
     val records: StateFlow<List<TurnoverRecord>> =
         combine(_records, _amountRange) { list, (min, max) ->
@@ -97,12 +101,14 @@ class BillingViewModel @Inject constructor() : ViewModel() {
         is AhuError.Unknown -> error.message
     }
 
-    /** 应用筛选（类型/金额区间，元输入已换算成分传入），重置分页重拉。 */
+    /** 应用筛选（时间/类型/金额区间，元输入已换算成分传入），重置分页重拉。 */
     fun applyFilters(
+        allTime: Boolean,
         expense: Boolean?,
         amountMinFen: Long?,
         amountMaxFen: Long?
     ) {
+        _allTime.value = allTime
         _typeFilter.value = expense
         _amountRange.value = amountMinFen to amountMaxFen
         refresh()
@@ -136,14 +142,13 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     private fun loadPage(page: Int) {
         viewModelScope.launch {
             _loadingMore.value = true
-            // 显式传设备当前月区间——「服务端默认当月」跟的是服务器时钟，
-            // 设备时间（mock 时间）对它无感，必须本地算好传过去
-            val (from, to) = currentMonthRange
+            // 默认不传时间参数 → 服务端返回「服务器当月」；
+            // 全部时间 → 传超早起始日，分页可达历史账单
+            val from = if (_allTime.value) "2020-01-01" else null
             when (val result = AHURepository.getBillPage(
                 page = page,
                 size = PAGE_SIZE,
                 timeFrom = from,
-                timeTo = to,
                 type = _typeFilter.value?.let { if (it) 2 else 1 }
             )) {
                 is AhuResult.Success -> {

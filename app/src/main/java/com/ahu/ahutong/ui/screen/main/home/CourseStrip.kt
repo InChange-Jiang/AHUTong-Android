@@ -111,10 +111,12 @@ fun CourseStrip(
         }
         val isFocus = page == focusIndex
 
-        AppCard(
+        HomeClassCard(
+            course = course,
+            status = status,
+            isFocus = isFocus,
             onClick = onOpenSchedule,
             modifier = Modifier
-                .heightIn(min = 88.dp)
                 .zIndex(1f - offset)
                 .graphicsLayer {
                     val t = offset.coerceIn(0f, 1.5f)
@@ -122,42 +124,6 @@ fun CourseStrip(
                     scaleY = 1f - 0.12f * t
                     alpha = 1f - 0.45f * t
                 }
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                if (isFocus) {
-                    // 高亮扁平小矩形：标识当前/即将
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(90.a1 withNight 40.a1)
-                            .padding(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = status,
-                            color = 10.n1 withNight 95.n1,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                Text(
-                    text = course.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = if (isFocus) FontWeight.Bold else FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${course.startTime} 起 · ${course.location.shortScheduleLocation()}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
+        )
     }
 }

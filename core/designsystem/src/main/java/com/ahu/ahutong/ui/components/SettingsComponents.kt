@@ -429,6 +429,7 @@ fun SettingsActionRow(
         Column(modifier = modifier.fillMaxWidth()) {
             SuperArrow(
                 title = title,
+                insideMargin = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                 titleColor = MiuixBasicComponentDefaults.titleColor(
                     color = if (destructive) {
                         MaterialTheme.colorScheme.error
@@ -658,6 +659,7 @@ fun <T> SettingsSelectRow(
                 selectedIndex = selectedIndex,
                 title = title,
                 summary = subtitle,
+                insideMargin = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
                 modifier = Modifier.fillMaxWidth(),
                 onSelectedIndexChange = { index ->
                     choices.getOrNull(index)?.let {

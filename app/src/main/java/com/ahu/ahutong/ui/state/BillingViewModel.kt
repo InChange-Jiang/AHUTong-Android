@@ -30,9 +30,6 @@ class BillingViewModel @Inject constructor() : ViewModel() {
         private const val PAGE_SIZE = 20
     }
 
-    /** 月份筛选：本月（不传时间参数，服务端默认当月）/ 上月 / 近三月；null = 全部时间。 */
-    enum class MonthFilter { THIS_MONTH, LAST_MONTH, LAST_3_MONTHS }
-
     sealed interface ListState {
         data object Loading : ListState
         data object Ready : ListState
@@ -45,10 +42,6 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     /** 金额区间筛选（分，null=不限），服务端无金额参数 → 本地过滤已加载记录。 */
     private val _amountRange = MutableStateFlow<Pair<Long?, Long?>>(null to null)
     val amountRange: StateFlow<Pair<Long?, Long?>> = _amountRange.asStateFlow()
-
-    /** 月份筛选（null=全部时间）。 */
-    private val _monthFilter = MutableStateFlow<MonthFilter?>(MonthFilter.THIS_MONTH)
-    val monthFilter: StateFlow<MonthFilter?> = _monthFilter.asStateFlow()
 
     /** 类型筛选：true=支出 false=收入 null=全部。 */
     private val _typeFilter = MutableStateFlow<Boolean?>(null)
@@ -76,39 +69,19 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     private var currentPage = 1
     private var totalPages = Int.MAX_VALUE
 
-    /**
-     * 查询时间范围（YYYY-MM-DD）。
-     * THIS_MONTH 返回 null 区间（不传参数，服务端默认当月）；null=全部时间 → 2020-01-01 起。
-     */
-    private val queryRange: Pair<String?, String?>
+    /** 本月起止（YYYY-MM-DD，大小月/闰年由 Calendar 处理）——收支汇总用。 */
+    private val currentMonthRange: Pair<String, String>
         get() {
-            val now = Calendar.getInstance(Locale.CHINA)
-            fun fmt(cal: Calendar): String = "%04d-%02d-%02d".format(
+            val cal = Calendar.getInstance(Locale.CHINA)
+            val from = "%04d-%02d-01".format(
+                cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1
+            )
+            cal.set(Calendar.DAY_OF_MONTH, cal.getActualMaximum(Calendar.DAY_OF_MONTH))
+            val to = "%04d-%02d-%02d".format(
                 cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1,
                 cal.get(Calendar.DAY_OF_MONTH)
             )
-            fun monthEndOf(offset: Int): Calendar = Calendar.getInstance(Locale.CHINA).apply {
-                add(Calendar.MONTH, offset)
-                set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
-            }
-            return when (_monthFilter.value) {
-                MonthFilter.THIS_MONTH -> null to null
-                MonthFilter.LAST_MONTH -> {
-                    val first = Calendar.getInstance(Locale.CHINA).apply {
-                        add(Calendar.MONTH, -1)
-                        set(Calendar.DAY_OF_MONTH, 1)
-                    }
-                    fmt(first) to fmt(monthEndOf(-1))
-                }
-                MonthFilter.LAST_3_MONTHS -> {
-                    val first = Calendar.getInstance(Locale.CHINA).apply {
-                        add(Calendar.MONTH, -2)
-                        set(Calendar.DAY_OF_MONTH, 1)
-                    }
-                    fmt(first) to fmt(monthEndOf(0))
-                }
-                null -> "2020-01-01" to fmt(now)
-            }
+            return from to to
         }
 
     init {
@@ -124,14 +97,12 @@ class BillingViewModel @Inject constructor() : ViewModel() {
         is AhuError.Unknown -> error.message
     }
 
-    /** 应用筛选（月份/类型/金额区间，元输入已换算成分传入），重置分页重拉。 */
+    /** 应用筛选（类型/金额区间，元输入已换算成分传入），重置分页重拉。 */
     fun applyFilters(
-        month: MonthFilter?,
         expense: Boolean?,
         amountMinFen: Long?,
         amountMaxFen: Long?
     ) {
-        _monthFilter.value = month
         _typeFilter.value = expense
         _amountRange.value = amountMinFen to amountMaxFen
         refresh()
@@ -154,8 +125,8 @@ class BillingViewModel @Inject constructor() : ViewModel() {
 
     private fun loadSummary() {
         viewModelScope.launch {
-            val (from, to) = queryRange
-            when (val result = AHURepository.getBillSummary(from ?: "2020-01-01", to ?: "2099-12-31")) {
+            val (from, to) = currentMonthRange
+            when (val result = AHURepository.getBillSummary(from, to)) {
                 is AhuResult.Success -> _summary.value = result.value
                 is AhuResult.Failure -> Unit // 汇总失败不阻塞列表
             }
@@ -165,12 +136,10 @@ class BillingViewModel @Inject constructor() : ViewModel() {
     private fun loadPage(page: Int) {
         viewModelScope.launch {
             _loadingMore.value = true
-            val (from, to) = queryRange
+            // 不传时间参数：服务端默认返回当月数据
             when (val result = AHURepository.getBillPage(
                 page = page,
                 size = PAGE_SIZE,
-                timeFrom = from,
-                timeTo = to,
                 type = _typeFilter.value?.let { if (it) 2 else 1 }
             )) {
                 is AhuResult.Success -> {

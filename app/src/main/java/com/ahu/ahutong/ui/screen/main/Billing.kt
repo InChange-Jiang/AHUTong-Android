@@ -30,13 +30,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.model.ycard.TurnoverRecord
 import com.ahu.ahutong.ui.components.AppCard
-import com.ahu.ahutong.ui.components.AppButton
-import com.ahu.ahutong.ui.components.AppButtonVariant
 import com.ahu.ahutong.ui.components.AppFilterChip
-import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.AppTextField
 import com.ahu.ahutong.ui.components.AppDialog
 import com.ahu.ahutong.ui.components.AppDialogAction
+import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.TrailingAction
@@ -149,17 +147,15 @@ fun Billing(
     }
 }
 
-/** 筛选抽屉：月份 / 类型 / 金额三栏目，可交集，再次点击置空即全选。 */
+/** 筛选弹窗：类型 + 金额两栏目，可交集，再次点击置空即全选。 */
 @Composable
 private fun BillingFilterSheet(
     viewModel: BillingViewModel,
     onDismiss: () -> Unit
 ) {
-    val initMonth by viewModel.monthFilter.collectAsState()
     val initType by viewModel.typeFilter.collectAsState()
     val initAmount by viewModel.amountRange.collectAsState()
 
-    var monthSel by remember { mutableStateOf(initMonth) }
     var typeSel by remember { mutableStateOf(initType) }
     var minText by remember {
         mutableStateOf(initAmount.first?.let { fenToYuanText(it) } ?: "")
@@ -168,98 +164,70 @@ private fun BillingFilterSheet(
         mutableStateOf(initAmount.second?.let { fenToYuanText(it) } ?: "")
     }
 
-    fun apply(
-        month: BillingViewModel.MonthFilter?,
-        type: Boolean?,
-        minFen: Long?,
-        maxFen: Long?
-    ) {
-        viewModel.applyFilters(month, type, minFen, maxFen)
-        onDismiss()
-    }
-
-    AppModalBottomSheet(
+    AppDialog(
         title = "筛选账单",
-        onDismissRequest = onDismiss
-    ) {
-        Text(
-            text = "月份",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(
-                BillingViewModel.MonthFilter.THIS_MONTH to "本月",
-                BillingViewModel.MonthFilter.LAST_MONTH to "上月",
-                BillingViewModel.MonthFilter.LAST_3_MONTHS to "近三月"
-            ).forEach { (value, label) ->
-                AppFilterChip(
-                    selected = monthSel == value,
-                    onClick = { monthSel = if (monthSel == value) null else value },
-                    label = { Text(label) }
-                )
-            }
-        }
-        Text(
-            text = "类型",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(true to "支出", false to "收入").forEach { (value, label) ->
-                AppFilterChip(
-                    selected = typeSel == value,
-                    onClick = { typeSel = if (typeSel == value) null else value },
-                    label = { Text(label) }
-                )
-            }
-        }
-        Text(
-            text = "金额（元）",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppTextField(
-                value = minText,
-                onValueChange = { minText = it },
-                label = "最低",
-                modifier = Modifier.weight(1f)
-            )
-            Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AppTextField(
-                value = maxText,
-                onValueChange = { maxText = it },
-                label = "最高",
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AppButton(
-                onClick = { apply(null, null, null, null) },
-                variant = AppButtonVariant.Secondary,
-                modifier = Modifier.weight(1f)
-            ) { Text("清空全部") }
-            AppButton(
+        onDismiss = onDismiss,
+        actions = listOf(
+            AppDialogAction(
+                "清空全部",
                 onClick = {
-                    apply(
-                        monthSel,
+                    viewModel.applyFilters(null, null, null)
+                    onDismiss()
+                }
+            ),
+            AppDialogAction(
+                "应用",
+                style = AppDialogActionStyle.Primary,
+                onClick = {
+                    viewModel.applyFilters(
                         typeSel,
                         minText.toDoubleOrNull()?.let { (it * 100).toLong() },
                         maxText.toDoubleOrNull()?.let { (it * 100).toLong() }
                     )
-                },
-                variant = AppButtonVariant.Primary,
-                modifier = Modifier.weight(1f)
-            ) { Text("应用") }
+                    onDismiss()
+                }
+            )
+        ),
+        content = {
+            Text(
+                text = "类型",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(true to "支出", false to "收入").forEach { (value, label) ->
+                    AppFilterChip(
+                        selected = typeSel == value,
+                        onClick = { typeSel = if (typeSel == value) null else value },
+                        label = { Text(label) }
+                    )
+                }
+            }
+            Text(
+                text = "金额（元）",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AppTextField(
+                    value = minText,
+                    onValueChange = { minText = it },
+                    label = "最低",
+                    modifier = Modifier.weight(1f)
+                )
+                Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AppTextField(
+                    value = maxText,
+                    onValueChange = { maxText = it },
+                    label = "最高",
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
-    }
+    )
 }
 
 /** 分 → 元文本（整数元不带小数点）。 */

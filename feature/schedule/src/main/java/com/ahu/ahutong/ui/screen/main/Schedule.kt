@@ -100,6 +100,7 @@ import com.ahu.ahutong.ui.screen.main.schedule.CourseCardSpec
 import com.ahu.ahutong.ui.screen.main.schedule.CourseDetailDialog
 import com.ahu.ahutong.ui.screen.main.schedule.courseTonalPalettes
 import com.ahu.ahutong.ui.screen.main.schedule.courseScheduleDescription
+import com.ahu.ahutong.ui.screen.main.schedule.rememberCourseColors
 import com.ahu.ahutong.ui.screen.main.schedule.scheduleDayDescription
 import com.ahu.ahutong.ui.screen.main.schedule.schedulePeriodDescription
 import com.ahu.ahutong.ui.screen.main.schedule.shortScheduleLocation
@@ -246,34 +247,8 @@ fun Schedule(
     }
 
     val radiant = isRadiantUi
-    val baseColor = 50.a1.toSrgb().toHct()
-    val macaronPalette = remember {
-        listOf(
-            Color(0xFF82ADF7), Color(0xFF7AE3D2), Color(0xFF77B6EF),
-            Color(0xFFE19BB0), Color(0xFFE38874), Color(0xFF679ACD),
-            Color(0xFFE87897), Color(0xFFEBB877), Color(0xFFC8A2C8),
-            Color(0xFFA8E4A0), Color(0xFFFF8A80)
-        )
-    }
-    val courseColors = remember(schedule, radiant) {
-        val courseNames = schedule.asSequence().map { it.name }.distinct().toList()
-        if (radiant) {
-            courseNames.mapIndexed { index, name ->
-                val paletteIndex = if (index < macaronPalette.size) {
-                    index
-                } else {
-                    (name?.hashCode() ?: 0).mod(macaronPalette.size)
-                }
-                name to macaronPalette[paletteIndex]
-            }.toMap()
-        } else {
-            courseNames.mapIndexed { index, name ->
-                name to baseColor.copy(
-                    h = 360.0 * index / courseNames.size.coerceAtLeast(1)
-                ).toSrgb().toColor()
-            }.toMap()
-        }
-    }
+    // 课程配色：调色盘组件（schedule/ScheduleColors.kt），各主题保留各自实现
+    val courseColors = rememberCourseColors(schedule)
     val coursesByWeek = remember(schedule) {
         List(20) { pageIndex ->
             val week = pageIndex + 1
@@ -637,13 +612,9 @@ fun Schedule(
 
     GlassBackdropContainer(modifier = Modifier.fillMaxSize()) { backdrop ->
         CompositionLocalProvider(
-            LocalLiquidGlassAmbientBackdrop provides if (radiant) {
-                backdrop
-            } else {
-                LocalLiquidGlassAmbientBackdrop.current
-            }
+            LocalLiquidGlassAmbientBackdrop provides backdrop
         ) {
-            if (radiant) {
+            run {
                 val headerBg = if (LocalIsLiquidGlassEnabled.current) {
                     MaterialTheme.colorScheme.surfaceContainerLowest
                 } else {
@@ -681,20 +652,6 @@ fun Schedule(
                         ScheduleGrid()
                         ScheduleFreshnessLabel()
                     }
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
-                        .verticalScroll(rememberScrollState())
-                        .systemBarsPadding()
-                        .padding(bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ScheduleHeaderRow()
-                    ScheduleGrid()
-                    ScheduleFreshnessLabel()
                 }
             }
         }

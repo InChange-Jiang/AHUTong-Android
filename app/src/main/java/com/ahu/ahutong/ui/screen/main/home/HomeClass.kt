@@ -59,8 +59,8 @@ fun HomeClassCard(
         )
     }
     Box(
+        // 不 clip：drawBackdrop 的阴影画在形状之外，先 clip 会把阴影裁掉（校园卡同此写法）
         modifier = modifier
-            .clip(cardShape)
             .then(surface)
             .clickable(onClick = onClick)
     ) {

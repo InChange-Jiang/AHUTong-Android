@@ -68,7 +68,6 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
     val context = LocalContext.current
     var isRequestingPermission by remember { mutableStateOf(false) }
     var showClearLearningConfirm by remember { mutableStateOf(false) }
-    var showCustomColorDialog by remember { mutableStateOf(false) }
     var showEnableTrainingContribution by remember { mutableStateOf(false) }
     var showDeleteTrainingContribution by remember { mutableStateOf(false) }
     var isToggleHorizontalDragActive by remember { mutableStateOf(false) }
@@ -86,7 +85,6 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
     val appUiTheme by viewModel.appUiTheme.collectAsState()
     val useBuiltInSecurePasswordKeyboard by
         viewModel.useBuiltInSecurePasswordKeyboard.collectAsState()
-    val themeColor by viewModel.themeColor.collectAsState()
     val courseReminderEnabled by viewModel.courseReminderEnabled.collectAsState()
     val courseReminderLiveCountdownEnabled by
         viewModel.courseReminderLiveCountdownEnabled.collectAsState()
@@ -309,12 +307,6 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
                     ),
                     onSelected = viewModel::setAppThemeMode
                 )
-                ThemeColorPicker(
-                    selectedColor = themeColor,
-                    showMiuixDefault = appUiTheme == AppUiTheme.MIUIX,
-                    onColorSelected = viewModel::setThemeColor,
-                    onCustomColorClick = { showCustomColorDialog = true }
-                )
             }
         }
     }
@@ -381,178 +373,4 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
             onDismiss = { showDeleteTrainingContribution = false }
         )
     }
-
-    if (showCustomColorDialog) {
-        CustomThemeColorDialog(
-            initialValue = themeColor.orEmpty(),
-            onDismiss = { showCustomColorDialog = false },
-            onConfirm = { color ->
-                viewModel.setThemeColor(color)
-                showCustomColorDialog = false
-            }
-        )
-    }
-}
-
-private data class ThemeColorChoice(
-    val value: String?,
-    val name: String,
-    val color: Color
-)
-
-@Composable
-private fun ThemeColorPicker(
-    selectedColor: String?,
-    showMiuixDefault: Boolean,
-    onColorSelected: (String?) -> Unit,
-    onCustomColorClick: () -> Unit
-) {
-    val choices = buildList {
-        if (showMiuixDefault) {
-            add(ThemeColorChoice(DEFAULT_THEME_COLOR, "默认", Color(0xFF3482FF)))
-        }
-        add(ThemeColorChoice(null, "系统", MaterialTheme.colorScheme.primary))
-        add(ThemeColorChoice("#FF4A90E2", "极光蓝", Color(0xFF4A90E2)))
-        add(ThemeColorChoice("#FFE07A9F", "樱花粉", Color(0xFFE07A9F)))
-        add(ThemeColorChoice("#FFF4A261", "落日橙", Color(0xFFF4A261)))
-        add(ThemeColorChoice("#FF6A994E", "苔藓绿", Color(0xFF6A994E)))
-        add(ThemeColorChoice("#FF9B7EDE", "薰衣草", Color(0xFF9B7EDE)))
-        add(ThemeColorChoice("#FF2E8B57", "翡翠", Color(0xFF2E8B57)))
-    }
-    val presetValues = choices.map { it.value }.toSet()
-    val customSelected = selectedColor != null &&
-        selectedColor != DEFAULT_THEME_COLOR &&
-        selectedColor !in presetValues
-
-    Column(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = "主题色",
-            modifier = Modifier.padding(start = 20.dp, top = 14.dp, end = 20.dp),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Medium
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            ThemeColorSwatch(
-                name = "自定义",
-                color = runCatching {
-                    Color(android.graphics.Color.parseColor(selectedColor))
-                }.getOrDefault(MaterialTheme.colorScheme.surfaceContainerHighest),
-                selected = customSelected,
-                custom = true,
-                onClick = onCustomColorClick
-            )
-            choices.forEach { choice ->
-                ThemeColorSwatch(
-                    name = choice.name,
-                    color = choice.color,
-                    selected = selectedColor == choice.value,
-                    onClick = { onColorSelected(choice.value) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ThemeColorSwatch(
-    name: String,
-    color: Color,
-    selected: Boolean,
-    onClick: () -> Unit,
-    custom: Boolean = false
-) {
-    Column(
-        modifier = Modifier
-            .clip(SmoothRoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(SmoothRoundedCornerShape(16.dp))
-                .background(color),
-            contentAlignment = Alignment.Center
-        ) {
-            when {
-                selected -> Icon(
-                    imageVector = Icons.Rounded.Check,
-                    contentDescription = "已选择",
-                    tint = Color.White
-                )
-                custom -> Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "自定义主题色",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        Text(
-            text = name,
-            color = if (selected) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-        )
-    }
-}
-
-@Composable
-private fun CustomThemeColorDialog(
-    initialValue: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
-) {
-    var value by remember(initialValue) { mutableStateOf(initialValue) }
-    val valid = remember(value) {
-        runCatching { android.graphics.Color.parseColor(value) }.isSuccess
-    }
-    AppDialog(
-        title = "自定义主题色",
-        onDismiss = onDismiss,
-        actions = listOf(
-            AppDialogAction("取消", onClick = onDismiss),
-            AppDialogAction(
-                "应用",
-                enabled = valid,
-                style = AppDialogActionStyle.Primary,
-                onClick = { onConfirm(value) }
-            )
-        ),
-        content = {
-            OutlinedTextField(
-                value = value,
-                onValueChange = { value = it },
-                label = { Text("ARGB Hex") },
-                placeholder = { Text("#FF007FAC") },
-                isError = value.isNotBlank() && !valid,
-                supportingText = {
-                    if (value.isNotBlank() && !valid) Text("请输入有效的颜色代码")
-                },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = MaterialTheme.colorScheme.surface,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                    disabledContainerColor = MaterialTheme.colorScheme.surface,
-                    errorContainerColor = MaterialTheme.colorScheme.surface
-                ),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    )
 }

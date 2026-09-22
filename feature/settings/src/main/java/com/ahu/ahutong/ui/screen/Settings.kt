@@ -218,8 +218,7 @@ fun Settings(
                 onClick = onNavigateToPreferences
             )
             SettingsActionRow(
-                title = "主题实验室",
-                subtitle = "界面风格套装 · 组件槽位逐件混搭 · 实时预览",
+                title = "外观",
                 leadingIcon = when {
                     useMiuixIcons -> MiuixIcons.Useful.Settings
                     isRadiant -> null

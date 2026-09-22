@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -81,13 +82,15 @@ fun ThemeLab(
     var previewText by remember { mutableStateOf("") }
     var previewSelection by remember { mutableStateOf("选项一") }
 
+    com.ahu.ahutong.ui.components.SettingsBackdropContainer(modifier = Modifier.fillMaxSize()) { backdrop ->
     SettingsPageLayout(
         title = "外观",
         onBack = onBack
     ) {
         SettingsSection(
             title = "主题色",
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
+            backdrop = backdrop
         ) {
             ThemeColorPicker(
                 selectedColor = themeColor,
@@ -97,11 +100,12 @@ fun ThemeLab(
             )
         }
 
-        HomeBackgroundSection(viewModel = viewModel)
+        HomeBackgroundSection(viewModel = viewModel, backdrop = backdrop)
 
         SettingsSection(
             title = "界面风格套装",
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
+            backdrop = backdrop
         ) {
             SettingsSelectRow(
                 title = "界面风格",
@@ -115,7 +119,8 @@ fun ThemeLab(
 
         SettingsSection(
             title = "实时预览（当前混搭效果）",
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
+            backdrop = backdrop
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -187,7 +192,8 @@ fun ThemeLab(
 
         SettingsSection(
             title = "组件槽位（逐件指定实现来源）",
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier.padding(horizontal = 16.dp),
+            backdrop = backdrop
         ) {
             ComponentSlotId.entries.forEachIndexed { index, slot ->
                 SettingsDialogSelectRow(
@@ -241,6 +247,7 @@ fun ThemeLab(
                 modifier = Modifier.padding(bottom = 24.dp)
             )
         }
+    }
     }
 
     if (showCustomColorDialog) {
@@ -420,7 +427,10 @@ private fun CustomThemeColorDialog(
 
 /** 主页背景：选图（裁屏比落盘）+ 高斯模糊滑杆 + 取主色调 + 清除。 */
 @Composable
-private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
+private fun HomeBackgroundSection(
+    viewModel: PreferencesViewModel,
+    backdrop: com.kyant.backdrop.Backdrop? = null
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val revision by com.ahu.ahutong.core.storage.HomeBackgroundStore.revision.collectAsState()
@@ -441,7 +451,8 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
 
     SettingsSection(
         title = "主页背景",
-        modifier = Modifier.padding(horizontal = 16.dp)
+        modifier = Modifier.padding(horizontal = 16.dp),
+        backdrop = backdrop
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),

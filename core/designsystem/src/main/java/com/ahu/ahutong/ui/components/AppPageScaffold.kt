@@ -287,11 +287,20 @@ internal fun MiuixPageScaffoldImpl(
                 },
                 actions = {
                     actions.forEach { action ->
-                        AppHeaderIconButton(
-                            imageVector = action.icon,
-                            contentDescription = action.contentDescription,
-                            onClick = action.onClick
-                        )
+                        if (action.painter != null) {
+                            androidx.compose.material3.IconButton(onClick = action.onClick) {
+                                androidx.compose.material3.Icon(
+                                    painter = action.painter,
+                                    contentDescription = action.contentDescription
+                                )
+                            }
+                        } else {
+                            AppHeaderIconButton(
+                                imageVector = action.icon,
+                                contentDescription = action.contentDescription,
+                                onClick = action.onClick
+                            )
+                        }
                     }
                     trailingContent?.invoke(this)
                 }
@@ -374,11 +383,20 @@ private fun ClassicPageScaffoldHeader(
             onBack = onBack,
             actions = {
                 actions.forEach { action ->
-                    AppHeaderIconButton(
-                        imageVector = action.icon,
-                        contentDescription = action.contentDescription,
-                        onClick = action.onClick
-                    )
+                    if (action.painter != null) {
+                        androidx.compose.material3.IconButton(onClick = action.onClick) {
+                            androidx.compose.material3.Icon(
+                                painter = action.painter,
+                                contentDescription = action.contentDescription
+                            )
+                        }
+                    } else {
+                        AppHeaderIconButton(
+                            imageVector = action.icon,
+                            contentDescription = action.contentDescription,
+                            onClick = action.onClick
+                        )
+                    }
                 }
                 trailingContent?.invoke(this)
             }

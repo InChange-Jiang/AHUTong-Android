@@ -13,6 +13,8 @@ import com.ahu.ahutong.data.crawler.model.ycard.BathroomPaymentRequest
 import com.ahu.ahutong.data.crawler.model.ycard.BathroomCurrentTimeRequest
 import com.ahu.ahutong.data.crawler.model.ycard.BathroomPayInfoRequest
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverPage
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCount
 import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.crawler.utils.GpaRankHtmlParser
@@ -436,6 +438,35 @@ class SdkDataSource : BaseDataSource {
             AhuResult.Success(body)
         } else {
             result.toClosedFailure("校园卡信息加载失败：${result.message()}")
+        }
+    }
+
+
+    override suspend fun getBillPage(
+        page: Int,
+        size: Int,
+        timeFrom: String?,
+        timeTo: String?,
+        type: Int?
+    ): AhuResult<TurnoverPage> {
+        val result = YcardApi.authorizedCall {
+            getTurnover(size = size, current = page, timeFrom = timeFrom, timeTo = timeTo, type = type)
+        }
+        val body = result.body()?.data
+        return if (result.isSuccessful && body != null) {
+            AhuResult.Success(body)
+        } else {
+            result.toClosedFailure("账单加载失败：${result.message()}")
+        }
+    }
+
+    override suspend fun getBillSummary(timeFrom: String, timeTo: String): AhuResult<TurnoverCount> {
+        val result = YcardApi.authorizedCall { getTurnoverCount(timeFrom = timeFrom, timeTo = timeTo) }
+        val body = result.body()?.data
+        return if (result.isSuccessful && body != null) {
+            AhuResult.Success(body)
+        } else {
+            result.toClosedFailure("账单汇总加载失败：${result.message()}")
         }
     }
 

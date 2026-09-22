@@ -8,6 +8,8 @@ import com.ahu.ahutong.data.crawler.model.adwnh.AllLostFoundType
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCount
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverPage
 import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
 import com.ahu.ahutong.data.model.BathRoom
 import com.ahu.ahutong.data.model.BathroomTelInfo
@@ -86,6 +88,18 @@ interface BaseDataSource {
      * get card info for charge
      */
     suspend fun getCardInfo(): AhuResult<CardInfo>
+
+    /** 账单流水分页（timeFrom/timeTo 传 null = 当月；type: 2=消费 1=充值 null=全部）。 */
+    suspend fun getBillPage(
+        page: Int,
+        size: Int,
+        timeFrom: String? = null,
+        timeTo: String? = null,
+        type: Int? = null
+    ): AhuResult<TurnoverPage>
+
+    /** 账单收支汇总（金额单位：分）。 */
+    suspend fun getBillSummary(timeFrom: String, timeTo: String): AhuResult<TurnoverCount>
 
 
     /**

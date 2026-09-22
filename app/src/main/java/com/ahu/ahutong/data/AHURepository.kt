@@ -21,6 +21,8 @@ import com.ahu.ahutong.data.crawler.model.adwnh.Info
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundPublishRequest
 import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCount
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverPage
 import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.model.BathroomTelInfo
@@ -616,6 +618,28 @@ object AHURepository {
             dataSource.getBathroomTelInfo(bathroom = bathroom, tel = tel)
         }
 
+
+    suspend fun getBillPage(
+        page: Int,
+        size: Int,
+        timeFrom: String? = null,
+        timeTo: String? = null,
+        type: Int? = null
+    ): AhuResult<TurnoverPage> =
+        withContext(Dispatchers.IO) {
+            if (!ensureYcardCredential()) {
+                return@withContext ycardCredentialNotReadyResponse()
+            }
+            dataSource.getBillPage(page, size, timeFrom, timeTo, type)
+        }
+
+    suspend fun getBillSummary(timeFrom: String, timeTo: String): AhuResult<TurnoverCount> =
+        withContext(Dispatchers.IO) {
+            if (!ensureYcardCredential()) {
+                return@withContext ycardCredentialNotReadyResponse()
+            }
+            dataSource.getBillSummary(timeFrom, timeTo)
+        }
 
     suspend fun getCardInfo(): AhuResult<CardInfo> =
         withContext(Dispatchers.IO) {

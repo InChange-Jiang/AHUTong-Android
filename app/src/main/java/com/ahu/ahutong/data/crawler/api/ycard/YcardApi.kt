@@ -7,6 +7,8 @@ import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.crawler.manager.TokenManager
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
 import com.ahu.ahutong.data.crawler.model.ycard.Token
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCountResponse
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverResponse
 import okhttp3.Interceptor
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -40,6 +42,25 @@ interface YcardApi {
         @Query("scene") scene: String = "cardRecharge",
         @Query("synAccessSource") synAccessSource: String = "h5",
     ): Response<CardInfo>
+
+    /** 账单流水分页查询。不传 timeFrom/timeTo 时服务端默认返回当月数据。type: 2=消费 1=充值 不传=全部。 */
+    @GET("/berserker-search/search/personal/turnover")
+    suspend fun getTurnover(
+        @Query("size") size: Int,
+        @Query("current") current: Int,
+        @Query("timeFrom") timeFrom: String? = null,
+        @Query("timeTo") timeTo: String? = null,
+        @Query("type") type: Int? = null,
+        @Query("synAccessSource") synAccessSource: String = "h5",
+    ): Response<TurnoverResponse>
+
+    /** 收支汇总（金额单位：分）。 */
+    @GET("/berserker-search/statistics/turnover/count")
+    suspend fun getTurnoverCount(
+        @Query("timeFrom") timeFrom: String,
+        @Query("timeTo") timeTo: String,
+        @Query("synAccessSource") synAccessSource: String = "h5",
+    ): Response<TurnoverCountResponse>
 
     @GET("/charge/feeitem/toAppitem")
     suspend fun enterFeeItem(

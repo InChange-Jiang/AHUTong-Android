@@ -12,6 +12,9 @@ import com.ahu.ahutong.data.crawler.model.adwnh.LostFoundResponse
 import com.ahu.ahutong.data.crawler.model.jwxt.FreeRoom
 import com.ahu.ahutong.data.crawler.model.jwxt.GetBuildingsResponseItem
 import com.ahu.ahutong.data.crawler.model.ycard.CardInfo
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverRecord
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverPage
+import com.ahu.ahutong.data.crawler.model.ycard.TurnoverCount
 import com.ahu.ahutong.data.crawler.model.ycard.RequestBody
 import com.ahu.ahutong.data.model.BathRoom
 import com.ahu.ahutong.data.model.BathroomTelInfo
@@ -106,6 +109,46 @@ class MockDataSource : BaseDataSource {
 
     override suspend fun getCardInfo(): AhuResult<CardInfo> =
         scenarioResponse(MockEditableEndpoint.CardInfo, CardInfo::class.java) { it.payment.cardInfo }
+
+    override suspend fun getBillPage(
+        page: Int,
+        size: Int,
+        timeFrom: String?,
+        timeTo: String?,
+        type: Int?
+    ): AhuResult<TurnoverPage> = AhuResult.Success(
+        TurnoverPage(
+            records = if (page > 1) emptyList() else listOf(
+                TurnoverRecord(
+                    orderId = "mock-1",
+                    tranamt = 560,
+                    cardBalance = 32150,
+                    typeFrom = "2",
+                    turnoverType = "二维码支付",
+                    consumeTypeName = "联机扫码支付(被扫)",
+                    resume = "北二区食堂一楼-扫码支付",
+                    toMerchant = "北二区食堂一楼",
+                    effectdateStr = "2026-09-22 12:05:30"
+                ),
+                TurnoverRecord(
+                    orderId = "mock-2",
+                    tranamt = 10000,
+                    cardBalance = 32710,
+                    typeFrom = "1",
+                    turnoverType = "充值",
+                    consumeTypeName = null,
+                    resume = "校园卡充值",
+                    toMerchant = "慧新e校",
+                    effectdateStr = "2026-09-21 20:11:02"
+                )
+            ),
+            total = 2,
+            pages = 1
+        )
+    )
+
+    override suspend fun getBillSummary(timeFrom: String, timeTo: String): AhuResult<TurnoverCount> =
+        AhuResult.Success(TurnoverCount(expenses = 560, income = 10000))
 
     override suspend fun getOrderThirdData(
         request: RequestBody

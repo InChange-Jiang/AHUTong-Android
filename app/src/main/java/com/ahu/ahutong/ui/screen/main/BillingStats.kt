@@ -65,8 +65,8 @@ fun BillingStats(
     AppPageScaffold(
         title = "账单统计",
         onBack = onBack,
-        modifier = Modifier.fillMaxSize()
-    ) {
+        modifier = Modifier.fillMaxSize(),
+        content = {
         when (val s = state) {
             is BillingStatsViewModel.StatsState.Loading -> {
                 AppStateCard.Loading(message = "正在分析本月账单…")
@@ -96,7 +96,8 @@ fun BillingStats(
                 }
             }
         }
-    }
+        }
+    )
 
     detailDay?.let { day ->
         val summary = (state as? BillingStatsViewModel.StatsState.Ready)?.report?.currentMonth

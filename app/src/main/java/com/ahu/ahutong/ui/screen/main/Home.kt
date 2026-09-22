@@ -60,6 +60,7 @@ import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
+import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import androidx.navigation.NavHostController
@@ -80,6 +81,11 @@ import com.ahu.ahutong.ui.screen.main.home.HomeWidgetLibrarySheet
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetSlotLayout
 import com.ahu.ahutong.ui.screen.main.home.CourseStrip
+import com.ahu.ahutong.core.storage.HomeBackgroundStore
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import android.graphics.BitmapFactory
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
 import com.ahu.ahutong.ui.state.WeatherHomeConfig
@@ -420,6 +426,24 @@ fun Home(
                     }
                 }
         ) {
+        // 自定义主页背景：成品图已含模糊，玻璃组件 backdrop 采样自动透出背景
+        val bgRevision by HomeBackgroundStore.revision.collectAsState()
+        val bgBitmap = remember(bgRevision) {
+            if (HomeBackgroundStore.isEnabled) {
+                val f = HomeBackgroundStore.blurredFile(AppEnvironmentHolder.context())
+                if (f.exists()) BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() else null
+            } else {
+                null
+            }
+        }
+        bgBitmap?.let { bitmap ->
+            Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()

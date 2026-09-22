@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
@@ -22,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.model.AppUiTheme
+import kotlinx.coroutines.launch
 import com.ahu.ahutong.data.model.DEFAULT_THEME_COLOR
 import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.components.AppButton
@@ -93,6 +96,8 @@ fun ThemeLab(
                 onCustomColorClick = { showCustomColorDialog = true }
             )
         }
+
+        HomeBackgroundSection(viewModel = viewModel)
 
         SettingsSection(
             title = "界面风格套装",
@@ -408,4 +413,98 @@ private fun CustomThemeColorDialog(
             )
         }
     )
+}
+
+/** 主页背景：选图（裁屏比落盘）+ 高斯模糊滑杆 + 取主色调 + 清除。 */
+@Composable
+private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val revision by com.ahu.ahutong.core.storage.HomeBackgroundStore.revision.collectAsState()
+    var blur by remember(revision) {
+        mutableFloatStateOf(com.ahu.ahutong.core.storage.HomeBackgroundStore.blurRadius.toFloat())
+    }
+    val enabled = com.ahu.ahutong.core.storage.HomeBackgroundStore.isEnabled
+
+    val pickImage = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                com.ahu.ahutong.core.storage.HomeBackgroundStore.importFromUri(context, uri)
+            }
+        }
+    }
+
+    SettingsSection(
+        title = "主页背景",
+        modifier = Modifier.padding(horizontal = 16.dp)
+    ) {
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                AppButton(
+                    onClick = {
+                        pickImage.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    },
+                    variant = AppButtonVariant.Primary,
+                    modifier = Modifier.weight(1f)
+                ) { Text(if (enabled) "更换图片" else "选择图片") }
+                if (enabled) {
+                    AppButton(
+                        onClick = {
+                            scope.launch {
+                                com.ahu.ahutong.core.storage.HomeBackgroundStore.clear(context)
+                            }
+                        },
+                        variant = AppButtonVariant.Secondary,
+                        modifier = Modifier.weight(1f)
+                    ) { Text("清除") }
+                }
+            }
+            if (enabled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "模糊",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.width(48.dp)
+                    )
+                    androidx.compose.material3.Slider(
+                        value = blur,
+                        onValueChange = { blur = it },
+                        onValueChangeFinished = {
+                            scope.launch {
+                                com.ahu.ahutong.core.storage.HomeBackgroundStore
+                                    .updateBlur(context, blur.toInt())
+                            }
+                        },
+                        valueRange = 0f..25f,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = blur.toInt().toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.width(28.dp)
+                    )
+                }
+                AppButton(
+                    onClick = {
+                        com.ahu.ahutong.core.storage.HomeBackgroundStore
+                            .dominantColorHex(context)?.let { viewModel.setThemeColor(it) }
+                    },
+                    variant = AppButtonVariant.Secondary,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("从背景图取主题色") }
+            }
+        }
+    }
 }

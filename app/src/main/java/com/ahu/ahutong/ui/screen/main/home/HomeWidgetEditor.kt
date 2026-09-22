@@ -287,6 +287,9 @@ private fun RadiantTextHomeWidgetCard(
     }
 }
 
+/** 流动排列里「更多」入口的哨兵值（不是槽位号）。 */
+private const val MORE_CELL = 0
+
 @Composable
 private fun HomeWidgetMoreItem(
     onClick: () -> Unit,
@@ -359,26 +362,32 @@ private fun RadiantHomeWidgetSlotLayout(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            listOf(listOf(1, 2, 3, 4), listOf(5, 6, 7)).forEach { rowSlots ->
-                val isLastRow = rowSlots.last() == 7
-                val visibleSlots = if (isEditing) {
-                    rowSlots
-                } else {
-                    rowSlots.filter { slots.getOrNull(it - 1) != null }
-                }
-                val rowHasWidgets = visibleSlots.isNotEmpty()
-                if (isEditing || rowHasWidgets || isLastRow) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        visibleSlots.forEach { slotIndex ->
-                            val widgetId = slots.getOrNull(slotIndex - 1)
+            // 流动排列：非编辑态只排已放置的槽，「更多」紧跟其后；
+            // 编辑态 7 槽全显示（网格几何固定，拖拽吸附不受影响）
+            val visibleSlots = if (isEditing) {
+                (1..HomeWidgetRegistry.slotCountRadiant).toList()
+            } else {
+                (1..HomeWidgetRegistry.slotCountRadiant).filter { slots.getOrNull(it - 1) != null }
+            }
+            val cells = visibleSlots + MORE_CELL
+            cells.chunked(4).forEach { rowCells ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    rowCells.forEach { cell ->
+                        if (cell == MORE_CELL) {
+                            HomeWidgetMoreItem(
+                                onClick = { navController.navigate("widgets") },
+                                modifier = Modifier.weight(1f).height(64.dp)
+                            )
+                        } else {
+                            val widgetId = slots.getOrNull(cell - 1)
                             HomeWidgetSlot(
-                                slotIndex = slotIndex,
+                                slotIndex = cell,
                                 widgetId = widgetId,
                                 isEditing = isEditing,
-                                isHighlighted = highlightedSlot == slotIndex,
+                                isHighlighted = highlightedSlot == cell,
                                 isDragging = draggingWidgetId == widgetId,
                                 modifier = Modifier
                                     .weight(1f)
@@ -390,17 +399,6 @@ private fun RadiantHomeWidgetSlotLayout(
                                 onDragStarted = onHomeWidgetDragStarted,
                                 onDragged = onHomeWidgetDragged,
                                 onDragStopped = onHomeWidgetDragStopped
-                            )
-                        }
-                        if (isLastRow) {
-                            val moreModifier = if (rowHasWidgets) {
-                                Modifier.weight(1f)
-                            } else {
-                                Modifier.width(68.dp)
-                            }
-                            HomeWidgetMoreItem(
-                                onClick = { navController.navigate("widgets") },
-                                modifier = moreModifier.height(64.dp)
                             )
                         }
                     }

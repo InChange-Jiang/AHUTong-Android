@@ -577,7 +577,7 @@ fun Home(
                     .statusBarsPadding()
                     .padding(top = 12.dp)
             ) {
-                HomeDateRow(trailingContent = trailingContent)
+                HomeDateRow(dateText = currentDateText, trailingContent = trailingContent)
                 Spacer(modifier = Modifier.height(24.dp))
             }
         }

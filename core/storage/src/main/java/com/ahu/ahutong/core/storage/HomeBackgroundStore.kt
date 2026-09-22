@@ -33,8 +33,8 @@ object HomeBackgroundStore {
 
     val isEnabled: Boolean get() = prefs.getString("path", null) != null
 
-    /** 遮罩不透明度百分比 0-60（亮色模式白罩 / 暗色模式黑罩）。 */
-    val maskPercent: Int get() = prefs.getInt("mask", 25)
+    /** 遮罩不透明度百分比 0-100（全虚到全实；亮色模式白罩 / 暗色模式黑罩）。 */
+    val maskPercent: Int get() = prefs.getInt("mask", 50)
 
     fun blurredFile(context: Context): File = File(context.filesDir, BLUR_FILE)
 
@@ -54,7 +54,7 @@ object HomeBackgroundStore {
 
     /** 调遮罩不透明度（0-60%）：仅改设置，图不动。 */
     fun updateMask(percent: Int) {
-        prefs.edit().putInt("mask", percent.coerceIn(0, 60)).apply()
+        prefs.edit().putInt("mask", percent.coerceIn(0, 100)).apply()
         _revision.value++
     }
 

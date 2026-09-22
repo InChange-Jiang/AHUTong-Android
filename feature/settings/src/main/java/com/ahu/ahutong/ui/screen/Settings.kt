@@ -218,7 +218,7 @@ fun Settings(
                 onClick = onNavigateToPreferences
             )
             SettingsActionRow(
-                title = "外观",
+                title = "外观设置",
                 leadingIcon = when {
                     useMiuixIcons -> MiuixIcons.Useful.Settings
                     isRadiant -> null

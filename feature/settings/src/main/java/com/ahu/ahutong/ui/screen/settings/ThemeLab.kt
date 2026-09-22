@@ -117,7 +117,10 @@ fun ThemeLab(
             title = "实时预览（当前混搭效果）",
             modifier = Modifier.padding(horizontal = 16.dp)
         ) {
-            AppCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -440,7 +443,10 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
         title = "主页背景",
         modifier = Modifier.padding(horizontal = 16.dp)
     ) {
-        AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -485,7 +491,7 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
                             com.ahu.ahutong.core.storage.HomeBackgroundStore
                                 .updateMask(blur.toInt())
                         },
-                        valueRange = 0f..60f,
+                        valueRange = 0f..100f,
                         modifier = Modifier.weight(1f)
                     )
                     Text(

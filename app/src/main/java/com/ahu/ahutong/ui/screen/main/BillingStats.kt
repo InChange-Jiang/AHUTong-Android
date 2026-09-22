@@ -97,6 +97,18 @@ fun BillingStats(
                     item { StatsNonCanteenCategories(summary) }
                     item { StatsMerchantTop(summary) }
                     item { StatsHighDays(summary, onDayClick = { detailDay = it }) }
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "分析引擎由 yoki-Clark 提供支持",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
         }

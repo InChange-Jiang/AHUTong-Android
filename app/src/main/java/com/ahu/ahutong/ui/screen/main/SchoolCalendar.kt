@@ -267,7 +267,7 @@ fun SchoolCalendar(navController: NavHostController) {
         modifier = Modifier.fillMaxSize(),
         actions = listOf(
             TrailingAction(Icons.Rounded.Refresh, "刷新校历") { fetchCatalog(true) },
-            TrailingAction(Icons.Rounded.Download, "保存校历", ::requestSave)
+            TrailingAction(Icons.Rounded.Download, "保存校历", onClick = ::requestSave)
         )
     ) {
         Column(

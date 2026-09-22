@@ -70,12 +70,12 @@ fun HomeClassCard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            // 状态徽标：所有卡统一显示（等高前提），字号比正文小一档（10sp）
+            // 状态徽标：所有卡统一显示（等高前提），纯圆角小胶囊，字号 10sp
             Box(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
+                    .clip(RoundedCornerShape(50))
                     .background(90.a1 withNight 40.a1)
-                    .padding(horizontal = 8.dp, vertical = 1.dp),
+                    .padding(horizontal = 8.dp, vertical = 0.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

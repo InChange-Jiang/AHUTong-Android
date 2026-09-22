@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.Icons
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,11 +29,20 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /** 二级页标题栏右侧的操作按钮。 */
+/** 标题栏右侧动作。icon 用 ImageVector；iconpark 线性图标走 painter 副构造。 */
 data class TrailingAction(
     val icon: ImageVector,
     val contentDescription: String,
+    val painter: Painter? = null,
     val onClick: () -> Unit
-)
+) {
+    constructor(painter: Painter, contentDescription: String, onClick: () -> Unit) : this(
+        icon = Icons.Outlined.Info,
+        contentDescription = contentDescription,
+        painter = painter,
+        onClick = onClick
+    )
+}
 
 /**
  * 统一的二级页面标题栏。
@@ -110,12 +122,21 @@ fun SecondaryPageHeader(
                                 contentAlignment = Alignment.Center
                             ) {
                                 IconButton(onClick = action.onClick) {
-                                    Icon(
-                                        imageVector = action.icon,
-                                        contentDescription = action.contentDescription,
-                                        tint = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.size(18.dp)
-                                    )
+                                    if (action.painter != null) {
+                                        Icon(
+                                            painter = action.painter,
+                                            contentDescription = action.contentDescription,
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = action.icon,
+                                            contentDescription = action.contentDescription,
+                                            tint = MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -142,7 +163,11 @@ fun SecondaryPageHeader(
                 Row {
                     limited.forEach { action ->
                         IconButton(onClick = action.onClick) {
-                            Icon(action.icon, action.contentDescription)
+                            if (action.painter != null) {
+                                Icon(action.painter, action.contentDescription)
+                            } else {
+                                Icon(action.icon, action.contentDescription)
+                            }
                         }
                     }
                 }

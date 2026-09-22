@@ -6,6 +6,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.res.painterResource
+import com.ahu.ahutong.R
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -14,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.QueryStats
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -69,9 +74,9 @@ fun Billing(
         onBack = onBack,
         modifier = Modifier.fillMaxSize(),
         actions = listOf(
-            TrailingAction(Icons.Outlined.QueryStats, "统计") { onOpenStats() },
-            TrailingAction(Icons.Outlined.FilterList, "筛选") { showFilter = true },
-            TrailingAction(Icons.Outlined.Refresh, "刷新") { viewModel.refresh() }
+            TrailingAction(painterResource(R.drawable.ic_billing_analysis), "统计") { onOpenStats() },
+            TrailingAction(painterResource(R.drawable.ic_billing_filter), "筛选") { showFilter = true },
+            TrailingAction(painterResource(R.drawable.ic_billing_refresh), "刷新") { viewModel.refresh() }
         ),
         lazyContent = {
             // 汇总头
@@ -302,8 +307,19 @@ private fun BillingRecordItem(record: TurnoverRecord, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        Icon(
+            painter = painterResource(
+                if (record.isExpense) R.drawable.ic_bill_expense else R.drawable.ic_bill_income
+            ),
+            contentDescription = if (record.isExpense) "支出" else "收入",
+            modifier = Modifier.size(18.dp),
+            // 支出红 / 收入绿
+            tint = if (record.isExpense) 40.a1 withNight 75.a1 else 60.a1 withNight 60.a1
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically

@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.data.model.AppUiTheme
 import kotlinx.coroutines.launch
 import com.ahu.ahutong.data.model.DEFAULT_THEME_COLOR
@@ -71,6 +72,7 @@ fun ThemeLab(
     onBack: () -> Unit = {},
     viewModel: PreferencesViewModel = hiltViewModel()
 ) {
+    val appThemeMode by viewModel.appThemeMode.collectAsState()
     val appUiTheme by viewModel.appUiTheme.collectAsState()
     val slotOverrides by viewModel.componentSlotOverrides.collectAsState()
     val themeColor by viewModel.themeColor.collectAsState()
@@ -97,6 +99,24 @@ fun ThemeLab(
                 showMiuixDefault = appUiTheme == AppUiTheme.MIUIX,
                 onColorSelected = viewModel::setThemeColor,
                 onCustomColorClick = { showCustomColorDialog = true }
+            )
+        }
+
+        SettingsSection(
+            title = "深色模式",
+            modifier = Modifier.padding(horizontal = 16.dp),
+            backdrop = backdrop
+        ) {
+            SettingsSelectRow(
+                title = "深色模式",
+                selected = appThemeMode,
+                choices = listOf(
+                    SettingsChoice(AppThemeMode.FOLLOW_SYSTEM, "跟随系统"),
+                    SettingsChoice(AppThemeMode.DARK, "深色"),
+                    SettingsChoice(AppThemeMode.LIGHT, "浅色")
+                ),
+                onSelected = viewModel::setAppThemeMode,
+                showDivider = false
             )
         }
 

@@ -367,11 +367,7 @@ fun Home(
         if (BuildConfig.DEBUG) {
             DebugBuildBadge()
         }
-        if (
-            !isEditingHome &&
-            weatherHomeConfig.showOnHome &&
-            weatherHomeConfig.mode == WeatherHomeMode.Compact
-        ) {
+        if (!isEditingHome && weatherHomeConfig.showOnHome) {
             HomeWeatherWidget(
                 onClick = { navController.navigate("weather") },
                 modifier = Modifier.padding(start = 12.dp),
@@ -516,16 +512,6 @@ fun Home(
                     onOpenSchedule = onOpenSchedule,
                     isTomorrow = stripCourses.second
                 )
-            }
-            if (weatherHomeConfig.showOnHome && weatherHomeConfig.mode == WeatherHomeMode.Detailed) {
-                Spacer(modifier = Modifier.height(20.dp))
-                if (!isEditingHome) {
-                    HomeWeatherWidget(
-                        onClick = { navController.navigate("weather") },
-                        config = weatherHomeConfig,
-                        mode = WeatherHomeMode.Detailed
-                    )
-                }
             }
             Spacer(modifier = Modifier.height(8.dp))
             HomeWidgetSlotLayout(

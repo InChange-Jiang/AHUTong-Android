@@ -292,22 +292,6 @@ fun Preferences(onBack: () -> Unit = {}, onOpenThemeLab: () -> Unit = {}) {
             )
         }
 
-            SettingsSection(
-                title = "外观",
-                modifier = Modifier.padding(horizontal = 16.dp),
-                backdrop = backdrop
-            ) {
-                SettingsSelectRow(
-                    title = "深色模式",
-                    selected = appThemeMode,
-                    choices = listOf(
-                        SettingsChoice(AppThemeMode.FOLLOW_SYSTEM, "跟随系统"),
-                        SettingsChoice(AppThemeMode.DARK, "深色"),
-                        SettingsChoice(AppThemeMode.LIGHT, "浅色")
-                    ),
-                    onSelected = viewModel::setAppThemeMode
-                )
-            }
         }
     }
 

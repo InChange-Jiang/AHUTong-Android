@@ -27,9 +27,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.R
-import com.ahu.ahutong.data.dao.AHUCache
-import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
-import com.ahu.ahutong.ui.components.isRadiantUi
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -39,10 +36,6 @@ fun MoreWidgetsScreen(
     homeEditEnabled: Boolean = false,
     onEditHome: () -> Unit = {}
 ) {
-    // 主页排版全主题统一为 Radiant 方案：槽位配置只走 RADIANT 族
-    val homeWidgetIds = remember {
-        AHUCache.getHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT).filterNotNull().toSet()
-    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -93,8 +86,8 @@ fun MoreWidgetsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 「全部小工具」= 展示全部组件（含已上主页的），不再做减法
             HomeWidgetRegistry.availableWidgets(true)
-                .filter { it.id !in homeWidgetIds }
                 .forEach { widget ->
                     ToolItem(
                         title = widget.title,

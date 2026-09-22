@@ -149,7 +149,6 @@ fun Main(
     val diagnosticsRouteVisible = diagnosticsContribution.isDiagnosticsRoute(currentRoute) ||
         currentRoute == "debug"
     val appUiTheme = LocalAppUiTheme.current
-    val appUiThemeState = rememberUpdatedState(appUiTheme)
     val effectiveRoute = currentRoute
     // 合并注：IA 已收敛为 Radiant 单形态（无主屏 pager），isHomeActive 简化为路由判断
     val isHomeActive = currentRoute == "home"
@@ -247,7 +246,7 @@ fun Main(
                 .fillMaxSize()
                 .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
         ) {
-            animatedComposable(appUiThemeState, "home") {
+            animatedComposable("home") {
                 Home(
                     discoveryViewModel = discoveryViewModel,
                     scheduleViewModel = scheduleViewModel,
@@ -264,7 +263,7 @@ fun Main(
                     }
                 )
             }
-            animatedComposable(appUiThemeState, "setup") {
+            animatedComposable("setup") {
                 Setup(
                     scheduleViewModel = scheduleViewModel,
                     aboutViewModel = aboutViewModel,
@@ -281,7 +280,7 @@ fun Main(
                     }
                 )
             }
-            animatedComposable(appUiThemeState, "login") {
+            animatedComposable("login") {
                 Login(
                     loginViewModel = loginViewModel,
                     onLoggedIn = {
@@ -304,13 +303,13 @@ fun Main(
                     }
                 )
             }
-            animatedComposable(appUiThemeState, "info") {
+            animatedComposable("info") {
                 Info(
                     scheduleViewModel = scheduleViewModel,
                     onSetup = { navController.popBackStack() }
                 )
             }
-            animatedComposable(appUiThemeState, "schedule") {
+            animatedComposable("schedule") {
                 // 无条件渲染，理由同 settings 路由：redirect 的二次 pop 会与
                 // 返回转场竞态；非 RADIANT 主题下独立展示课表页可正常用系统返回
                 Schedule(
@@ -318,7 +317,7 @@ fun Main(
                     behaviorRecorder = behaviorRecorder
                 )
             }
-            animatedComposable(appUiThemeState, "tools") {
+            animatedComposable("tools") {
                 // IA 统一后小工具页只存在于「主页-更多」二级路由；旧 tools 深链一律转 widgets
                 LaunchedEffect(Unit) {
                     navController.navigate("widgets") {
@@ -328,17 +327,17 @@ fun Main(
                 }
                 Box(modifier = Modifier.fillMaxSize())
             }
-            animatedComposable(appUiThemeState, "widgets") {
+            animatedComposable("widgets") {
                 MoreWidgetsScreen(
                     navController = navController,
                     homeEditEnabled = homeEditGrayState.enabled,
                     onEditHome = ::requestHomeEdit
                 )
             }
-            animatedComposable(appUiThemeState, "school_calendar") {
+            animatedComposable("school_calendar") {
                 SchoolCalendar(navController = navController)
             }
-            animatedComposable(appUiThemeState, "grade") {
+            animatedComposable("grade") {
                 Grade(
                     onNavigateToEvaluation = {
                         navController.navigate("evaluation")
@@ -346,25 +345,25 @@ fun Main(
                     onBack = { navController.popBackStack() }
                 )
             }
-            animatedComposable(appUiThemeState, "phone_book") {
+            animatedComposable("phone_book") {
                 PhoneBook(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, "exam") {
+            animatedComposable("exam") {
                 Exam(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, "evaluation") {
+            animatedComposable("evaluation") {
                 Evaluation(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, "free_classroom") {
+            animatedComposable("free_classroom") {
                 FreeClassroom(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, "lost_found") {
+            animatedComposable("lost_found") {
                 LostFound(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, "weather") {
+            animatedComposable("weather") {
                 Weather(onBack = { navController.popBackStack() })
             }
-            animatedComposable(appUiThemeState, REPOSITORY_ROUTE) {
+            animatedComposable(REPOSITORY_ROUTE) {
                 Repository(
                     navController = navController,
                     path = "",
@@ -372,7 +371,6 @@ fun Main(
                 )
             }
             animatedComposable(
-                appUiThemeState,
                 route = REPOSITORY_DIRECTORY_ROUTE,
                 arguments = listOf(
                     navArgument(REPOSITORY_PATH_ARG) {
@@ -388,13 +386,13 @@ fun Main(
                     behaviorRecorder = behaviorRecorder
                 )
             }
-            animatedComposable(appUiThemeState, "repository_downloads") {
+            animatedComposable("repository_downloads") {
                 RepositoryDownloads(navController = navController)
             }
-            animatedComposable(appUiThemeState, "repository_settings") {
+            animatedComposable("repository_settings") {
                 RepositorySettings(navController = navController)
             }
-            animatedComposable(appUiThemeState, "settings") {
+            animatedComposable("settings") {
                 // 无条件渲染：切换主题后 pop 回此路由时不能落入空白重定向页，
                 // 否则 pop 转场与 redirect 的二次 pop 竞态会导致白屏/卡死
                 SettingsHub(
@@ -403,38 +401,38 @@ fun Main(
                     scheduleViewModel = scheduleViewModel
                 )
             }
-            animatedComposable(appUiThemeState, "settings__license") {
+            animatedComposable("settings__license") {
                 License(
                     title = stringResource(R.string.license),
                     onBack = { navController.popBackStack() }
                 )
             }
-            animatedComposable(appUiThemeState, "settings__contributors") {
+            animatedComposable("settings__contributors") {
                 Contributors(
                     title = stringResource(R.string.contributors),
                     onBack = { navController.popBackStack() }
                 )
             }
 
-            animatedComposable(appUiThemeState, "preferences") {
+            animatedComposable("preferences") {
                 Preferences(
                     onBack = ::navigateBackFromPreferences,
                     onOpenThemeLab = { navController.navigate("settings__theme_lab") }
                 )
             }
 
-            animatedComposable(appUiThemeState, "settings__theme_lab") {
+            animatedComposable("settings__theme_lab") {
                 ThemeLab(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable(appUiThemeState, "electricity_pay") {
+            animatedComposable("electricity_pay") {
                 ElectricityDeposit(
                     onBack = { navController.popBackStack() },
                     onOpenRecentRooms = { navController.navigate("electricity_recent_rooms") }
                 )
             }
 
-            animatedComposable(appUiThemeState, "electricity_recent_rooms") { backStackEntry ->
+            animatedComposable("electricity_recent_rooms") { backStackEntry ->
                 val parentEntry = remember(backStackEntry) {
                     navController.getBackStackEntry("electricity_pay")
                 }
@@ -446,28 +444,28 @@ fun Main(
                 )
             }
 
-            animatedComposable(appUiThemeState, "card_balance_deposit") {
+            animatedComposable("card_balance_deposit") {
                 CardBalanceDeposit(navController = navController)
             }
 
-            animatedComposable(appUiThemeState, "bathroom_deposit") {
+            animatedComposable("bathroom_deposit") {
                 BathroomDeposit(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable(appUiThemeState, "cmb_card_recharge") {
+            animatedComposable("cmb_card_recharge") {
                 CardBalanceDeposit(navController = navController)
             }
 
-            animatedComposable(appUiThemeState, "network_recharge") {
+            animatedComposable("network_recharge") {
                 NetworkRecharge(onBack = { navController.popBackStack() })
             }
 
-            animatedComposable(appUiThemeState, "xuexiaotong") {
+            animatedComposable("xuexiaotong") {
                 XuexiaotongScreen()
             }
 
             if (BuildConfig.DEBUG) {
-                animatedComposable(appUiThemeState, "debug") {
+                animatedComposable("debug") {
                     Debug(
                         scheduleViewModel = scheduleViewModel,
                         discoveryViewModel = discoveryViewModel,
@@ -483,7 +481,7 @@ fun Main(
                 }
             }
 
-            animatedComposable(appUiThemeState, "splash") {
+            animatedComposable("splash") {
                 Splash(navController)
             }
             diagnosticsContribution.installRoutes(this, navController, behaviorRuntime)

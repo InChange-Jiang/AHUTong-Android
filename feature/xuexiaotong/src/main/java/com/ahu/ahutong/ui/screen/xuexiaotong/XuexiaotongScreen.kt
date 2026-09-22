@@ -141,14 +141,9 @@ fun XuexiaotongScreen() {
         return
     }
 
-    // 曜光模式：子页由底部导航栏轮换（全局状态，重进停留在上次子页）；
-    // 经典模式：子页由页面内部底部 Dock 切换（局部状态）。
+    // 全主题统一：子页（日程/课程）由底部导航栏再次点击轮换（全局状态，重进停留在上次子页）
     val isRadiant = isRadiantUi
-    var localTab by remember { mutableStateOf(XuexiaotongSubTab.SCHEDULE) }
-    val tab = if (isRadiant) XuexiaotongDockState.tab else localTab
-    fun setTab(t: XuexiaotongSubTab) {
-        if (isRadiant) XuexiaotongDockState.tab = t else localTab = t
-    }
+    val tab = XuexiaotongDockState.tab
 
     var sideMenuOpen by remember { mutableStateOf(false) }
     var selectedWork by remember { mutableStateOf<Work?>(null) }
@@ -517,9 +512,6 @@ fun XuexiaotongScreen() {
                     }
                 }
             }
-
-            // 经典模式底部悬浮 Dock（日程/课程切换）；曜光模式由底部导航栏轮换，无需 Dock
-            BottomDockHost(tab = tab, onSelect = { setTab(it) })
         }
     }
 
@@ -794,141 +786,6 @@ private fun BottomSheetSwitchItem(label: String, checked: Boolean, onToggle: () 
     }
 }
 
-
-/* ==================== 底部悬浮 Dock（经典模式） ==================== */
-
-@Composable
-private fun BoxScope.BottomDockHost(
-    tab: XuexiaotongSubTab,
-    onSelect: (XuexiaotongSubTab) -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(bottom = 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        BottomDock(current = tab, onSelect = onSelect)
-    }
-}
-
-@Composable
-private fun BottomDock(
-    current: XuexiaotongSubTab,
-    modifier: Modifier = Modifier,
-    onSelect: (XuexiaotongSubTab) -> Unit
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    val surface = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
-    val dockWidthDp = 168.dp
-    var dockWidth by remember { mutableStateOf(0) }
-    val animationScope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    var didDrag by remember { mutableStateOf(false) }
-    var startX by remember { mutableStateOf(0f) }
-
-    val dampedDragAnimation = remember(animationScope) {
-        DampedDragAnimation(
-            animationScope = animationScope,
-            initialValue = if (current == XuexiaotongSubTab.COURSE) 1f else 0f,
-            valueRange = 0f..1f,
-            visibilityThreshold = 0.001f,
-            initialScale = 1f,
-            pressedScale = 1.25f,
-            onDragStarted = { position ->
-                didDrag = false
-                startX = position.x
-            },
-            onDragStopped = {
-                val half = if (dockWidth > 0) dockWidth / 2f else with(density) { 84f.dp.toPx() }
-                val target = if (didDrag) {
-                    if (targetValue >= 0.5f) 1f else 0f
-                } else {
-                    if (startX >= half) 1f else 0f
-                }
-                animateToValue(target)
-                onSelect(if (target >= 0.5f) XuexiaotongSubTab.COURSE else XuexiaotongSubTab.SCHEDULE)
-            },
-            onDrag = { _, dragAmount ->
-                if (dragAmount.x != 0f) didDrag = true
-                val tabWidth = if (dockWidth > 0) dockWidth / 2f else with(density) { 84f.dp.toPx() }
-                updateValue(targetValue + dragAmount.x / tabWidth)
-            }
-        )
-    }
-    LaunchedEffect(current) {
-        dampedDragAnimation.animateToValue(if (current == XuexiaotongSubTab.COURSE) 1f else 0f)
-    }
-
-    Box(
-        modifier = modifier
-            .width(dockWidthDp)
-            .height(56.dp)
-            .onSizeChanged { dockWidth = it.width }
-    ) {
-        // 底座
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(surface, RoundedCornerShape(50))
-        )
-        // 选中滑块
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.5f)
-                .height(56.dp)
-                .offset {
-                    IntOffset(
-                        x = (dampedDragAnimation.progress * dockWidth / 2f).roundToInt(),
-                        y = 0
-                    )
-                }
-                .padding(4.dp)
-                .background(Color.White, RoundedCornerShape(50)),
-            contentAlignment = Alignment.Center
-        ) {}
-        // 文本层
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "日程",
-                    fontSize = 15.sp,
-                    fontWeight = if (current == XuexiaotongSubTab.SCHEDULE) FontWeight.Bold else FontWeight.Normal,
-                    color = if (current == XuexiaotongSubTab.SCHEDULE) primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(56.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    "课程",
-                    fontSize = 15.sp,
-                    fontWeight = if (current == XuexiaotongSubTab.COURSE) FontWeight.Bold else FontWeight.Normal,
-                    color = if (current == XuexiaotongSubTab.COURSE) primary else MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-        // 手势层
-        Box(
-            Modifier
-                .fillMaxSize()
-                .then(dampedDragAnimation.modifier)
-        ) {}
-    }
-}
 
 /* ==================== 日程标签页 ==================== */
 

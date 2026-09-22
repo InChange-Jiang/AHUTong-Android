@@ -337,7 +337,25 @@ private fun BoxScope.ClassicBottomNavBar(
     selectedRoute: String?,
     onDestinationSelected: (String) -> Unit
 ) {
-    if (selectedRoute !in classicDestinations.map { it.route }) return
+    // 与曜光一致：第三 Tab 标签随子页态切换（日程/课程），再次点击轮换子页
+    val showingSchedule = XuexiaotongDockState.tab == XuexiaotongSubTab.SCHEDULE
+    val destinations = classicDestinations.map { destination ->
+        if (destination.route == "xuexiaotong") {
+            destination.copy(label = if (showingSchedule) "日程" else "课程")
+        } else {
+            destination
+        }
+    }
+
+    fun select(route: String) {
+        if (route == "xuexiaotong" && route == selectedRoute) {
+            XuexiaotongDockState.toggle()
+        } else {
+            onDestinationSelected(route)
+        }
+    }
+
+    if (selectedRoute !in destinations.map { it.route }) return
 
     if (LocalIsLiquidGlassEnabled.current) {
         Row(
@@ -349,18 +367,18 @@ private fun BoxScope.ClassicBottomNavBar(
         ) {
             LiquidBottomTabs(
                 selectedTabIndex = {
-                    classicDestinations.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
+                    destinations.indexOfFirst { it.route == selectedRoute }.coerceAtLeast(0)
                 },
-                onTabSelected = { onDestinationSelected(classicDestinations[it].route) },
+                onTabSelected = { select(destinations[it].route) },
                 backdrop = backdrop,
-                tabsCount = classicDestinations.size,
+                tabsCount = destinations.size,
                 modifier = Modifier.padding(horizontal = 36.dp)
             ) {
-                classicDestinations.forEach { destination ->
+                destinations.forEach { destination ->
                     val selected = selectedRoute == destination.route
                     LiquidBottomTab(
                         selected = selected,
-                        onClick = { onDestinationSelected(destination.route) }
+                        onClick = { select(destination.route) }
                     ) {
                         Icon(
                             imageVector = if (selected) {
@@ -376,11 +394,11 @@ private fun BoxScope.ClassicBottomNavBar(
             }
         }
     } else if (LocalAppUiTheme.current == AppUiTheme.MIUIX) {
-        val selectedIndex = classicDestinations
+        val selectedIndex = destinations
             .indexOfFirst { it.route == selectedRoute }
             .coerceAtLeast(0)
         MiuixNavigationBar(
-            items = classicDestinations.mapIndexed { index, destination ->
+            items = destinations.mapIndexed { index, destination ->
                 MiuixNavigationItem(
                     label = destination.label,
                     icon = if (index == selectedIndex) {
@@ -391,7 +409,7 @@ private fun BoxScope.ClassicBottomNavBar(
                 )
             },
             selected = selectedIndex,
-            onClick = { onDestinationSelected(classicDestinations[it].route) },
+            onClick = { select(destinations[it].route) },
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
@@ -404,11 +422,11 @@ private fun BoxScope.ClassicBottomNavBar(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             tonalElevation = 0.dp
         ) {
-            classicDestinations.forEach { destination ->
+            destinations.forEach { destination ->
                 val selected = selectedRoute == destination.route
                 NavigationBarItem(
                     selected = selected,
-                    onClick = { onDestinationSelected(destination.route) },
+                    onClick = { select(destination.route) },
                     icon = {
                         Icon(
                             imageVector = if (selected) {

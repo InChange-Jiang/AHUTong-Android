@@ -61,6 +61,7 @@ import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
 import com.ahu.ahutong.data.schedule.CurrentWeekResolver
+import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
 import androidx.navigation.NavHostController
 import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.ScheduleConfigBean
@@ -440,13 +441,42 @@ fun Home(
                 trailingContent = trailingContent
             )
             Spacer(modifier = Modifier.height(12.dp))
-            if (todayCourses.isNotEmpty()) {
+            // 今日课程全部结束 → 课程条切换为明日课程（Hero 大字仍按今日算，显示空闲）
+            val stripCourses = remember(todayCourses, currentMinutes, schedule, effectiveScheduleConfig) {
+                val allDone = todayCourses.isNotEmpty() && todayCourses.all { course ->
+                    val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
+                    !range.isEmpty() && currentMinutes > range.last
+                }
+                if (!allDone) {
+                    todayCourses to false
+                } else {
+                    val todayWeekday = effectiveScheduleConfig?.weekDay ?: 1
+                    val nextWeekday = if (todayWeekday == 7) 1 else todayWeekday + 1
+                    val nextWeek = if (todayWeekday == 7) currentWeek + 1 else currentWeek
+                    val tomorrow = schedule
+                        .asSequence()
+                        .filter { nextWeek in it.startWeek..it.endWeek }
+                        .filter { it.weekday == nextWeekday }
+                        .filter {
+                            if (nextWeek in it.weekIndexes) {
+                                true
+                            } else {
+                                nextWeek % 2 == it.startWeek % 2
+                            }
+                        }
+                        .sortedBy { it.startTime }
+                        .toList()
+                    tomorrow to true
+                }
+            }
+            if (stripCourses.first.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
                 // 课程条（滚轮三区）替代原纵向列表——全主题生效
                 CourseStrip(
-                    todayCourses = todayCourses,
+                    todayCourses = stripCourses.first,
                     currentMinutes = currentMinutes,
-                    onOpenSchedule = onOpenSchedule
+                    onOpenSchedule = onOpenSchedule,
+                    isTomorrow = stripCourses.second
                 )
             }
             if (weatherHomeConfig.showOnHome && weatherHomeConfig.mode == WeatherHomeMode.Detailed) {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import com.ahu.ahutong.R
 import androidx.compose.foundation.layout.size
@@ -316,8 +317,8 @@ private fun BillingRecordItem(record: TurnoverRecord, onClick: () -> Unit) {
             ),
             contentDescription = if (record.isExpense) "支出" else "收入",
             modifier = Modifier.size(18.dp),
-            // 支出红 / 收入绿
-            tint = if (record.isExpense) 40.a1 withNight 75.a1 else 60.a1 withNight 60.a1
+            // 支出马卡龙红 / 收入马卡龙绿（硬编码，不随主题取色）
+            tint = if (record.isExpense) MacaronRed else MacaronGreen
         )
         Spacer(modifier = Modifier.width(10.dp))
         Row(
@@ -420,6 +421,9 @@ private fun BillingDetailRow(label: String, value: String) {
 }
 
 /** 分 → 元，整数运算避免浮点误差，保留两位。 */
+private val MacaronRed = Color(0xFFE87897)
+private val MacaronGreen = Color(0xFF95D5B2)
+
 private fun formatFen(fen: Long?): String {
     val safe = fen ?: 0
     return String.format(Locale.CHINA, "%d.%02d", safe / 100, safe % 100)

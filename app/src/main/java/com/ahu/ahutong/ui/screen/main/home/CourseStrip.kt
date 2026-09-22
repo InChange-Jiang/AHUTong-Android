@@ -48,7 +48,9 @@ fun CourseStrip(
     todayCourses: List<Course>,
     currentMinutes: Int,
     onOpenSchedule: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 今日课程已全部结束 → 展示明日课程，卡片状态统一显示「明日课程」 */
+    isTomorrow: Boolean = false
 ) {
     if (todayCourses.isEmpty()) {
         AppCard(
@@ -60,7 +62,7 @@ fun CourseStrip(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "今日无课",
+                    text = if (isTomorrow) "明日无课" else "今日无课",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -74,13 +76,17 @@ fun CourseStrip(
         return
     }
 
-    // 焦点课：进行中的；否则下一节；全结束则最后一节；全未开始则第一节
-    val focusIndex = remember(todayCourses, currentMinutes) {
-        val ranges = todayCourses.map(ScheduleSectionTimes::getCourseTimeRangeInMinutes)
-        ranges.indexOfFirst { currentMinutes in it }
-            .takeIf { it >= 0 }
-            ?: ranges.indexOfFirst { currentMinutes < it.first }.takeIf { it >= 0 }
-            ?: todayCourses.lastIndex
+    // 焦点课：进行中的；否则下一节；全结束则最后一节；全未开始则第一节。明日模式固定第一张。
+    val focusIndex = remember(todayCourses, currentMinutes, isTomorrow) {
+        if (isTomorrow) {
+            0
+        } else {
+            val ranges = todayCourses.map(ScheduleSectionTimes::getCourseTimeRangeInMinutes)
+            ranges.indexOfFirst { currentMinutes in it }
+                .takeIf { it >= 0 }
+                ?: ranges.indexOfFirst { currentMinutes < it.first }.takeIf { it >= 0 }
+                ?: todayCourses.lastIndex
+        }
     }
     val pagerState = rememberPagerState(initialPage = focusIndex) { todayCourses.size }
     LaunchedEffect(focusIndex) {
@@ -106,6 +112,7 @@ fun CourseStrip(
         val course = todayCourses[page]
         val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
         val status = when {
+            isTomorrow -> "明日课程"
             currentMinutes in range -> "进行中"
             currentMinutes < range.first -> "即将开始"
             else -> "已结束"

@@ -422,7 +422,7 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val revision by com.ahu.ahutong.core.storage.HomeBackgroundStore.revision.collectAsState()
     var blur by remember(revision) {
-        mutableFloatStateOf(com.ahu.ahutong.core.storage.HomeBackgroundStore.blurRadius.toFloat())
+        mutableFloatStateOf(com.ahu.ahutong.core.storage.HomeBackgroundStore.maskPercent.toFloat())
     }
     val enabled = com.ahu.ahutong.core.storage.HomeBackgroundStore.isEnabled
 
@@ -474,7 +474,7 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "模糊",
+                        text = "遮罩",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.width(48.dp)
                     )
@@ -482,16 +482,14 @@ private fun HomeBackgroundSection(viewModel: PreferencesViewModel) {
                         value = blur,
                         onValueChange = { blur = it },
                         onValueChangeFinished = {
-                            scope.launch {
-                                com.ahu.ahutong.core.storage.HomeBackgroundStore
-                                    .updateBlur(context, blur.toInt())
-                            }
+                            com.ahu.ahutong.core.storage.HomeBackgroundStore
+                                .updateMask(blur.toInt())
                         },
-                        valueRange = 0f..25f,
+                        valueRange = 0f..60f,
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = blur.toInt().toString(),
+                        text = "${blur.toInt()}%",
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.width(28.dp)
                     )

@@ -83,7 +83,9 @@ import com.ahu.ahutong.ui.screen.main.home.HomeWidgetSlotLayout
 import com.ahu.ahutong.ui.screen.main.home.CourseStrip
 import com.ahu.ahutong.core.storage.HomeBackgroundStore
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Image
 import android.graphics.BitmapFactory
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
@@ -443,6 +445,18 @@ fun Home(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+            // 亮暗遮罩：亮色模式白罩、暗色模式黑罩，不透明度可调
+            val maskAlpha = HomeBackgroundStore.maskPercent / 100f
+            if (maskAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            (if (isSystemInDarkTheme()) Color.Black else Color.White)
+                                .copy(alpha = maskAlpha)
+                        )
+                )
+            }
         }
         Column(
             modifier = Modifier

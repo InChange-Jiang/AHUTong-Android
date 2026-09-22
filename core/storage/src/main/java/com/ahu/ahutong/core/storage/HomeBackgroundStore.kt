@@ -15,9 +15,10 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * 主页自定义背景存储（v1）：
- * 选图 → 按屏幕比例 centerCrop → 落盘原图 + 模糊图（三遍盒式模糊 ≈ 高斯）；
- * 模糊滑杆只重出模糊图，不重解码原图。revision 递增驱动主页重组。
+ * 主页自定义背景存储（v2）：
+ * 选图 → 按屏幕比例 centerCrop → 清晰落盘；
+ * 观感调节改用「亮暗遮罩不透明度」（白色/黑色罩层），保住图片清晰度。
+ * revision 递增驱动主页重组。
  */
 object HomeBackgroundStore {
     private const val SRC_FILE = "home_bg_src.jpg"
@@ -31,7 +32,9 @@ object HomeBackgroundStore {
             .getSharedPreferences("home_background", Context.MODE_PRIVATE)
 
     val isEnabled: Boolean get() = prefs.getString("path", null) != null
-    val blurRadius: Int get() = prefs.getInt("blur", 0)
+
+    /** 遮罩不透明度百分比 0-60（亮色模式白罩 / 暗色模式黑罩）。 */
+    val maskPercent: Int get() = prefs.getInt("mask", 25)
 
     fun blurredFile(context: Context): File = File(context.filesDir, BLUR_FILE)
 
@@ -44,18 +47,14 @@ object HomeBackgroundStore {
         File(context.filesDir, SRC_FILE).outputStream().use {
             cropped.compress(Bitmap.CompressFormat.JPEG, 92, it)
         }
-        regenerateBlurred(context, cropped, blurRadius)
-        prefs.edit().putString("path", BLUR_FILE).putInt("blur", blurRadius).apply()
+        regenerateBlurred(context, cropped)
+        prefs.edit().putString("path", BLUR_FILE).apply()
         _revision.value++
     }
 
-    /** 调模糊度：从原图重出成品。 */
-    suspend fun updateBlur(context: Context, radius: Int) = withContext(Dispatchers.IO) {
-        val srcFile = File(context.filesDir, SRC_FILE)
-        if (!srcFile.exists()) return@withContext
-        val src = BitmapFactory.decodeFile(srcFile.absolutePath) ?: return@withContext
-        regenerateBlurred(context, src, radius)
-        prefs.edit().putString("path", BLUR_FILE).putInt("blur", radius).apply()
+    /** 调遮罩不透明度（0-60%）：仅改设置，图不动。 */
+    fun updateMask(percent: Int) {
+        prefs.edit().putInt("mask", percent.coerceIn(0, 60)).apply()
         _revision.value++
     }
 
@@ -96,12 +95,10 @@ object HomeBackgroundStore {
         return "#FF%02X%02X%02X".format(r, g, b)
     }
 
-    private fun regenerateBlurred(context: Context, src: Bitmap, radius: Int) {
-        val out = if (radius > 0) boxBlur(src, radius) else src
+    private fun regenerateBlurred(context: Context, src: Bitmap) {
         blurredFile(context).outputStream().use {
-            out.compress(Bitmap.CompressFormat.JPEG, 85, it)
+            src.compress(Bitmap.CompressFormat.JPEG, 88, it)
         }
-        if (out != src) out.recycle()
     }
 
     private fun decodeBoundsSafe(context: Context, uri: Uri): Bitmap? {
@@ -131,45 +128,6 @@ object HomeBackgroundStore {
             val newH = (src.width / dstRatio).toInt()
             val y = (src.height - newH) / 2
             Bitmap.createBitmap(src, 0, y, src.width, newH)
-        }
-    }
-
-    /** 三遍盒式模糊 ≈ 高斯（纯 CPU，全 API 可用，半径建议 ≤25）。 */
-    private fun boxBlur(src: Bitmap, radius: Int): Bitmap {
-        val w = src.width
-        val h = src.height
-        var pixels = IntArray(w * h)
-        src.getPixels(pixels, 0, w, 0, 0, w, h)
-        val tmp = IntArray(w * h)
-        repeat(3) {
-            boxBlurPass(pixels, tmp, w, h, radius, horizontal = true)
-            boxBlurPass(tmp, pixels, w, h, radius, horizontal = false)
-        }
-        return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888)
-    }
-
-    private fun boxBlurPass(src: IntArray, dst: IntArray, w: Int, h: Int, radius: Int, horizontal: Boolean) {
-        val div = radius * 2 + 1
-        val width = if (horizontal) w else h
-        val height = if (horizontal) h else w
-        for (line in 0 until height) {
-            var sumR = 0
-            var sumG = 0
-            var sumB = 0
-            fun px(i: Int): Int = if (horizontal) src[line * w + i] else src[i * w + line]
-            for (i in -radius..radius) {
-                val c = px(i.coerceIn(0, width - 1))
-                sumR += (c shr 16) and 0xFF; sumG += (c shr 8) and 0xFF; sumB += c and 0xFF
-            }
-            for (i in 0 until width) {
-                val c = (0xFF shl 24) or ((sumR / div) shl 16) or ((sumG / div) shl 8) or (sumB / div)
-                if (horizontal) dst[line * w + i] = c else dst[i * w + line] = c
-                val addC = px((i + radius + 1).coerceAtMost(width - 1))
-                val subC = px((i - radius).coerceAtLeast(0))
-                sumR += ((addC shr 16) and 0xFF) - ((subC shr 16) and 0xFF)
-                sumG += ((addC shr 8) and 0xFF) - ((subC shr 8) and 0xFF)
-                sumB += (addC and 0xFF) - (subC and 0xFF)
-            }
         }
     }
 }

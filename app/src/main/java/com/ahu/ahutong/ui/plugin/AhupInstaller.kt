@@ -109,8 +109,16 @@ object AhupInstaller {
 
     private fun readZip(context: Context, uri: Uri): Map<String, ByteArray> {
         val out = mutableMapOf<String, ByteArray>()
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zip ->
+        val raw = context.contentResolver.openInputStream(uri)
+            ?: throw AhupException("无法读取所选文件")
+        raw.use { input ->
+            // 魔数校验：非 ZIP 直接拒（连解析都不进）
+            val magic = ByteArray(4)
+            val read = input.read(magic)
+            if (read < 4 || magic[0] != 0x50.toByte() || magic[1] != 0x4B.toByte()) {
+                throw AhupException("不是有效的插件包（.ahup 是 ZIP 格式）")
+            }
+            ZipInputStream(java.io.SequenceInputStream(magic.inputStream(), input)).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     if (!entry.isDirectory) out[entry.name] = zip.readBytes()

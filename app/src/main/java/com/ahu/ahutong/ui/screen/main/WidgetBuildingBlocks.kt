@@ -43,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -138,7 +139,8 @@ internal fun ToolItem(
     title: String,
     iconId: Int,
     tint: Color,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconBytes: ByteArray? = null
 ) {
     Column(
         modifier = Modifier
@@ -152,12 +154,33 @@ internal fun ToolItem(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            painter = painterResource(id = iconId),
-            modifier = Modifier.size(40.dp),
-            contentDescription = null,
-            tint = tint
-        )
+        if (iconBytes != null) {
+            val bitmap = androidx.compose.runtime.remember(iconBytes) {
+                android.graphics.BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size)
+                    ?.asImageBitmap()
+            }
+            if (bitmap != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = bitmap,
+                    modifier = Modifier.size(40.dp),
+                    contentDescription = null
+                )
+            } else {
+                Icon(
+                    painter = painterResource(id = com.ahu.ahutong.R.drawable.ic_round_business_24),
+                    modifier = Modifier.size(40.dp),
+                    contentDescription = null,
+                    tint = tint
+                )
+            }
+        } else {
+            Icon(
+                painter = painterResource(id = iconId),
+                modifier = Modifier.size(40.dp),
+                contentDescription = null,
+                tint = tint
+            )
+        }
         Text(
             text = title,
             fontWeight = FontWeight.Bold,

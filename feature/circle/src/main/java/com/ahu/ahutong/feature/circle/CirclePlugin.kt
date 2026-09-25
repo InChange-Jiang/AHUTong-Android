@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import com.ahu.ahutong.core.plugin.AhuPlugin
 import com.ahu.ahutong.core.plugin.PluginCapability
 import com.ahu.ahutong.core.plugin.PluginHostServices
+import com.ahu.ahutong.core.plugin.PluginIcon
 import com.ahu.ahutong.core.plugin.PluginMeta
 
 /**
@@ -18,7 +19,8 @@ class CirclePlugin : AhuPlugin {
         id = "campus_circle",
         title = "校园圈子",
         summary = "安大 BBS 只读浏览",
-        iconRes = R.drawable.ic_plugin_circle,
+        // 运行期装载时图标以包内 icon.png 为准（装载器覆写）；Resource 仅为编译期兜底
+        icon = PluginIcon.Resource(R.drawable.ic_plugin_circle),
         tint = 0xFF5C6BC0, // 靛蓝，与现有小工具配色同族
         version = "0.1.0",
         author = "AHUTong"

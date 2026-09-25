@@ -193,7 +193,6 @@ dependencies {
     implementation(project(":feature:grade"))
     implementation(project(":feature:xuexiaotong"))
     implementation(project(":feature:recharge"))
-    implementation(project(":feature:circle"))
     implementation(project(":core:plugin-api"))
     implementation(libs.sentry.android)
     implementation(libs.crashreport)

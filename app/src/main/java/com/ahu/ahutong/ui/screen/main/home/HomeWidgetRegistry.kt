@@ -8,20 +8,25 @@ data class HomeWidgetSpec(
     val title: String,
     val route: String,
     val iconId: Int,
-    val tint: Color
+    val tint: Color,
+    /** 运行期插件的 PNG 图标字节流（非空时优先于 iconId 渲染）。 */
+    val iconBytes: ByteArray? = null
 )
 
 object HomeWidgetRegistry {
 
     /** 插件入口（ServiceLoader 发现，宿主对插件零静态引用）。 */
     val pluginWidgets: List<HomeWidgetSpec>
-        get() = com.ahu.ahutong.ui.plugin.PluginRegistry.all.map { plugin ->
+        get() = com.ahu.ahutong.ui.plugin.PluginRegistry.plugins.value.map { plugin ->
+            val resIcon = (plugin.meta.icon as? com.ahu.ahutong.core.plugin.PluginIcon.Resource)?.resId
+            val bytesIcon = (plugin.meta.icon as? com.ahu.ahutong.core.plugin.PluginIcon.Bytes)?.png
             HomeWidgetSpec(
                 id = "plugin:" + plugin.meta.id,
                 title = plugin.meta.title,
                 route = "plugin/" + plugin.meta.id,
-                iconId = plugin.meta.iconRes,
-                tint = Color(plugin.meta.tint)
+                iconId = resIcon ?: 0,
+                tint = Color(plugin.meta.tint),
+                iconBytes = bytesIcon
             )
         }
 

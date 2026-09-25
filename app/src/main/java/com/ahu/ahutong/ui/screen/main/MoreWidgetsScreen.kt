@@ -92,11 +92,14 @@ fun MoreWidgetsScreen(
                     ToolItem(
                         title = widget.title,
                         iconId = widget.iconId,
+                        iconBytes = widget.iconBytes,
                         tint = widget.tint,
                         onClick = { navController.navigate(widget.route) }
                     )
                 }
         }
+        // 插件管理（安装/卸载 .ahup）
+        com.ahu.ahutong.ui.plugin.PluginManagerSection()
         DesktopScheduleWidgetCard()
     }
 }

@@ -268,6 +268,9 @@ fun Main(
     ) {
     LiquidGlassAppHost(modifier = Modifier.fillMaxSize()) {
         val contentBackdrop = LocalLiquidGlassContentBackdrop.current
+        // 插件注册表初始化 + 列表状态（装/卸插件自动重组路由与小工具页）
+        val plugins by com.ahu.ahutong.ui.plugin.PluginRegistry.plugins.collectAsState()
+        LaunchedEffect(Unit) { com.ahu.ahutong.ui.plugin.PluginRegistry.init(context) }
         // 自定义背景在 ambient 层、页面内容在 content 层（两层分离）——
         // 导航栏模糊源只给 content 层会漏掉背景图，胶囊在图上几乎透明（P2 回归）。
         // 有背景时给导航栏「ambient + content」组合采样层，恢复对背景的模糊。
@@ -428,8 +431,9 @@ fun Main(
                     navController.popBackStack()
                 }
             }
-            // 插件路由：ServiceLoader 发现的每个插件一扇门（plugin/<id>）
-            com.ahu.ahutong.ui.plugin.PluginRegistry.all.forEach { plugin ->
+            // 插件路由（内置 + 运行期 .ahup）：每个插件一扇门（plugin/<id>），装/卸自动重组
+            // （plugins/初始化在外层 composable 读取，NavGraphBuilder 不是 composable 上下文）
+            plugins.forEach { plugin ->
                 animatedComposable("plugin/" + plugin.meta.id) {
                     val host = remember(plugin.meta.id) {
                         com.ahu.ahutong.ui.plugin.PluginHostServicesImpl(context, plugin)

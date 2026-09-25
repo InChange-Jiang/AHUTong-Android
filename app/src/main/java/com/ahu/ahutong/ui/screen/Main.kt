@@ -52,6 +52,7 @@ import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.Billing
 import com.ahu.ahutong.ui.screen.main.BillingStats
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
+import com.ahu.ahutong.ui.screen.main.CampusNoticeScreen
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityAlertSettings
 import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
@@ -392,6 +393,9 @@ fun Main(
                     homeEditEnabled = homeEditGrayState.enabled,
                     onEditHome = ::requestHomeEdit
                 )
+            }
+            animatedComposable("campus_notices") {
+                CampusNoticeScreen()
             }
             animatedComposable("school_calendar") {
                 SchoolCalendar(navController = navController)

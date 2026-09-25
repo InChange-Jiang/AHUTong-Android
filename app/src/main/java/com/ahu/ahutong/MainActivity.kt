@@ -26,6 +26,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.ahu.ahutong.appwidget.WidgetUpdateScheduler
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.notice.CampusNoticeRepository
 import com.ahu.ahutong.ext.launchSafe
 import com.ahu.ahutong.sdk.LocalServiceClient
 import com.ahu.ahutong.sdk.RustSDK
@@ -52,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.notification.CampusNoticeNotifier
 import com.ahu.ahutong.data.session.AhuSessionState
 import com.ahu.ahutong.data.session.AhuSession
 import com.ahu.ahutong.data.update.ApkVerifier
@@ -207,6 +209,7 @@ class MainActivity : ComponentActivity() {
 
         init()
         showDebugBuildNotice(savedInstanceState)
+        handleCampusNoticeIntent(intent)
     }
 
     private fun init() {
@@ -247,6 +250,12 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         behaviorRuntime.setForeground(true, true)
+        if (AHUCache.isPrivacyAccepted() && SessionStore.isLoggedIn()) {
+            SessionStore.currentUser()?.xh?.takeIf { it.isNotBlank() }?.let {
+                CampusNoticeRepository.open(it)
+                CampusNoticeRepository.requestSyncIfDue()
+            }
+        }
     }
 
     override fun onResume() {
@@ -286,6 +295,28 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.data != null) behaviorRuntime.markNextNavigationSource(ActionSource.DEEPLINK)
+        handleCampusNoticeIntent(intent)
+    }
+
+    private fun handleCampusNoticeIntent(source: Intent?) {
+        if (source?.action != CampusNoticeNotifier.ACTION_OPEN) return
+        val accountId = source.getStringExtra(CampusNoticeNotifier.EXTRA_ACCOUNT_ID).orEmpty()
+        val articleId = source.getStringExtra(CampusNoticeNotifier.EXTRA_ARTICLE_ID).orEmpty()
+        val url = source.getStringExtra(CampusNoticeNotifier.EXTRA_ARTICLE_URL).orEmpty()
+        source.action = null // A recreated Activity must not open the same article again.
+        if (accountId.isBlank() || articleId.isBlank() || url.isBlank()) return
+        lifecycleScope.launchSafe {
+            val notice = CampusNoticeRepository.verifiedNotice(accountId, articleId, url)
+            if (notice == null || SessionStore.currentUser()?.xh != accountId || !SessionStore.isLoggedIn()) {
+                Toast.makeText(this@MainActivity, "请切回接收该公告的账号后再打开", Toast.LENGTH_SHORT).show()
+                return@launchSafe
+            }
+            val opened = runCatching {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(notice.originalUrl)))
+            }.isSuccess
+            if (opened) CampusNoticeRepository.markRead(accountId, articleId)
+            else Toast.makeText(this@MainActivity, "无法打开公告链接", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showDebugBuildNotice(savedInstanceState: Bundle?) {

@@ -99,6 +99,13 @@ object HomeWidgetRegistry {
             tint = Color(0xFFFFB300)
         ),
         HomeWidgetSpec(
+            id = "campus_notices",
+            title = "校园通知",
+            route = "campus_notices",
+            iconId = R.drawable.ic_campus_notice,
+            tint = Color(0xFF1976D2)
+        ),
+        HomeWidgetSpec(
             id = "identity_code",
             title = "身份码",
             route = "identity_code",

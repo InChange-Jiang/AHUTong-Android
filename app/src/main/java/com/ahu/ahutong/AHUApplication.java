@@ -22,6 +22,7 @@ import com.ahu.ahutong.data.network.AppImageLoaderFactory;
 import com.ahu.ahutong.data.xuexiaotong.Store;
 import com.ahu.ahutong.reminder.ReminderScheduler;
 import com.ahu.ahutong.notification.CourseReminderScheduler;
+import com.ahu.ahutong.notification.CampusNoticeNotifier;
 
 
 import java.util.HashSet;
@@ -47,6 +48,13 @@ public class AHUApplication extends Application implements ImageLoaderFactory {
         super.onCreate();
         AliyunDns.INSTANCE.initializeCache(new File(getCacheDir(), "aliyun-doh"));
 
+        // This isolated process only renders the public graduate notice page. Do not start the
+        // ordinary app's analytics, schedulers or login services in it.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
+                Application.getProcessName().endsWith(":postgraduate_notices")) {
+            return;
+        }
+
         // 应用级环境的安装点：必须早于任何用到 Context 的非 UI 代码
         // （MMKV 初始化、SecureStorage、Cookie 持久化都依赖它）。
         AppEnvironmentHolder.INSTANCE.install(new AndroidAppEnvironment(this));
@@ -71,6 +79,7 @@ public class AHUApplication extends Application implements ImageLoaderFactory {
 
         CourseReminderScheduler.INSTANCE.createNotificationChannel(this);
         CourseReminderScheduler.INSTANCE.reschedule(this);
+        CampusNoticeNotifier.INSTANCE.createChannel(this);
 
         // Release builds always start on the real data source and erase legacy mock state.
         if (!BuildConfig.DEBUG) {

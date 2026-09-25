@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import com.ahu.ahutong.data.model.LoginOutcome
 import com.ahu.ahutong.core.common.toUserMessage
 import com.ahu.ahutong.core.common.AppEnvironmentHolder
+import com.ahu.ahutong.notification.CampusNoticeNotifier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 
@@ -43,6 +44,7 @@ class LoginViewModel @Inject constructor(
         try {
             state = LoginState.InProgress
             // 切换账号前只经会话接缝清理旧 token/Cookie，再清旧账号的缓存与持久身份。
+            CampusNoticeNotifier.cancelAll(AppEnvironmentHolder.context())
             session.signOut()
             // 换号清理不碰设备级法律同意（否则每次登录后隐私政策重弹）
             AHUCache.clearAll(preserveLegalConsent = true)

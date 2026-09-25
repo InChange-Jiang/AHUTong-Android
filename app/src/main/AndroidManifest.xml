@@ -96,6 +96,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <provider
+            android:name=".data.notice.PostgraduateNoticeWebProvider"
+            android:authorities="${applicationId}.postgraduate_notices"
+            android:exported="false"
+            android:process=":postgraduate_notices" />
+
         <receiver
             android:name=".appwidget.ScheduleAppWidgetReceiver"
             android:enabled="@bool/glance_appwidget_available"

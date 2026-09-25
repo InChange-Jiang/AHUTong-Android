@@ -61,6 +61,8 @@ class AppChaoxingSession @Inject constructor() : ChaoxingSession {
 @Singleton
 class AppChaoxingStore @Inject constructor() : ChaoxingStore {
 
+    override fun cookie(): String = Store.getCookie()
+
     override fun works(): List<Work> = Store.getWorks()
 
     override fun courses(): List<Course> = Store.getCourses()

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 插件模块自身无组件；网络权限由宿主 app 持有 -->
+</manifest>

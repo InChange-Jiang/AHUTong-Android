@@ -131,6 +131,7 @@ class ModuleBoundaryTest {
             "core/network",
             "core/storage",
             "core/auth",
+            "core/plugin-api",
             "data/personalization",
             "data/repository-index",
             "data/schedule",
@@ -144,7 +145,8 @@ class ModuleBoundaryTest {
             "feature/schedule",
             "feature/grade",
             "feature/xuexiaotong",
-            "feature/recharge"
+            "feature/recharge",
+            "feature/circle"
         )
 
         val RULES = listOf(
@@ -734,6 +736,44 @@ class ModuleBoundaryTest {
                 forbiddenContentRegex = Regex(
                     "resolveLocalFirst|syncRemoteConfig|saveCookie|saveCredential|clearCredential|" +
                         "saveKeepLogin|loginByPassword|silentRelogin"
+                )
+            ),
+            BoundaryRule(
+                id = "R29-plugin-api-leaf",
+                packagePrefix = "com/ahu/ahutong/",
+                modules = listOf("core/plugin-api"),
+                forbiddenImportPrefixes = listOf(
+                    // 插件契约是叶子：不认识任何业务层（界面/数据/会话/个性化/原生 SDK）
+                    "import com.ahu.ahutong.ui.screen.",
+                    "import com.ahu.ahutong.ui.state.",
+                    "import com.ahu.ahutong.data.",
+                    "import com.ahu.ahutong.personalization.",
+                    "import com.ahu.ahutong.sdk.",
+                    "import com.ahu.ahutong.AHUApplication"
+                )
+            ),
+            BoundaryRule(
+                id = "R30-circle-plugin-contract-only",
+                packagePrefix = "com/ahu/ahutong/",
+                modules = listOf("feature/circle"),
+                forbiddenImportPrefixes = listOf(
+                    // 插件只许认契约与设计系统：app 内部实现、各 data 域、会话凭据一概不许伸手
+                    "import com.ahu.ahutong.ui.screen.",
+                    "import com.ahu.ahutong.ui.state.",
+                    "import com.ahu.ahutong.data.dao.",
+                    "import com.ahu.ahutong.data.crawler.",
+                    "import com.ahu.ahutong.data.repository.",
+                    "import com.ahu.ahutong.data.session.",
+                    "import com.ahu.ahutong.data.security.",
+                    "import com.ahu.ahutong.data.schedule.",
+                    "import com.ahu.ahutong.data.grade.",
+                    "import com.ahu.ahutong.data.xuexiaotong.",
+                    "import com.ahu.ahutong.personalization.",
+                    "import com.ahu.ahutong.appwidget.",
+                    "import com.ahu.ahutong.notification.",
+                    "import com.ahu.ahutong.reminder.",
+                    "import com.ahu.ahutong.sdk.",
+                    "import com.ahu.ahutong.AHUApplication"
                 )
             )
         )

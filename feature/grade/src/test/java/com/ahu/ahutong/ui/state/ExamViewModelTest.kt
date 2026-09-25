@@ -1,5 +1,6 @@
 package com.ahu.ahutong.ui.state
 
+import com.ahu.ahutong.ui.components.RefreshState
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.ahu.ahutong.core.common.AhuError
 import com.ahu.ahutong.core.common.AhuResult

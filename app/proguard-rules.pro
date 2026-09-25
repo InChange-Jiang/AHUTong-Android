@@ -196,3 +196,7 @@
 
 # Evaluation
 -keep interface com.ahu.ahutong.data.crawler.api.jwxt.EvaluationApi { *; }
+
+# 插件 ServiceLoader 发现：保留实现类的无参构造与服务索引
+-keep class * implements com.ahu.ahutong.core.plugin.AhuPlugin { public <init>(); }
+-keepclassmembers class * implements com.ahu.ahutong.core.plugin.AhuPlugin { public <init>(); }

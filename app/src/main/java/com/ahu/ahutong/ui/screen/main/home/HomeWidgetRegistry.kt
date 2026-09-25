@@ -12,6 +12,19 @@ data class HomeWidgetSpec(
 )
 
 object HomeWidgetRegistry {
+
+    /** 插件入口（ServiceLoader 发现，宿主对插件零静态引用）。 */
+    val pluginWidgets: List<HomeWidgetSpec>
+        get() = com.ahu.ahutong.ui.plugin.PluginRegistry.all.map { plugin ->
+            HomeWidgetSpec(
+                id = "plugin:" + plugin.meta.id,
+                title = plugin.meta.title,
+                route = "plugin/" + plugin.meta.id,
+                iconId = plugin.meta.iconRes,
+                tint = Color(plugin.meta.tint)
+            )
+        }
+
     /** 经典版（Original/Liquid Glass）主页插槽数量：双列布局（校园卡旁 2 个 + 三行各 2 个）。 */
     const val slotCountClassic = 8
     const val slotCount = slotCountClassic
@@ -25,7 +38,10 @@ object HomeWidgetRegistry {
         "weather", "network_recharge", "free_classroom"
     )
 
-    val widgets = listOf(
+    /** 内置小工具 + 插件入口（插件由 ServiceLoader 发现，可为空）。 */
+    val widgets: List<HomeWidgetSpec> get() = builtInWidgets + pluginWidgets
+
+    private val builtInWidgets = listOf(
         HomeWidgetSpec(
             id = "bathroom",
             title = "浴室缴费",

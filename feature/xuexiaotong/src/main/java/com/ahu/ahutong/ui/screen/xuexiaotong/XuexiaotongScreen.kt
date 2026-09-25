@@ -562,6 +562,7 @@ fun XuexiaotongScreen() {
     webViewWork?.let { work ->
         WorkWebViewDialog(
             work = work,
+            sessionCookie = viewModel.sessionCookie(),
             onDismiss = { webViewWork = null }
         )
     }

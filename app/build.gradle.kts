@@ -118,6 +118,10 @@ android {
 //            excludes += ['META-INF/ASL2.0', 'META-INF/LICENSE', 'META-INF/NOTICE', 'META-INF/MANIFEST.MF']
 //        }
 //    }
+    // 插件 ServiceLoader 索引：多插件各带一份 META-INF/services，内容合并而非冲突报错
+    packaging {
+        resources.merges += "META-INF/services/**"
+    }
 
 
     compileOptions {
@@ -189,6 +193,8 @@ dependencies {
     implementation(project(":feature:grade"))
     implementation(project(":feature:xuexiaotong"))
     implementation(project(":feature:recharge"))
+    implementation(project(":feature:circle"))
+    implementation(project(":core:plugin-api"))
     implementation(libs.sentry.android)
     implementation(libs.crashreport)
     implementation(libs.ads.mobile.sdk)

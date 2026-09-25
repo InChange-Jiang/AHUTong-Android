@@ -86,6 +86,9 @@ class XuexiaotongViewModel @Inject constructor(
 
     fun showMsg(msg: String) { _snackbar.value = msg }
 
+    /** 当前登录态 Cookie（经 ChaoxingStore 端口，供 WebView 题目页注入）。 */
+    fun sessionCookie(): String = store.cookie()
+
     fun refreshState() {
         _loggedIn.value = session.hasSession()
         _works.value = store.works()

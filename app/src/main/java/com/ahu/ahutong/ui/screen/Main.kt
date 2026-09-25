@@ -428,6 +428,15 @@ fun Main(
                     navController.popBackStack()
                 }
             }
+            // 插件路由：ServiceLoader 发现的每个插件一扇门（plugin/<id>）
+            com.ahu.ahutong.ui.plugin.PluginRegistry.all.forEach { plugin ->
+                animatedComposable("plugin/" + plugin.meta.id) {
+                    val host = remember(plugin.meta.id) {
+                        com.ahu.ahutong.ui.plugin.PluginHostServicesImpl(context, plugin)
+                    }
+                    plugin.Entry(host)
+                }
+            }
             animatedComposable("weather") {
                 Weather(onBack = { navController.popBackStack() })
             }

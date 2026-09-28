@@ -53,6 +53,7 @@ import com.ahu.ahutong.ui.screen.main.Billing
 import com.ahu.ahutong.ui.screen.main.BillingStats
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
+import com.ahu.ahutong.ui.screen.main.ElectricityAlertSettings
 import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
 import com.ahu.ahutong.ui.screen.main.Evaluation
 import com.ahu.ahutong.ui.screen.main.Exam
@@ -99,6 +100,7 @@ import com.ahu.ahutong.ui.components.captureLiquidGlassContent
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.ElectricityDepositViewModel
+import com.ahu.ahutong.ui.state.ElectricityAlertViewModel
 import com.ahu.ahutong.ui.state.LoginViewModel
 import com.ahu.ahutong.ui.state.MainViewModel
 import com.ahu.ahutong.ui.state.ScheduleViewModel
@@ -117,6 +119,7 @@ import com.ahu.ahutong.personalization.recorder.BehaviorRecorder
 import com.ahu.ahutong.ui.suggestion.SmartSuggestionHost
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.data.session.SessionStore
+import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.core.storage.HomeBackgroundStore
 import com.ahu.ahutong.data.xuexiaotong.ChaoxingSession
 import dagger.hilt.EntryPoint
@@ -140,6 +143,7 @@ fun Main(
     navController: NavHostController,
     mainViewModel: MainViewModel = hiltViewModel(),
     loginViewModel: LoginViewModel = viewModel(),
+    postgraduateScheduleViewModel: com.ahu.ahutong.ui.state.PostgraduateScheduleViewModel = viewModel(),
     discoveryViewModel: DiscoveryViewModel = viewModel(),
     scheduleViewModel: ScheduleViewModel = hiltViewModel(),
     aboutViewModel: AboutViewModel = viewModel(),
@@ -150,6 +154,15 @@ fun Main(
     isReLoginShown: Boolean,
     onReLoginDismiss: () -> Unit
 ) {
+    val electricityAlertViewModel: ElectricityAlertViewModel = hiltViewModel()
+    val electricityRechargeSelection by electricityAlertViewModel.rechargeSelection.collectAsState()
+    val academicType by com.ahu.ahutong.data.dao.AHUCache.academicTypeUpdates().collectAsState()
+    val undergraduateEnabled = academicType != com.ahu.ahutong.data.model.AcademicAccountType.POSTGRADUATE ||
+        com.ahu.ahutong.data.dao.AHUCache.getMockData()
+    val visiblePrimaryRoutes = remember(undergraduateEnabled) {
+        if (undergraduateEnabled) primaryDestinationRoutes
+        else primaryDestinationRoutes.filterNot { it == "xuexiaotong" }
+    }
     var shouldEnterHomeEdit by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -181,6 +194,7 @@ fun Main(
         route: String,
         source: ActionSource = ActionSource.ORGANIC
     ) {
+        if (!AHUCache.canOpenRoute(route)) return
         val target = if (route == "tools") "widgets" else route
         if (target == navController.currentBackStackEntry?.destination?.route) return
         val selectionToken = navigationPolicy.expectSelection(target, source)
@@ -312,9 +326,11 @@ fun Main(
                     onSetup = {
                         navController.popBackStack()
                         discoveryViewModel.loadActivityBean()
-                        scheduleViewModel.loadConfig()
-                        scheduleViewModel.refreshSchedule()
-                        scope.launch {
+                        if (undergraduateEnabled) {
+                            scheduleViewModel.loadConfig()
+                            scheduleViewModel.refreshSchedule()
+                        }
+                        if (undergraduateEnabled) scope.launch {
                             GlanceAppWidgetManager(context).requestPinGlanceAppWidget(
                                 ScheduleAppWidgetReceiver::class.java
                             )
@@ -340,8 +356,10 @@ fun Main(
                             )
                         }
                         discoveryViewModel.loadActivityBean()
-                        scheduleViewModel.loadConfig()
-                        scheduleViewModel.refreshSchedule()
+                        if (AHUCache.canUseUndergraduateAcademics()) {
+                            scheduleViewModel.loadConfig()
+                            scheduleViewModel.refreshSchedule()
+                        }
                     }
                 )
             }
@@ -356,7 +374,9 @@ fun Main(
                 // 返回转场竞态；非 RADIANT 主题下独立展示课表页可正常用系统返回
                 Schedule(
                     scheduleViewModel = scheduleViewModel,
-                    behaviorRecorder = behaviorRecorder
+                    behaviorRecorder = behaviorRecorder,
+                    graduateController = if (undergraduateEnabled) null else postgraduateScheduleViewModel,
+                    graduateAccountId = if (undergraduateEnabled) null else SessionStore.currentUser()?.xh
                 )
             }
             animatedComposable("tools") {
@@ -517,7 +537,8 @@ fun Main(
             animatedComposable("preferences") {
                 Preferences(
                     onBack = ::navigateBackFromPreferences,
-                    onOpenThemeLab = { navController.navigate("settings__theme_lab") }
+                    onOpenThemeLab = { navController.navigate("settings__theme_lab") },
+                    undergraduateEnabled = undergraduateEnabled
                 )
             }
 
@@ -528,7 +549,19 @@ fun Main(
             animatedComposable("electricity_pay") {
                 ElectricityDeposit(
                     onBack = { navController.popBackStack() },
-                    onOpenRecentRooms = { navController.navigate("electricity_recent_rooms") }
+                    onOpenRecentRooms = { navController.navigate("electricity_recent_rooms") },
+                    onOpenAlertSettings = { navController.navigate("electricity_alert_settings") },
+                    initialSelection = electricityRechargeSelection,
+                    onInitialSelectionConsumed = electricityAlertViewModel::selectionConsumed
+                )
+            }
+
+            animatedComposable("electricity_alert_settings") {
+                // Scope the selector to this entry; configuring alerts must not change the pay page.
+                val settingsViewModel: ElectricityDepositViewModel = hiltViewModel()
+                ElectricityAlertSettings(
+                    onBack = { navController.popBackStack() },
+                    viewModel = settingsViewModel
                 )
             }
 
@@ -607,14 +640,14 @@ fun Main(
         val productUiBlocked = effectiveRoute == "login" || effectiveRoute == "setup" ||
             effectiveRoute == "splash" || effectiveRoute?.contains("deposit") == true ||
             effectiveRoute?.contains("recharge") == true ||
-            effectiveRoute in setOf("electricity_pay", "electricity_recent_rooms") ||
+            effectiveRoute in setOf("electricity_pay", "electricity_recent_rooms", "electricity_alert_settings") ||
             isReLoginShown || suggestionOverlayBlocked || imeVisible
         SmartSuggestionHost(
             runtime = behaviorRuntime,
             backdrop = backdrop,
             blocked = productUiBlocked,
             hiddenForDiagnostics = diagnosticsRouteVisible,
-            bottomSpacing = if (effectiveRoute in primaryDestinationRoutes) {
+            bottomSpacing = if (effectiveRoute in visiblePrimaryRoutes) {
                 88.dp
             } else {
                 16.dp
@@ -642,6 +675,13 @@ fun Main(
         with(diagnosticsContribution) {
             Overlay(navController, behaviorRuntime, productUiBlocked)
         }
+        ElectricityAlertHost(
+            navController = navController,
+            route = currentRoute,
+            loginState = loginViewModel.state,
+            paymentQrCommands = paymentQrCommands,
+            viewModel = electricityAlertViewModel
+        )
         if (isReLoginShown) {
             AppDialogSurface(
                 onDismissRequest = { onReLoginDismiss() },

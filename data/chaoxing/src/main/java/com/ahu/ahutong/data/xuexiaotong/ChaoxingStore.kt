@@ -8,9 +8,6 @@ package com.ahu.ahutong.data.xuexiaotong
  */
 interface ChaoxingStore {
 
-    /** 当前登录态 Cookie 字符串（WebView 查看题目注入用；只读）。 */
-    fun cookie(): String
-
     fun works(): List<Work>
 
     fun courses(): List<Course>

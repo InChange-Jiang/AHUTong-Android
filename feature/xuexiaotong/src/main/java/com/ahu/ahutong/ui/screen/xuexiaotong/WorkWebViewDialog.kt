@@ -54,7 +54,7 @@ import com.ahu.ahutong.ui.components.AppCircularProgressIndicator
 @Composable
 fun WorkWebViewDialog(
     work: Work,
-    sessionCookie: String,
+    cookieHeader: String,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
@@ -67,7 +67,7 @@ fun WorkWebViewDialog(
         // 开发文档 §3.3 的 name|domain 格式是错的，按本实现为准）
         val cm = android.webkit.CookieManager.getInstance()
         cm.setAcceptCookie(true)
-        sessionCookie.split("; ").forEach { entry ->
+        cookieHeader.split("; ").forEach { entry ->
             if (entry.contains("=")) {
                 cm.setCookie("https://.chaoxing.com", entry)
             }

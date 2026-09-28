@@ -1,9 +1,10 @@
 package com.ahu.ahutong.ui.state
 
-import com.ahu.ahutong.ui.components.RefreshState
+import com.ahu.ahutong.core.designsystem.RefreshState
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import com.ahu.ahutong.core.common.AhuError
 import com.ahu.ahutong.core.common.AhuResult
+import com.ahu.ahutong.core.designsystem.RefreshState
 import com.ahu.ahutong.data.model.Exam
 import com.ahu.ahutong.personalization.action.AppActionId
 import com.ahu.ahutong.personalization.context.ExamDistanceBucket

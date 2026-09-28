@@ -1,6 +1,6 @@
 package com.ahu.ahutong.ui.state
 
-import com.ahu.ahutong.ui.components.RefreshState
+import com.ahu.ahutong.core.designsystem.RefreshState
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

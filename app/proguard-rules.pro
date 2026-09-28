@@ -47,6 +47,9 @@
 # These models are deserialized both from the native bridge and from local Gson caches. Field-only
 # rules do not prevent vertical class merging, which is unsafe for reflection-based construction.
 -keep class com.ahu.ahutong.data.model.** { *; }
+# The automatic electricity query/prompt dates must survive R8 and app upgrades as stable JSON.
+-keep class com.ahu.ahutong.electricity.ElectricityAlertMarker { *; }
+-keep class com.ahu.ahutong.electricity.ElectricityRoomForecast { *; }
 -keep class com.ahu.ahutong.ui.screen.main.ElectricityDepositKt { *; }
 -keep class com.ahu.ahutong.ui.screen.main.home.ElectricityPaymentKt { *; }
 -keep class com.ahu.ahutong.data.dao.AHUCache { *; }
@@ -76,6 +79,13 @@
 # minified builds. Keep the complete contracts so Review/Release authentication behaves like Debug.
 -keep class com.ahu.ahutong.data.crawler.model.** { *; }
 
+# Gson records for encrypted, per-account GMIS timetable and term caches.
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisTerm { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisCourse { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisSection { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisTimetable { *; }
+-keep class com.ahu.ahutong.data.crawler.gmis.GmisCacheCodec$* { *; }
+
 # Payment view models contain a small number of file-local wire DTOs. Keep only the DTO naming
 # families rather than the ViewModels themselves, so R8 can still optimize the screen logic while
 # Gson retains concrete constructors and field contracts in Review/Release builds.
@@ -92,6 +102,12 @@
 -keep class com.ahu.ahutong.ui.screen.main.CmbRechargeBridgePaymentMethod { *; }
 -keep class com.ahu.ahutong.ui.screen.main.CmbPaymentUiPayload { *; }
 
+# Gson records for encrypted, per-account GMIS timetable and term caches.
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisTerm { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisCourse { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisSection { *; }
+-keep class com.ahu.ahutong.data.schedule.gmis.GmisTimetable { *; }
+-keep class com.ahu.ahutong.data.crawler.gmis.GmisCacheCodec$* { *; }
 
 -renamesourcefileattribute AHUTong
 #开启深度重载

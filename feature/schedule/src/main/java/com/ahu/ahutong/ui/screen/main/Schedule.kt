@@ -47,6 +47,9 @@ import com.ahu.ahutong.data.schedule.PostgraduateScheduleController
 import com.ahu.ahutong.data.schedule.PostgraduateTeachingWeek
 import com.ahu.ahutong.data.model.ScheduleConfigBean
 import com.ahu.ahutong.ui.screen.main.schedule.PostgraduateWeekDialog
+import com.ahu.ahutong.ui.screen.main.schedule.NowIndicatorPosition
+import com.ahu.ahutong.ui.screen.main.schedule.ScheduleNowIndicator
+import com.ahu.ahutong.ui.screen.main.schedule.nowIndicatorPosition
 import java.time.ZoneId
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -63,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -76,6 +80,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -97,6 +102,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.feature.schedule.R
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
+import com.ahu.ahutong.data.schedule.ScheduleNowClock
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
@@ -236,6 +242,17 @@ fun Schedule(
 
     LaunchedEffect(isActive) {
         if (isActive && !isGraduate) scheduleViewModel.onScheduleEntered()
+    }
+
+    // 当前时间指示线心跳：每分钟重算一次钟点分钟数，驱动 recompose 平滑前进。
+    // debug 构建时间源可 mock（ScheduleNowClock，偏移存 prefs），release 恒走系统时间
+    var nowMinutes by remember { mutableStateOf(ScheduleNowClock.now().let { it.hour * 60 + it.minute }) }
+    LaunchedEffect(isActive) {
+        while (isActive) {
+            val now = ScheduleNowClock.now()
+            nowMinutes = now.hour * 60 + now.minute
+            delay(60_000L)
+        }
     }
 
     // 首次组合即渲染卡片，随页面转场正常淡入；
@@ -573,7 +590,26 @@ fun Schedule(
                         .padding(cellSpacing)
                 }
             ) {
-                // TODO: current time indicator
+                // 当前时间指示线（位置换算）：仅本周页、学期内、非下学期预览且非总览模式时显示；
+                // 研究生课表使用 GMIS 节次时间表换算
+                val nowIndicatorPosition = if (
+                    !isPreviewNextSemester &&
+                    !isOverviewSchedule &&
+                    scheduleConfig?.isInSemester == true &&
+                    pageWeek == scheduleConfig?.week &&
+                    !isGraduate
+                ) {
+                    nowIndicatorPosition(nowMinutes, ScheduleSectionTimes.timetable)
+                } else if (
+                    !isPreviewNextSemester &&
+                    !isOverviewSchedule &&
+                    graduateConfig?.isInSemester == true &&
+                    pageWeek == graduateConfig?.week
+                ) {
+                    nowIndicatorPosition(nowMinutes, sectionTimetable)
+                } else {
+                    null
+                }
                 // weekday tags
 
                 val weekDates = weekDateLabels.getOrElse(page) { emptyList() }
@@ -627,6 +663,16 @@ fun Schedule(
                             )
                         }
                     }
+                }
+                // 当前时间指示线：声明在课程卡片之后，绘制在卡片上层，
+                // 直观展示当前课程进度与即将开始的课程
+                nowIndicatorPosition?.let { position ->
+                    ScheduleNowIndicator(
+                        position = position,
+                        nowMinutes = nowMinutes,
+                        cellWidth = cellWidth,
+                        cellHeight = cellHeight
+                    )
                 }
             }
         }
@@ -800,6 +846,10 @@ fun Schedule(
                     96.n1 withNight 10.n1
                 }
                 Box(modifier = Modifier.fillMaxSize()) {
+                    // 标题栏实际高度动态测量：内容避让量随 statusBar/机型/显示比例自适应，
+                    // 替代原硬编码 102.dp（不同机型上会被标题栏遮挡的根因）
+                    var headerHeightPx by remember { mutableIntStateOf(0) }
+                    val density = LocalDensity.current
                     // 固定标题栏（渐变遮罩层）：与内容区为兄弟叠加关系，zIndex 盖在可穿透内容之上
                     Column(
                         modifier = Modifier
@@ -816,6 +866,9 @@ fun Schedule(
                             )
                             .statusBarsPadding()
                             .zIndex(20f)
+                            .onSizeChanged { size ->
+                                headerHeightPx = size.height
+                            }
                     ) {
                         ScheduleHeaderRow()
                     }
@@ -827,7 +880,13 @@ fun Schedule(
                             .navigationBarsPadding()
                             .padding(bottom = 96.dp)
                     ) {
-                        Spacer(modifier = Modifier.height(102.dp))
+                        // 首屏停靠在标题栏下缘（+51dp 视觉余量，含渐变过渡段）；
+                        // 滚动后内容仍从渐变遮罩下穿过，保留穿透视觉效果
+                        Spacer(
+                            modifier = Modifier.height(
+                                with(density) { headerHeightPx.toDp() } + 35.dp
+                            )
+                        )
                         GraduateScheduleStatus()
                         ScheduleGrid()
                         ScheduleFreshnessLabel()

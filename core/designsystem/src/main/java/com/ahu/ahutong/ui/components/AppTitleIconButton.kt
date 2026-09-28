@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.core.designsystem.R
-import com.ahu.ahutong.core.designsystem.R
 import com.ahu.ahutong.core.designsystem.RefreshState
 
 /**

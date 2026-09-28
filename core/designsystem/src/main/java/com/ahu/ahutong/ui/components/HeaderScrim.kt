@@ -1,25 +1,30 @@
 package com.ahu.ahutong.ui.components
 
+import android.graphics.RenderEffect
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.effect
 
 /**
  * 一级页固定标题栏遮罩（共享实现，替代各页复制的 4 段式 verticalGradient）。
  *
  * 三态路由（挂接性能开关 LocalGlassEffectsReduced）：
  * 1. 性能开关开启（关闭玻璃效果）→ 纯色 4 段渐变遮罩，零采样开销（原效果降级）
- * 2. 液态玻璃可用且性能开关关闭 → 均匀高斯模糊 + 同款渐变 scrim 叠加（方案 a）。
- *    「渐浓」观感由 scrim 渐变叠在均匀模糊之上形成——顶部近实色、下缘透出模糊的滚动内容
+ * 2. 液态玻璃可用且性能开关关闭 → 渐变式高斯模糊（纯毛玻璃，无任何颜色叠加）：
+ *    底部 0%（内容完全清晰），越往上越浓，顶部约 [MAX_BLUR_OPACITY]（60%）。
+ *    API 33+ 用 AGSL 逐行调制不透明度；API 31-32 无 AGSL 退化为均匀毛玻璃
  * 3. 其余（液态关闭 / 低端设备不支持 blur）→ 纯色渐变遮罩兜底
  *
  * 模糊采样页面自建的内容层（[headerBackdropSource] 挂在滚动内容上）。
@@ -27,25 +32,70 @@ import com.kyant.backdrop.effects.blur
  */
 @Composable
 fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): Modifier {
-    val gradient = Brush.verticalGradient(
-        colorStops = arrayOf(
-            0f to headerBg,
-            0.35f to headerBg,
-            0.68f to headerBg.copy(alpha = 0.85f),
-            1f to headerBg.copy(alpha = 0f)
+    if (contentLayer == null || !isHeaderBlurActive()) {
+        return background(headerScrimGradient(headerBg))
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // 渐变式毛玻璃：均匀 blur 后接 AGSL 按行调制 alpha（顶部 maxOpacity → 底部 0）。
+        // backdrop 1.0.0 无 runtimeShaderEffect 扩展，走 scope.obtainRuntimeShader
+        // + RenderEffect.createRuntimeShaderEffect 手工链（内部就是官方链式合成）
+        return drawPlainBackdrop(
+            backdrop = contentLayer,
+            shape = { RectangleShape },
+            effects = {
+                blur(BLUR_RADIUS.toPx())
+                val shader = obtainRuntimeShader(
+                    "header_progressive_blur",
+                    PROGRESSIVE_BLUR_SHADER
+                )
+                shader.setFloatUniform("maxOpacity", MAX_BLUR_OPACITY)
+                shader.setFloatUniform("height", size.height.coerceAtLeast(1f))
+                effect(
+                    RenderEffect.createRuntimeShaderEffect(shader, "content")
+                        .asComposeRenderEffect()
+                )
+            },
+            onDrawSurface = { } // 纯毛玻璃：不叠加任何颜色渐变
         )
-    )
-    if (contentLayer == null || !isHeaderBlurActive()) return background(gradient)
+    }
+    // API 31-32：RenderEffect 可用但无 AGSL，退化为均匀毛玻璃（仍无颜色叠加）
     return drawPlainBackdrop(
         backdrop = contentLayer,
         shape = { RectangleShape },
-        effects = {
-            // 比卡片（18dp）略强：scrim 顶部近实色，模糊主要在下缘透出区可见
-            blur(22.dp.toPx())
-        },
-        onDrawSurface = { drawRect(gradient) }
+        effects = { blur(BLUR_RADIUS.toPx()) },
+        onDrawSurface = { }
     )
 }
+
+/** 模糊强度上限（顶部）：60%。 */
+private const val MAX_BLUR_OPACITY = 0.6f
+
+private val BLUR_RADIUS = 22.dp
+
+/**
+ * 渐变模糊 AGSL：输入为已模糊的背景层（预乘 alpha），
+ * 按像素 y 调制不透明度——顶部 maxOpacity、底部线性衰减到 0。
+ */
+private const val PROGRESSIVE_BLUR_SHADER = """
+uniform shader content;
+uniform float maxOpacity;
+uniform float height;
+half4 main(float2 coord) {
+    half4 c = content.eval(coord);
+    float t = clamp(1.0 - coord.y / height, 0.0, 1.0);
+    return c * (maxOpacity * t);
+}
+"""
+
+/** 性能降级态 / 兜底态的纯色 4 段渐变遮罩（原一级页标题栏配方）。 */
+private fun headerScrimGradient(headerBg: Color): Brush = Brush.verticalGradient(
+    colorStops = arrayOf(
+        0f to headerBg,
+        0.35f to headerBg,
+        0.68f to headerBg.copy(alpha = 0.85f),
+        1f to headerBg.copy(alpha = 0f)
+    )
+)
 
 /** 标题栏模糊是否生效：液态可用 + 性能开关关闭 + 设备支持 blur。 */
 @Composable

@@ -101,7 +101,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.feature.schedule.R
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
-import com.ahu.ahutong.data.schedule.ScheduleNowClock
+import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
@@ -246,13 +246,17 @@ fun Schedule(
     }
 
     // 当前时间指示线心跳：每分钟重算一次钟点分钟数，驱动 recompose 平滑前进。
-    // debug 构建时间源可 mock（ScheduleNowClock，偏移存 prefs），release 恒走系统时间
-    var nowMinutes by remember { mutableStateOf(ScheduleNowClock.now().let { it.hour * 60 + it.minute }) }
+    // 时间源 = DebugClock（与周次/周几同一时钟）：Debug 设置页的 mock 时间
+    // （AHUCache.saveMockCurrentTimeMillis，-5天/+3天）直接驱动指示线位置。
+    // 旧实现走独立的 ScheduleNowClock prefs 偏移，但全工程无 UI 写入该偏移，
+    // 指示线永远用系统时间——mock 时间对时间线完全无效（已废弃该路径）。
+    var nowMinutes by remember { mutableStateOf(DebugClock.currentMinutes()) }
     LaunchedEffect(isActive) {
         while (isActive) {
-            val now = ScheduleNowClock.now()
-            nowMinutes = now.hour * 60 + now.minute
-            delay(60_000L)
+            delay(1_000L)
+            // 每秒重读，但只在分钟值变化时写 state（同值写入不触发重组）：
+            // 平时随真实/mock 分钟平滑推进，mock 时间被 Debug 页改写后 1 秒内即生效
+            nowMinutes = DebugClock.currentMinutes()
         }
     }
 

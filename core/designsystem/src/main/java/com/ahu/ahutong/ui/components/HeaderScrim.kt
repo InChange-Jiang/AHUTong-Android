@@ -12,6 +12,7 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
 import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
@@ -27,7 +28,9 @@ import com.kyant.backdrop.effects.effect
  *    API 33+ 用 AGSL 逐行调制不透明度；API 31-32 无 AGSL 退化为均匀毛玻璃
  * 3. 其余（液态关闭 / 低端设备不支持 blur）→ 纯色渐变遮罩兜底
  *
- * 模糊采样页面自建的内容层（[headerBackdropSource] 挂在滚动内容上）。
+ * 模糊采样源 = 全局背景层（壁纸/场景渐变，ambient）+ 页面内容层（[headerBackdropSource]
+ * 挂在滚动内容上）的组合。壁纸画在 ambient 层，只采内容层会漏掉壁纸——头部静止区域是
+ * 透明像素，blur 后仍透明，视觉上"完全没有模糊"（Main 导航栏 P2 回归同款坑）。
  * 不复用 Main 的 NavHost content 层——标题栏自身在那层里，直接采样会产生自反馈。
  */
 @Composable
@@ -35,12 +38,16 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
     if (contentLayer == null || !isHeaderBlurActive()) {
         return background(headerScrimGradient(headerBg))
     }
+    // 采样源组合：页面内容层 + 全局背景层（壁纸在 ambient 层，仅采内容层会漏掉壁纸 →
+    // 头部静止区域采到透明像素，blur 后仍透明，表现为"看不到任何模糊"，即 Main 导航栏
+    // P2 回归的同款坑，解法同 rememberCombinedBackdrop(ambient, content)）
+    val source = rememberCombinedBackdrop(LocalLiquidGlassAmbientBackdrop.current, contentLayer)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // 渐变式毛玻璃：均匀 blur 后接 AGSL 按行调制 alpha（顶部 maxOpacity → 底部 0）。
         // backdrop 1.0.0 无 runtimeShaderEffect 扩展，走 scope.obtainRuntimeShader
         // + RenderEffect.createRuntimeShaderEffect 手工链（内部就是官方链式合成）
         return drawPlainBackdrop(
-            backdrop = contentLayer,
+            backdrop = source,
             shape = { RectangleShape },
             effects = {
                 blur(BLUR_RADIUS.toPx())
@@ -60,7 +67,7 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
     }
     // API 31-32：RenderEffect 可用但无 AGSL，退化为均匀毛玻璃（仍无颜色叠加）
     return drawPlainBackdrop(
-        backdrop = contentLayer,
+        backdrop = source,
         shape = { RectangleShape },
         effects = { blur(BLUR_RADIUS.toPx()) },
         onDrawSurface = { }

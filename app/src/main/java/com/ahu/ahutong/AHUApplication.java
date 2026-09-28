@@ -2,6 +2,7 @@ package com.ahu.ahutong;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Log;
 import android.widget.Toast;
@@ -9,6 +10,7 @@ import android.widget.Toast;
 import com.ahu.ahutong.sdk.LocalServiceClient;
 import com.ahu.ahutong.sdk.RustSDK;
 import com.tencent.bugly.crashreport.CrashReport;
+import io.sentry.Sentry;
 import io.sentry.android.core.SentryAndroid;
 import com.ahu.ahutong.data.AHURepository;
 import com.ahu.ahutong.data.dao.AHUCache;
@@ -23,6 +25,7 @@ import com.ahu.ahutong.notification.CourseReminderScheduler;
 
 
 import java.util.HashSet;
+import java.util.UUID;
 import java.io.File;
 
 import coil.ImageLoader;
@@ -59,6 +62,7 @@ public class AHUApplication extends Application implements ImageLoaderFactory {
             options.setTracesSampleRate(BuildConfig.DEBUG ? 1.0 : 0.1);
             options.setDebug(BuildConfig.DEBUG);
         });
+        Sentry.setTag("dau_id", getDauId());
 
         // 学习通日历初始化
         Store.INSTANCE.init(this);
@@ -91,6 +95,16 @@ public class AHUApplication extends Application implements ImageLoaderFactory {
             };
             // todo add privacy related options
         }
+    }
+
+    private String getDauId() {
+        SharedPreferences preferences = getSharedPreferences("sentry", MODE_PRIVATE);
+        String dauId = preferences.getString("dau_id", null);
+        if (dauId == null) {
+            dauId = UUID.randomUUID().toString();
+            preferences.edit().putString("dau_id", dauId).apply();
+        }
+        return dauId;
     }
 
     @Override

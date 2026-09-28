@@ -16,12 +16,22 @@ import java.io.File
  */
 object RuntimePluginLoader {
 
-    fun loadAll(context: Context): List<AhuPlugin> =
-        AhupInstaller.installedIds(context).mapNotNull { id ->
+    /** 最近一次装载失败的「id: 原因」——给设置页/插件区排障展示（本机日志级别不可靠）。 */
+    val lastErrors = mutableListOf<String>()
+
+    fun loadAll(context: Context): List<AhuPlugin> {
+        lastErrors.clear()
+        return AhupInstaller.installedIds(context).mapNotNull { id ->
             runCatching { load(context, id) }
-                .onFailure { Log.e(TAG, "插件 $id 装载失败", it) }
+                .onFailure {
+                    // 反射包装的异常剥到根因（InvocationTargetException 的 message 恒为 null）
+                    val root = generateSequence(it) { e -> e.cause }.last()
+                    lastErrors.add("$id: ${root.javaClass.simpleName}: ${root.message}")
+                    Log.e(TAG, "插件 $id 装载失败", it)
+                }
                 .getOrNull()
         }
+    }
 
     private fun load(context: Context, id: String): AhuPlugin {
         val manifest = AhupInstaller.manifestOf(context, id)

@@ -431,14 +431,22 @@ fun Main(
                     navController.popBackStack()
                 }
             }
-            // 插件路由（内置 + 运行期 .ahup）：每个插件一扇门（plugin/<id>），装/卸自动重组
-            // （plugins/初始化在外层 composable 读取，NavGraphBuilder 不是 composable 上下文）
-            plugins.forEach { plugin ->
-                animatedComposable("plugin/" + plugin.meta.id) {
-                    val host = remember(plugin.meta.id) {
+            // 插件路由（内置 + 运行期 .ahup）：泛型一扇门——路由图只建一次，
+            // 后装的插件也直接可达（按 id 在组合时解析，不在建图时枚举）
+            animatedComposable("plugin/{pluginId}") { backStackEntry ->
+                val pluginId = backStackEntry.arguments?.getString("pluginId").orEmpty()
+                val plugin = plugins.firstOrNull { it.meta.id == pluginId }
+                if (plugin != null) {
+                    val host = remember(pluginId) {
                         com.ahu.ahutong.ui.plugin.PluginHostServicesImpl(context, plugin)
                     }
                     plugin.Entry(host)
+                } else {
+                    Text(
+                        text = "插件未安装或已卸载",
+                        modifier = Modifier.padding(24.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
             animatedComposable("weather") {

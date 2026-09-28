@@ -128,6 +128,14 @@ fun PluginManagerSection() {
                         ) { Text("卸载") }
                     }
                 }
+                // 装载失败的插件直接亮错误（本机日志不可见时的排障通道）
+                RuntimePluginLoader.lastErrors.forEach { err ->
+                    Text(
+                        "装载失败：$err",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
                 if (runtimePlugins.isEmpty()) {
                     Text(
                         "尚未安装插件",

@@ -5,10 +5,8 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Log
 import java.io.File
-import java.security.KeyFactory
 import java.security.MessageDigest
 import java.security.Signature
-import java.security.spec.X509EncodedKeySpec
 import java.util.zip.ZipInputStream
 
 /**
@@ -87,9 +85,10 @@ object AhupInstaller {
         return runCatching {
             val digest = MessageDigest.getInstance("SHA-256").digest(dex + icon)
             val sig = Signature.getInstance("SHA256withRSA")
-            val key = KeyFactory.getInstance("RSA")
-                .generatePublic(X509EncodedKeySpec(Base64.decode(pubkey, Base64.DEFAULT)))
-            sig.initVerify(key)
+            // assets 里钉的是 X.509 证书（keytool -exportcert 产物），先解证书再取公钥
+            val cert = java.security.cert.CertificateFactory.getInstance("X.509")
+                .generateCertificate(Base64.decode(pubkey, Base64.DEFAULT).inputStream())
+            sig.initVerify(cert.publicKey)
             sig.update(digest)
             if (sig.verify(Base64.decode(manifest.signature, Base64.DEFAULT))) {
                 SignatureStatus.TRUSTED

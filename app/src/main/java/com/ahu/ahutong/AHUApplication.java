@@ -40,6 +40,9 @@ public class AHUApplication extends Application {
         // 应用级环境的安装点：必须早于任何用到 Context 的非 UI 代码
         // （MMKV 初始化、SecureStorage、Cookie 持久化都依赖它）。
         AppEnvironmentHolder.INSTANCE.install(new AndroidAppEnvironment(this));
+
+        // 插件注册表兜底初始化（不依赖页面组合时序；进程内幂等）
+        com.ahu.ahutong.ui.plugin.PluginRegistry.INSTANCE.init(this);
         DebugTimeSourceHolder.INSTANCE.install(CacheDebugTimeSource.INSTANCE);
         UserNoticeHolder.INSTANCE.install(ToastUserNotice.INSTANCE);
 

@@ -66,6 +66,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -205,6 +206,7 @@ private fun HomeWidgetSlot(
     TextHomeWidgetCard(
         title = spec.title,
         iconId = spec.iconId,
+        iconBytes = spec.iconBytes,
         tint = spec.tint,
         isEditing = isEditing,
         isHighlighted = isHighlighted,
@@ -218,6 +220,7 @@ private fun HomeWidgetSlot(
 private fun TextHomeWidgetCard(
     title: String,
     iconId: Int,
+    iconBytes: ByteArray?,
     tint: Color,
     isEditing: Boolean,
     isHighlighted: Boolean,
@@ -227,6 +230,7 @@ private fun TextHomeWidgetCard(
         RadiantTextHomeWidgetCard(
             title = title,
             iconId = iconId,
+            iconBytes = iconBytes,
             tint = tint,
             isEditing = isEditing,
             isHighlighted = isHighlighted,
@@ -239,6 +243,7 @@ private fun TextHomeWidgetCard(
 private fun RadiantTextHomeWidgetCard(
     title: String,
     iconId: Int,
+    iconBytes: ByteArray?,
     tint: Color,
     isEditing: Boolean,
     isHighlighted: Boolean,
@@ -268,12 +273,7 @@ private fun RadiantTextHomeWidgetCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                painter = painterResource(id = iconId),
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = tint
-            )
+            EditorWidgetIcon(iconId = iconId, iconBytes = iconBytes, tint = tint, size = 24.dp)
             Spacer(modifier = Modifier.padding(top = 6.dp))
             Text(
                 text = title,
@@ -632,12 +632,7 @@ private fun LibraryWidgetItem(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(
-            painter = painterResource(id = spec.iconId),
-            contentDescription = null,
-            modifier = Modifier.size(32.dp),
-            tint = spec.tint
-        )
+        EditorWidgetIcon(iconId = spec.iconId, iconBytes = spec.iconBytes, tint = spec.tint, size = 32.dp)
         Text(
             text = spec.title,
             fontWeight = FontWeight.Bold,
@@ -679,6 +674,7 @@ fun HomeWidgetDragOverlay(
         TextHomeWidgetCard(
             title = spec.title,
             iconId = spec.iconId,
+            iconBytes = spec.iconBytes,
             tint = spec.tint,
             isEditing = false,
             isHighlighted = false,
@@ -716,6 +712,33 @@ private fun Modifier.dashedBorder(color: Color): Modifier {
                     intervals = floatArrayOf(8.dp.toPx(), 6.dp.toPx())
                 )
             )
+        )
+    }
+}
+
+/** 编辑页小工具图标：运行期插件（PNG 字节流）优先，内置走资源。 */
+@Composable
+private fun EditorWidgetIcon(iconId: Int, iconBytes: ByteArray?, tint: Color, size: androidx.compose.ui.unit.Dp) {
+    if (iconBytes != null) {
+        val bitmap = remember(iconBytes) {
+            android.graphics.BitmapFactory.decodeByteArray(iconBytes, 0, iconBytes.size)
+                ?.asImageBitmap()
+        }
+        if (bitmap != null) {
+            androidx.compose.foundation.Image(
+                bitmap = bitmap,
+                contentDescription = null,
+                modifier = Modifier.size(size)
+            )
+            return
+        }
+    }
+    if (iconId != 0) {
+        Icon(
+            painter = painterResource(id = iconId),
+            contentDescription = null,
+            modifier = Modifier.size(size),
+            tint = tint
         )
     }
 }

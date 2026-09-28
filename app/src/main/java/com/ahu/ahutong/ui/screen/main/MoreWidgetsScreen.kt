@@ -19,6 +19,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,9 @@ fun MoreWidgetsScreen(
                 }
             }
         }
+        // 订阅插件注册表：装/卸插件后入口列表自动重组
+        val pluginsState by com.ahu.ahutong.ui.plugin.PluginRegistry.plugins.collectAsState()
+        @Suppress("UNUSED_EXPRESSION") pluginsState
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()

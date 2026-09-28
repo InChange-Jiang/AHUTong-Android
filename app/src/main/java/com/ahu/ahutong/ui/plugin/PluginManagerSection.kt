@@ -70,7 +70,9 @@ fun PluginManagerSection() {
                 fontWeight = FontWeight.Bold
             )
 
-            // 开发者总开关（行接管点击，防 RUI 双触发）
+            // 开发者总开关：点开关本体或整行都先弹确认弹窗，确认后才真正改变状态
+            // （与偏好设置「贡献通用模型训练数据」同一交互模式；此前空 onCheckedChange
+            // 会导致三套 UI 下点开关本体无效或视觉跳变但状态不变）
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -96,7 +98,12 @@ fun PluginManagerSection() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                AppToggle(checked = devMode, onCheckedChange = { })
+                AppToggle(
+                    checked = devMode,
+                    // null = 开关本体仅展示，点击交给整行 toggleable——与 SettingsToggleRow
+                    // 同一模式；此前空 lambda 在三套 UI 下分别表现为点开关无效/视觉跳变
+                    onCheckedChange = null
+                )
             }
 
             if (devMode) {

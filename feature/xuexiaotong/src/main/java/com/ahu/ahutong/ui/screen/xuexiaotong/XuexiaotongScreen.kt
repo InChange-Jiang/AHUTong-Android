@@ -71,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.feature.xuexiaotong.R
@@ -181,6 +182,11 @@ fun XuexiaotongScreen() {
                 } else {
                     96.n1 withNight 10.n1
                 }
+                // 固定标题栏（渐变遮罩层）。实际高度动态测量：子页内容避让量随
+                // statusBar/机型/显示比例自适应，替代各子页硬编码 102dp；+51dp 视觉余量
+                var headerHeightPx by remember { mutableIntStateOf(0) }
+                val density = LocalDensity.current
+                val headerTopPadding = with(density) { headerHeightPx.toDp() } + 35.dp
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -196,6 +202,9 @@ fun XuexiaotongScreen() {
                         )
                         .statusBarsPadding()
                         .zIndex(20f)
+                        .onSizeChanged { size ->
+                            headerHeightPx = size.height
+                        }
                 ) {
                     Row(
                         modifier = Modifier
@@ -344,6 +353,7 @@ fun XuexiaotongScreen() {
                                     onWorkClick = { selectedWork = it },
                                     isRadiant = isRadiant,
                                     pageBackdrop = pageBackdrop,
+                                    headerTopPadding = headerTopPadding,
                                     loggedIn = loggedIn
                                 )
                             }
@@ -355,7 +365,8 @@ fun XuexiaotongScreen() {
                                     showEmptyCourses = showEmptyCourses,
                                     loggedIn = loggedIn,
                                     isRadiant = isRadiant,
-                                    pageBackdrop = pageBackdrop
+                                    pageBackdrop = pageBackdrop,
+                                    headerTopPadding = headerTopPadding
                                 )
                             }
                         }
@@ -839,6 +850,7 @@ private fun ScheduleTab(
     onWorkClick: (Work) -> Unit,
     isRadiant: Boolean = false,
     pageBackdrop: Backdrop? = null,
+    headerTopPadding: Dp = 102.dp,
     loggedIn: Boolean = true
 ) {
     Column(
@@ -846,9 +858,9 @@ private fun ScheduleTab(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
-        // Radiant：滚动内容顶部停靠占位（渐变标题栏下方）+ 底部穿导航栏留白
+        // Radiant：滚动内容顶部停靠占位（渐变标题栏下方，动态测量高度）+ 底部穿导航栏留白
         if (isRadiant) {
-            Spacer(Modifier.height(102.dp))
+            Spacer(Modifier.height(headerTopPadding))
         }
         if (isRadiant && pageBackdrop != null) {
             // Radiant：玻璃日历卡（课表网格卡同款材质与 32dp 圆角），卡片自身左右各缩 6dp
@@ -1245,7 +1257,8 @@ private fun CourseTab(
     showEmptyCourses: Boolean,
     loggedIn: Boolean,
     isRadiant: Boolean = false,
-    pageBackdrop: Backdrop? = null
+    pageBackdrop: Backdrop? = null,
+    headerTopPadding: Dp = 102.dp
 ) {
     val filtered = (if (showEmptyCourses) progress
     else progress.filter { it.totalCount > 0 })
@@ -1267,8 +1280,8 @@ private fun CourseTab(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = if (isRadiant) {
-                // Radiant：卡片自身左右各缩 6dp，列表两侧 6dp 留白
-                PaddingValues(start = 6.dp, end = 6.dp, top = 102.dp, bottom = 108.dp)
+                // Radiant：卡片自身左右各缩 6dp，列表两侧 6dp 留白；顶部避让为动态测量高度
+                PaddingValues(start = 6.dp, end = 6.dp, top = headerTopPadding, bottom = 108.dp)
             } else {
                 PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 72.dp)
             }
@@ -1291,7 +1304,7 @@ private fun CourseTab(
                         }
                     }
                 }
-                if (isRadiant && pageBackdrop != null) {
+                if (isRadiant && pageBackdrop != null && !LocalGlassEffectsReduced.current) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1372,7 +1385,7 @@ private fun CourseOverviewCard(list: List<CourseProgress>, isRadiant: Boolean = 
     val totalAll = list.sumOf { it.totalCount }
     val percent = if (totalAll > 0) (totalDone * 100 / totalAll).coerceAtMost(100) else 0
 
-    if (isRadiant && pageBackdrop != null) {
+    if (isRadiant && pageBackdrop != null && !LocalGlassEffectsReduced.current) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()

@@ -21,7 +21,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
@@ -104,8 +103,6 @@ fun CourseDetailDialog(
                     )
                     Text(
                         text = course.location,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -129,8 +126,6 @@ fun CourseDetailDialog(
                     )
                     Text(
                         text = course.teacher,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleMedium
                     )
                 }

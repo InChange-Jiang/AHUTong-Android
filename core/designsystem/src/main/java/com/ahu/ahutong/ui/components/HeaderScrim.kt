@@ -9,8 +9,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
@@ -25,10 +25,10 @@ import com.kyant.backdrop.effects.vibrancy
  *
  * 三态路由（挂接性能开关 LocalGlassEffectsReduced）：
  * 1. 性能开关开启（关闭玻璃效果）→ 纯色 4 段渐变遮罩，零采样开销（原效果降级）
- * 2. 液态玻璃可用且性能开关关闭 → 渐变式高斯模糊（纯毛玻璃，无任何颜色叠加）：
- *    顶部强度与底部导航栏一致（vibrancy + floating 级 blur，完整毛玻璃观感），
- *    向下线性衰减到底部 0%（内容完全清晰）。
- *    API 33+ 用 AGSL 逐行调制不透明度；API 31-32 无 AGSL 退化为均匀毛玻璃
+ * 2. 液态玻璃可用且性能开关关闭 → 渐变式毛玻璃（nav 同款浓度配方）：
+ *    顶部浓度 = 底部导航栏（vibrancy + floating blur ×1.5 + 0.4 容器色 tint），
+ *    向下按 pow(1-y/h, 0.35) 非线性曲线收敛到底部 0%（内容完全清晰）。
+ *    API 33+ 用 AGSL 逐行调制不透明度；API 31-32 无 AGSL 退化为均匀毛玻璃 + 线性 tint
  * 3. 其余（液态关闭 / 低端设备不支持 blur）→ 纯色渐变遮罩兜底
  *
  * 模糊采样源 = 全局背景层（壁纸/场景渐变，ambient）+ 页面内容层（[headerBackdropSource]
@@ -51,9 +51,13 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
     }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         // 渐变式毛玻璃：均匀 blur 后接 AGSL 按行调制 alpha（顶部全显模糊 → 底部 0）。
-        // 强度对齐底部导航栏（LiquidBottomTabs 用 tokens.floating 的 vibrancy+blur）：
-        // blur 半径取 floating.blurRadius，顶部 alpha=1（与导航栏一致的"完整毛玻璃"观感），
-        // 向下线性衰减到 0。
+        // 浓度对齐底部导航栏（LiquidBottomTabs）的三要素：
+        // 1. blur 半径 = floating.blurRadius × [HEADER_BLUR_BOOST]（1.5：用户实测仍偏弱）
+        // 2. 顶部 alpha = 1（满浓度），但衰减曲线非线性 pow(1-y/h, 0.35)——
+        //    纯线性时标题行所在位置（60-80% 高度）浓度只剩 20-40%，观感远弱于
+        //    全高满浓度的 nav；非线性让顶部大区间保持接近满浓、底部快速收敛 0
+        // 3. nav 观感浓度的一半来自 onDrawSurface 的 0.4 容器色 tint（毛玻璃在
+        //    低对比背景上不"显形"）——这里叠加同款 tint，且 alpha 同曲线衰减
         // backdrop 1.0.0 无 runtimeShaderEffect 扩展，走 scope.obtainRuntimeShader
         // + RenderEffect.createRuntimeShaderEffect 手工链（内部就是官方链式合成）
         return drawPlainBackdrop(
@@ -61,7 +65,7 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
             shape = { RectangleShape },
             effects = {
                 vibrancy()
-                blur(blurRadiusPx)
+                blur(blurRadiusPx * HEADER_BLUR_BOOST)
                 val shader = obtainRuntimeShader(
                     "header_progressive_blur",
                     PROGRESSIVE_BLUR_SHADER
@@ -72,24 +76,32 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
                         .asComposeRenderEffect()
                 )
             },
-            onDrawSurface = { } // 纯毛玻璃：不叠加任何颜色渐变
+            onDrawSurface = {
+                // nav 同款容器色（浅色 0xFFFAFAFA / 深色 0xFF121212，0.4 顶部），
+                // alpha 沿 pow(1-y/h, 0.35) 曲线衰减（与 AGSL alpha 调制同形状）
+                drawRect(headerTintGradient(isLightTheme = headerBg.luminance() > 0.5f))
+            }
         )
     }
-    // API 31-32：RenderEffect 可用但无 AGSL，退化为均匀毛玻璃（仍无颜色叠加）
+    // API 31-32：RenderEffect 可用但无 AGSL，退化为均匀毛玻璃 + 线性 tint 渐变
     return drawPlainBackdrop(
         backdrop = source,
         shape = { RectangleShape },
         effects = {
             vibrancy()
-            blur(blurRadiusPx)
+            blur(blurRadiusPx * HEADER_BLUR_BOOST)
         },
-        onDrawSurface = { }
+        onDrawSurface = {
+            drawRect(headerTintGradient(isLightTheme = headerBg.luminance() > 0.5f))
+        }
     )
 }
 
 /**
  * 渐变模糊 AGSL：输入为已模糊的背景层（预乘 alpha），
- * 按像素 y 调制不透明度——顶部与底部导航栏同强度（全显模糊采样），底部线性衰减到 0。
+ * 按像素 y 调制不透明度——顶部与底部导航栏同强度（全显模糊采样），底部收敛到 0。
+ * 衰减用 pow(t, 0.35) 而非线性：线性在 60-80% 高度处只剩 20-40% 浓度（标题行位置），
+ * 观感远弱于全高满浓度的 nav；pow 曲线让顶部大区间保持接近满浓。
  */
 private const val PROGRESSIVE_BLUR_SHADER = """
 uniform shader content;
@@ -97,9 +109,31 @@ uniform float height;
 half4 main(float2 coord) {
     half4 c = content.eval(coord);
     float t = clamp(1.0 - coord.y / height, 0.0, 1.0);
-    return c * t;
+    return c * pow(t, 0.35);
 }
 """
+
+/** blur 半径增强系数：标题栏高度小于 nav 视觉厚度，1.0 时用户实测仍偏弱。 */
+private const val HEADER_BLUR_BOOST = 1.5f
+
+/**
+ * nav（LiquidBottomTabs）同款容器色 tint：浅色 0xFFFAFAFA / 深色 0xFF121212。
+ * 顶部 alpha = 0.4（与 nav onDrawSurface 的 drawRect(containerColor) 一致），
+ * 底部沿 pow(1-y, 0.35) 曲线（与 AGSL alpha 调制同形状）衰减到 0。
+ * API 31-32 无 AGSL 分支的 onDrawSurface 也用本渐变（形状近似）。
+ */
+private fun headerTintGradient(isLightTheme: Boolean): Brush {
+    val base = if (isLightTheme) Color(0xFFFAFAFA) else Color(0xFF121212)
+    // pow(0.5, 0.35) ≈ 0.78 → 中点仍保留约 0.31 的 tint，顶部满额 0.4
+    return Brush.verticalGradient(
+        colorStops = arrayOf(
+            0f to base.copy(alpha = 0.40f),
+            0.35f to base.copy(alpha = 0.37f),
+            0.68f to base.copy(alpha = 0.20f),
+            1f to base.copy(alpha = 0f)
+        )
+    )
+}
 
 /** 性能降级态 / 兜底态的纯色 4 段渐变遮罩（原一级页标题栏配方）。 */
 private fun headerScrimGradient(headerBg: Color): Brush = Brush.verticalGradient(

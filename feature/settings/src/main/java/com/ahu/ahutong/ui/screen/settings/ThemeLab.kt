@@ -461,6 +461,13 @@ private fun BackgroundControls(viewModel: PreferencesViewModel) {
         }
     }
 
+    // 性能优先：背景导入后玻璃效果已自动降级，弹窗告知一次（用户可在下方开关手动恢复）
+    var showAutoGlassNotice by remember(revision) {
+        androidx.compose.runtime.mutableStateOf(
+            com.ahu.ahutong.core.storage.HomeBackgroundStore.consumeAutoGlassNotice()
+        )
+    }
+
     Text(
         text = "背景",
         style = MaterialTheme.typography.titleMedium,
@@ -523,7 +530,7 @@ private fun BackgroundControls(viewModel: PreferencesViewModel) {
                         modifier = Modifier.width(28.dp)
                     )
                 }
-                // 低端机性能开关（红色警示项，与遮罩同级）：关闭课表大卡、日程大卡的实时玻璃模糊
+                // 性能优先开关（红色警示项，与遮罩同级）：开启后全应用玻璃卡收敛为实色卡
                 val reduceGlass = com.ahu.ahutong.core.storage.HomeBackgroundStore.reduceGlassEffects
                 Row(
                     modifier = Modifier
@@ -557,4 +564,23 @@ private fun BackgroundControls(viewModel: PreferencesViewModel) {
                 ) { Text("从背景图取主题色") }
             }
         }
+
+    // 性能优先告知弹窗：背景导入时玻璃效果已自动关闭，追求视觉可手动恢复
+    if (showAutoGlassNotice) {
+        AppDialog(
+            title = "性能优化提示",
+            onDismiss = { showAutoGlassNotice = false },
+            actions = listOf(
+                AppDialogAction("知道了", onClick = { showAutoGlassNotice = false },
+                    style = AppDialogActionStyle.Primary)
+            ),
+            content = {
+                Text(
+                    text = "为保证流畅体验，检测到自定义背景后已自动关闭玻璃效果，卡片将使用实色表面以降低性能开销。\n\n如需更佳的视觉表现，可在「背景」设置中关闭该选项重新启用玻璃效果，但可能对性能造成一定影响。",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        )
+    }
 }

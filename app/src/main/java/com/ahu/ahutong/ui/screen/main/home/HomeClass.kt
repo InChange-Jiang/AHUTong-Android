@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
+import com.ahu.ahutong.ui.components.LocalGlassEffectsReduced
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.components.appLiquidGlassSurface
 import com.ahu.ahutong.ui.components.liquidGlassSurface
@@ -46,7 +47,8 @@ fun HomeClassCard(
     modifier: Modifier = Modifier
 ) {
     val cardShape = SmoothRoundedCornerShape(20.dp)
-    val surface = if (LocalIsLiquidGlassEnabled.current) {
+    // 性能开关开启时强制实色回落（同校园卡口径），跳过实时模糊采样
+    val surface = if (LocalIsLiquidGlassEnabled.current && !LocalGlassEffectsReduced.current) {
         Modifier.liquidGlassSurface(
             backdrop = LocalLiquidGlassAmbientBackdrop.current,
             shape = cardShape,

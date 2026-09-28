@@ -36,8 +36,18 @@ object HomeBackgroundStore {
     /** 遮罩不透明度百分比 0-100（全虚到全实；亮色模式白罩 / 暗色模式黑罩）。 */
     val maskPercent: Int get() = prefs.getInt("mask", 50)
 
-    /** 关闭部分玻璃效果（低端机性能开关）：课表大卡、日程大卡降级为纯色表面。 */
+    /** 关闭部分玻璃效果（性能优先开关）：玻璃卡片收敛为纯色表面，跳过实时模糊采样。 */
     val reduceGlassEffects: Boolean get() = prefs.getBoolean("reduce_glass", false)
+
+    /** 导入自定义背景后自动开启降级（性能优先默认），用户可在外观设置手动关闭。 */
+    private const val PREF_AUTO_GLASS_NOTICE = "auto_glass_notice_shown"
+
+    /** 本次导入是否已触发过「自动关闭玻璃效果」告知（每张背景图只弹一次）。 */
+    fun consumeAutoGlassNotice(): Boolean {
+        val shown = prefs.getBoolean(PREF_AUTO_GLASS_NOTICE, false)
+        if (shown) prefs.edit().putBoolean(PREF_AUTO_GLASS_NOTICE, false).apply()
+        return shown
+    }
 
     fun setReduceGlassEffects(value: Boolean) {
         prefs.edit().putBoolean("reduce_glass", value).apply()
@@ -56,7 +66,12 @@ object HomeBackgroundStore {
             cropped.compress(Bitmap.CompressFormat.JPEG, 92, it)
         }
         regenerateBlurred(context, cropped)
-        prefs.edit().putString("path", BLUR_FILE).apply()
+        // 性能优先：设置自定义背景后默认开启玻璃降级，并标记待告知用户
+        prefs.edit()
+            .putString("path", BLUR_FILE)
+            .putBoolean("reduce_glass", true)
+            .putBoolean(PREF_AUTO_GLASS_NOTICE, true)
+            .apply()
         _revision.value++
     }
 

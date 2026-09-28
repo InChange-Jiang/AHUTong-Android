@@ -407,7 +407,8 @@ fun SettingsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .then(
-                    if (isRadiant) {
+                    // 性能开关开启时 Radiant 也降级实色（跳过实时模糊采样）
+                    if (isRadiant && !LocalGlassEffectsReduced.current) {
                         backdrop?.let {
                             Modifier.liquidGlassSurface(
                                 backdrop = it,
@@ -415,6 +416,10 @@ fun SettingsSection(
                                 surfaceColor = liquidGlassTint()
                             )
                         } ?: Modifier
+                            .clip(shape)
+                            .background(settingsGroupColor())
+                    } else if (isRadiant) {
+                        Modifier
                             .clip(shape)
                             .background(settingsGroupColor())
                     } else {

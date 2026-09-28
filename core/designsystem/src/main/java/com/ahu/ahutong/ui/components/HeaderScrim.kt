@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.ahu.ahutong.ui.theme.LocalLiquidGlassTokens
 import com.kyant.backdrop.backdrops.LayerBackdrop
@@ -17,6 +18,7 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.drawPlainBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.effect
+import com.kyant.backdrop.effects.vibrancy
 
 /**
  * 一级页固定标题栏遮罩（共享实现，替代各页复制的 4 段式 verticalGradient）。
@@ -24,7 +26,8 @@ import com.kyant.backdrop.effects.effect
  * 三态路由（挂接性能开关 LocalGlassEffectsReduced）：
  * 1. 性能开关开启（关闭玻璃效果）→ 纯色 4 段渐变遮罩，零采样开销（原效果降级）
  * 2. 液态玻璃可用且性能开关关闭 → 渐变式高斯模糊（纯毛玻璃，无任何颜色叠加）：
- *    底部 0%（内容完全清晰），越往上越浓，顶部约 [MAX_BLUR_OPACITY]（60%）。
+ *    顶部强度与底部导航栏一致（vibrancy + floating 级 blur，完整毛玻璃观感），
+ *    向下线性衰减到底部 0%（内容完全清晰）。
  *    API 33+ 用 AGSL 逐行调制不透明度；API 31-32 无 AGSL 退化为均匀毛玻璃
  * 3. 其余（液态关闭 / 低端设备不支持 blur）→ 纯色渐变遮罩兜底
  *
@@ -42,20 +45,27 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
     // 头部静止区域采到透明像素，blur 后仍透明，表现为"看不到任何模糊"，即 Main 导航栏
     // P2 回归的同款坑，解法同 rememberCombinedBackdrop(ambient, content)）
     val source = rememberCombinedBackdrop(LocalLiquidGlassAmbientBackdrop.current, contentLayer)
+    // 与底部导航栏（LiquidBottomTabs）同款强度参数：vibrancy + floating 级 blur 半径
+    val blurRadiusPx = with(LocalDensity.current) {
+        LocalLiquidGlassTokens.current.floating.blurRadius.toPx()
+    }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        // 渐变式毛玻璃：均匀 blur 后接 AGSL 按行调制 alpha（顶部 maxOpacity → 底部 0）。
+        // 渐变式毛玻璃：均匀 blur 后接 AGSL 按行调制 alpha（顶部全显模糊 → 底部 0）。
+        // 强度对齐底部导航栏（LiquidBottomTabs 用 tokens.floating 的 vibrancy+blur）：
+        // blur 半径取 floating.blurRadius，顶部 alpha=1（与导航栏一致的"完整毛玻璃"观感），
+        // 向下线性衰减到 0。
         // backdrop 1.0.0 无 runtimeShaderEffect 扩展，走 scope.obtainRuntimeShader
         // + RenderEffect.createRuntimeShaderEffect 手工链（内部就是官方链式合成）
         return drawPlainBackdrop(
             backdrop = source,
             shape = { RectangleShape },
             effects = {
-                blur(BLUR_RADIUS.toPx())
+                vibrancy()
+                blur(blurRadiusPx)
                 val shader = obtainRuntimeShader(
                     "header_progressive_blur",
                     PROGRESSIVE_BLUR_SHADER
                 )
-                shader.setFloatUniform("maxOpacity", MAX_BLUR_OPACITY)
                 shader.setFloatUniform("height", size.height.coerceAtLeast(1f))
                 effect(
                     RenderEffect.createRuntimeShaderEffect(shader, "content")
@@ -69,28 +79,25 @@ fun Modifier.headerScrim(headerBg: Color, contentLayer: LayerBackdrop? = null): 
     return drawPlainBackdrop(
         backdrop = source,
         shape = { RectangleShape },
-        effects = { blur(BLUR_RADIUS.toPx()) },
+        effects = {
+            vibrancy()
+            blur(blurRadiusPx)
+        },
         onDrawSurface = { }
     )
 }
 
-/** 模糊强度上限（顶部）：60%。 */
-private const val MAX_BLUR_OPACITY = 0.6f
-
-private val BLUR_RADIUS = 22.dp
-
 /**
  * 渐变模糊 AGSL：输入为已模糊的背景层（预乘 alpha），
- * 按像素 y 调制不透明度——顶部 maxOpacity、底部线性衰减到 0。
+ * 按像素 y 调制不透明度——顶部与底部导航栏同强度（全显模糊采样），底部线性衰减到 0。
  */
 private const val PROGRESSIVE_BLUR_SHADER = """
 uniform shader content;
-uniform float maxOpacity;
 uniform float height;
 half4 main(float2 coord) {
     half4 c = content.eval(coord);
     float t = clamp(1.0 - coord.y / height, 0.0, 1.0);
-    return c * (maxOpacity * t);
+    return c * t;
 }
 """
 

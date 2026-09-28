@@ -81,6 +81,8 @@ import com.ahu.ahutong.data.xuexiaotong.CustomEvent
 import com.ahu.ahutong.data.xuexiaotong.Work
 import com.ahu.ahutong.ui.components.AppToggle
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
+import com.ahu.ahutong.ui.components.headerScrim
+import com.ahu.ahutong.ui.components.headerBackdropSource
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.AppModalBottomSheet
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
@@ -94,7 +96,6 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.capsule.ContinuousCapsule
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.zIndex
 import com.kyant.monet.a1
 import kotlin.math.roundToInt
@@ -176,30 +177,24 @@ fun XuexiaotongScreen() {
                     .fillMaxSize()
                     .appLiquidGlassSceneBackground(96.n1 withNight 10.n1)
             ) {
-                // 固定标题栏（渐变遮罩层）
+                // 固定标题栏（遮罩层）
                 val headerBg = if (LocalIsLiquidGlassEnabled.current) {
                     MaterialTheme.colorScheme.surfaceContainerLowest
                 } else {
                     96.n1 withNight 10.n1
                 }
-                // 固定标题栏（渐变遮罩层）。实际高度动态测量：子页内容避让量随
-                // statusBar/机型/显示比例自适应，替代各子页硬编码 102dp；+51dp 视觉余量
+                // 标题栏模糊采样层：只包标签页内容（标题栏自身在层外，避免自采样）
+                val headerBlurLayer = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
+                // 固定标题栏（遮罩层）。实际高度动态测量：子页内容避让量随
+                // statusBar/机型/显示比例自适应，替代各子页硬编码 102dp；+35dp 视觉余量。
+                // 关玻璃开→纯色渐变（降级），液态可用→均匀模糊+渐变 scrim（方案 a）
                 var headerHeightPx by remember { mutableIntStateOf(0) }
                 val density = LocalDensity.current
                 val headerTopPadding = with(density) { headerHeightPx.toDp() } + 35.dp
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                colorStops = arrayOf(
-                                    0f to headerBg,
-                                    0.35f to headerBg,
-                                    0.68f to headerBg.copy(alpha = 0.85f),
-                                    1f to headerBg.copy(alpha = 0f)
-                                )
-                            )
-                        )
+                        .headerScrim(headerBg, headerBlurLayer)
                         .statusBarsPadding()
                         .zIndex(20f)
                         .onSizeChanged { size ->
@@ -317,7 +312,8 @@ fun XuexiaotongScreen() {
                         }
                     }
                 }
-                // 标签页内容：可穿透滚动（上穿渐变标题栏、下穿底部导航）
+                // 标签页内容：可穿透滚动（上穿遮罩标题栏、下穿底部导航）；
+                // 同时作为标题栏模糊的采样源（模糊激活时才建层）
                 AnimatedContent(
                     targetState = tab,
                     transitionSpec = {
@@ -329,7 +325,8 @@ fun XuexiaotongScreen() {
                                 (slideOutHorizontally { it / 2 } + fadeOut(tween(180)))
                         }
                     },
-                    label = "tabContent"
+                    label = "tabContent",
+                    modifier = Modifier.headerBackdropSource(headerBlurLayer)
                 ) { t ->
                     Box(Modifier.fillMaxSize()) {
                         when (t) {

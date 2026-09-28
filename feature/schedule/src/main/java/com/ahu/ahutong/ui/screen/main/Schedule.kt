@@ -78,7 +78,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
@@ -111,6 +110,8 @@ import com.ahu.ahutong.ui.components.AppDialog
 import com.ahu.ahutong.ui.components.AppDialogAction
 import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
+import com.ahu.ahutong.ui.components.headerScrim
+import com.ahu.ahutong.ui.components.headerBackdropSource
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalGlassEffectsReduced
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
@@ -845,25 +846,20 @@ fun Schedule(
                 } else {
                     96.n1 withNight 10.n1
                 }
+                // 标题栏模糊采样层：只包滚动内容（标题栏自身在层外，避免自采样）；
+                // 模糊关闭时 headerBackdropSource 零开销直通（对象创建极轻，无层开销）
+                val headerBlurLayer = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
                 Box(modifier = Modifier.fillMaxSize()) {
                     // 标题栏实际高度动态测量：内容避让量随 statusBar/机型/显示比例自适应，
                     // 替代原硬编码 102.dp（不同机型上会被标题栏遮挡的根因）
                     var headerHeightPx by remember { mutableIntStateOf(0) }
                     val density = LocalDensity.current
-                    // 固定标题栏（渐变遮罩层）：与内容区为兄弟叠加关系，zIndex 盖在可穿透内容之上
+                    // 固定标题栏（遮罩层）：与内容区为兄弟叠加关系，zIndex 盖在可穿透内容之上；
+                    // 关玻璃开→纯色渐变（降级），液态可用→均匀模糊+渐变 scrim（方案 a）
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                Brush.verticalGradient(
-                                    colorStops = arrayOf(
-                                        0f to headerBg,
-                                        0.35f to headerBg,
-                                        0.68f to headerBg.copy(alpha = 0.85f),
-                                        1f to headerBg.copy(alpha = 0f)
-                                    )
-                                )
-                            )
+                            .headerScrim(headerBg, headerBlurLayer)
                             .statusBarsPadding()
                             .zIndex(20f)
                             .onSizeChanged { size ->
@@ -873,9 +869,12 @@ fun Schedule(
                         ScheduleHeaderRow()
                     }
                     // 可穿透滚动内容区——上穿渐变标题栏、下穿底部导航
+                    // 可穿透滚动内容区——上穿遮罩标题栏、下穿底部导航；
+                    // 同时作为标题栏模糊的采样源（模糊激活时才建层）
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .headerBackdropSource(headerBlurLayer)
                             .verticalScroll(rememberScrollState())
                             .navigationBarsPadding()
                             .padding(bottom = 96.dp)

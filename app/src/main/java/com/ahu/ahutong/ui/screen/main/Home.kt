@@ -44,7 +44,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
@@ -77,6 +76,8 @@ import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.personalization.semantic.MutationId
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
 import com.ahu.ahutong.ui.components.GlassBackdropContainer
+import com.ahu.ahutong.ui.components.headerScrim
+import com.ahu.ahutong.ui.components.headerBackdropSource
 import com.ahu.ahutong.ui.components.LocalIsLiquidGlassEnabled
 import com.ahu.ahutong.ui.components.LocalLiquidGlassAmbientBackdrop
 import com.ahu.ahutong.ui.screen.main.home.AtAGlance
@@ -473,9 +474,13 @@ fun Home(
                     }
                 }
         ) {
+        // 标题栏模糊采样层：只包滚动内容（头部自身在层外，避免自采样）；
+        // 模糊关闭时 headerBackdropSource 零开销直通
+        val headerBlurLayer = com.kyant.backdrop.backdrops.rememberLayerBackdrop()
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .headerBackdropSource(headerBlurLayer)
                 .verticalScroll(rememberScrollState())
                 .systemBarsPadding()
                 .padding(
@@ -561,7 +566,8 @@ fun Home(
             )
         }
 
-        // 曜光固定头部（渐变遮罩 + 日期行），全主题统一
+        // 曜光固定头部（遮罩 + 日期行），全主题统一；
+        // 关玻璃开→纯色渐变（降级），液态可用→均匀模糊+渐变 scrim（方案 a）
         run {
             val headerBackground = if (LocalIsLiquidGlassEnabled.current) {
                 MaterialTheme.colorScheme.surfaceContainerLowest
@@ -572,14 +578,7 @@ fun Home(
                 modifier = Modifier
                     .fillMaxWidth()
                     .zIndex(20f)
-                    .background(
-                        Brush.verticalGradient(
-                            0f to headerBackground,
-                            0.35f to headerBackground,
-                            0.68f to headerBackground.copy(alpha = 0.85f),
-                            1f to headerBackground.copy(alpha = 0f)
-                        )
-                    )
+                    .headerScrim(headerBackground, headerBlurLayer)
                     .statusBarsPadding()
                     .padding(top = 12.dp)
             ) {

@@ -11,5 +11,8 @@ enum class PluginCapability {
     NETWORK,
 
     /** 插件可以读写自己的隔离存储（命名空间 plugin_<id>，与其他插件/主 App 数据互不可见）。 */
-    PLUGIN_STORAGE
+    PLUGIN_STORAGE,
+
+    /** 插件可以使用相机取景与拍照（宿主持有 CAMERA 权限并统一处理运行时授权）。 */
+    CAMERA
 }

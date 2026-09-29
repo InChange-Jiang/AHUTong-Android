@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.plugin
 
-import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +33,14 @@ import com.ahu.ahutong.ui.components.AppDialogActionStyle
 import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppToggle
 import kotlinx.coroutines.delay
+
+/** manifest 能力字符串 → 中文标签（与 PluginCapability 枚举名一一对应）。 */
+private fun capabilityLabel(raw: String): String = when (raw.trim().uppercase()) {
+    "NETWORK" -> "网络"
+    "PLUGIN_STORAGE" -> "插件存储"
+    "CAMERA" -> "相机"
+    else -> raw
+}
 
 /**
  * 小工具页尾部的插件管理区。
@@ -126,8 +133,7 @@ fun PluginManagerSection() {
                         AppButton(
                             onClick = {
                                 AhupInstaller.uninstall(context, id)
-                                context.getSharedPreferences("plugin_$id", Context.MODE_PRIVATE)
-                                    .edit().clear().apply()
+                                cleanupPluginData(context, id)
                                 PluginRegistry.reload(context)
                                 listTick++
                             },
@@ -288,7 +294,7 @@ fun PluginManagerSection() {
             Text("作者：${c.manifest.author}", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                "声明能力：${c.manifest.capabilities.ifEmpty { setOf("无") }.joinToString("、")}",
+                "声明能力：${c.manifest.capabilities.ifEmpty { setOf("无") }.joinToString("、") { capabilityLabel(it) }}",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(4.dp))

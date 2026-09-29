@@ -32,6 +32,7 @@ import com.ahu.ahutong.sdk.RustSDK
 import com.ahu.ahutong.ui.component.ApkMirrorSourceDialog
 import com.ahu.ahutong.ui.component.ApkUpdateDialog
 import com.ahu.ahutong.ui.screen.Main
+import com.ahu.ahutong.ui.plugin.PluginHostLauncherHub
 import com.ahu.ahutong.ui.state.AboutViewModel
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
 import com.ahu.ahutong.ui.state.LoginViewModel
@@ -282,6 +283,12 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
+    override fun onDestroy() {
+        // 宿主 Activity 销毁：插件通道清空，防悬挂引用
+        PluginHostLauncherHub.detach()
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -349,7 +356,42 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(this, "未授权安装权限，安装失败", Toast.LENGTH_SHORT).show()
                 }
             }
+
+        // ---- 插件相机能力（PluginHostV2）：两个 launcher 必须在 RESUMED 前注册 ----
+        val cameraPermissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                pendingCameraPermissionResult?.invoke(granted)
+                pendingCameraPermissionResult = null
+            }
+        val pickImageLauncher =
+            registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                pendingPickImageResult?.invoke(uri)
+                pendingPickImageResult = null
+            }
+        PluginHostLauncherHub.attach(
+            activity = this,
+            requestCameraPermission = { onResult ->
+                // 任意线程可调：请求须回主线程（launcher.launch 只允许主线程）
+                runOnUiThread {
+                    pendingCameraPermissionResult = onResult
+                    cameraPermissionLauncher.launch(android.Manifest.permission.CAMERA)
+                }
+            },
+            pickImageLauncher = { onResult ->
+                runOnUiThread {
+                    pendingPickImageResult = onResult
+                    pickImageLauncher.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
+                }
+            }
+        )
     }
+
+    private var pendingCameraPermissionResult: ((Boolean) -> Unit)? = null
+    private var pendingPickImageResult: ((Uri?) -> Unit)? = null
     private var pendingInstallAction: (() -> Unit)? = null
 
     // 3. 处理安装权限请求

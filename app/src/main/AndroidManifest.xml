@@ -17,9 +17,15 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- 插件相机能力：权限由宿主持有并统一处理运行时授权，插件自身不能声明组件与权限 -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <uses-feature
         android:name="android.hardware.nfc"
+        android:required="false" />
+    <!-- 无相机设备（平板等）不影响安装 -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
         android:required="false" />
 
     <queries>

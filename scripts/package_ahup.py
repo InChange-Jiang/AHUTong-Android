@@ -5,10 +5,14 @@
   python package_ahup.py <moduleDir> <moduleAar> <outFile> \
       --id campus_circle --title 校园圈子 --summary 简介 --tint 0xFF5C6BC0 \
       --version 0.1.0 --author AHUTong --entry com.xxx.CirclePlugin \
-      --icon-src <可选 PNG> --keystore <可选> --storepass x --alias ahup --keypass x
+      --icon-src <可选 PNG> --keystore <可选> --storepass x --alias ahup --keypass x \
+      --extra-aar <可选：如 opencv.aar，其 Java 类并入 dex、jni so 进包> \
+      --abi arm64-v8a <可选：so 的 ABI 过滤，默认 arm64-v8a，多 ABI 逗号分隔>
 
-流程：AAR classes.jar → D8 → plugin.dex →（可选）签名 → manifest.json + icon.png 打包 zip。
+流程：AAR classes.jar（+ 可选 extra AAR 类）→ D8 → plugin.dex →（可选）v2 原生库
+→（可选）签名 → manifest.json + icon.png 打包 zip。
 未提供 keystore 时产未签名包（宿主安装时会有强警告）。
+签名载荷：v1 = sha256(dex+icon)；带 so 时 v2 = sha256(dex+icon+so 按相对路径排序拼接)。
 """
 import argparse
 import json
@@ -22,6 +26,9 @@ D8 = SDK / "build-tools" / "36.0.0" / "d8.bat"
 ANDROID_JAR = SDK / "platforms" / "android-36" / "android.jar"
 SIGNER = Path(__file__).parent / "AhupSign.java"
 JAVA = r"C:\Program Files\Microsoft\jdk-21.0.8.9-hotspot\bin\java.exe"
+
+# ABI 策略：2026 年校园设备事实标准是 arm64-v8a；armeabi-v7a 做成开关默认关闭
+DEFAULT_ABI = "arm64-v8a"
 
 
 def make_default_icon(path: Path, tint: int) -> None:
@@ -56,13 +63,18 @@ def main() -> None:
     ap.add_argument("--storepass", default="")
     ap.add_argument("--alias", default="ahup")
     ap.add_argument("--keypass", default="")
+    ap.add_argument("--extra-aar", default="",
+                    help="可选第三方 AAR（如 opencv）：Java 类并入 dex，jni so 拷入包内 lib/")
+    ap.add_argument("--abi", default=DEFAULT_ABI,
+                    help=f"so 的 ABI 过滤，默认 {DEFAULT_ABI}；多 ABI 逗号分隔")
     a = ap.parse_args()
 
     work = Path(a.module_dir) / "build" / "ahup-work"
     work.mkdir(parents=True, exist_ok=True)
-
-    # 1. AAR 里取 classes.jar 解出 class 文件（每次开新目录，不批量删旧文件）
     import time
+    import shutil
+
+    # 1. 主 AAR 的 classes.jar 解出 class 文件（每次开新目录，不批量删旧文件）
     classes_dir = work / f"classes_{int(time.time())}"
     classes_dir.mkdir()
     with zipfile.ZipFile(a.aar) as zf:
@@ -70,36 +82,73 @@ def main() -> None:
     with zipfile.ZipFile(work / "classes.jar") as zf:
         zf.extractall(classes_dir)
 
+    # 1b. 额外 AAR（如 OpenCV）：其 classes.jar 解出后并入 D8 输入（全量，不收缩）
+    extra_dir = None
+    if a.extra_aar:
+        extra_dir = work / f"extra_{int(time.time())}"
+        extra_dir.mkdir()
+        extra_jar = work / f"extra_classes_{int(time.time())}.jar"
+        with zipfile.ZipFile(a.extra_aar) as zf:
+            with open(extra_jar, "wb") as f:
+                f.write(zf.read("classes.jar"))
+        with zipfile.ZipFile(extra_jar) as zf:
+            zf.extractall(extra_dir)
+        print(f"已并入 {a.extra_aar} 的 Java 类")
+
     # 2. D8 → plugin.dex（宿主侧类不进包，运行时由父 ClassLoader 提供）
     dex_out = work / "dex"
     dex_out.mkdir(exist_ok=True)
+    class_files = [str(p) for p in classes_dir.rglob("*.class")]
+    if extra_dir is not None:
+        class_files += [str(p) for p in extra_dir.rglob("*.class")]
     subprocess.run(
         [str(D8), "--release", "--min-api", "26", "--lib", str(ANDROID_JAR),
-         "--output", str(dex_out)] +
-        [str(p) for p in classes_dir.rglob("*.class")],
+         "--output", str(dex_out)] + class_files,
         check=True, capture_output=True
     )
     dex = dex_out / "classes.dex"
     plugin_dex = work / "plugin.dex"
-    import shutil
     shutil.copy(dex, plugin_dex)  # 复制而非改名：Windows rename 不能覆盖已存在文件
 
     # 3. 图标
     icon = work / "icon.png"
     if a.icon_src:
-        import shutil
         shutil.copy(a.icon_src, icon)
     else:
         make_default_icon(icon, int(a.tint, 16))
 
-    # 4. 签名（有 keystore 才签；签的是 dex+icon，与宿主校验一致）
+    # 3b. 原生库：从 extra AAR 的 jni/<abi>/*.so 拷入包内 lib/<abi>/（v2）
+    so_files = []  # (zip 相对路径, 磁盘绝对路径)
+    if a.extra_aar:
+        abis = [x.strip() for x in a.abi.split(",") if x.strip()]
+        lib_root = work / "lib"
+        with zipfile.ZipFile(a.extra_aar) as zf:
+            for name in zf.namelist():
+                if not name.startswith("jni/"):
+                    continue
+                parts = name.split("/")
+                if len(parts) != 3 or not name.endswith(".so"):
+                    continue
+                so_abi, so_name = parts[1], parts[2]
+                if so_abi not in abis:
+                    print(f"丢弃非目标 ABI 的 so：{name}（不在 --abi {a.abi}）")
+                    continue
+                out_path = lib_root / so_abi / so_name
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(out_path, "wb") as f:
+                    f.write(zf.read(name))
+                so_files.append((f"lib/{so_abi}/{so_name}", out_path))
+        so_files.sort(key=lambda x: x[0])
+        if so_files:
+            print(f"打包 {len(so_files)} 个原生库：{[p for p, _ in so_files]}")
+
+    # 4. 签名（有 keystore 才签；载荷与宿主校验两端一致：v1=dex+icon，v2 再拼 so）
     signature = ""
     if a.keystore:
-        sig = subprocess.run(
-            [JAVA, str(SIGNER), a.keystore, a.storepass, a.alias, a.keypass,
-             str(plugin_dex), str(icon)],
-            check=True, capture_output=True, text=True
-        ).stdout.strip().splitlines()[-1]
+        cmd = [JAVA, str(SIGNER), a.keystore, a.storepass, a.alias, a.keypass,
+               str(plugin_dex), str(icon)] + [str(p) for _, p in so_files]
+        sig = subprocess.run(cmd, check=True, capture_output=True, text=True
+                             ).stdout.strip().splitlines()[-1]
         signature = sig
 
     # 5. manifest + 打包
@@ -117,7 +166,10 @@ def main() -> None:
         zf.write(work / "manifest.json", "manifest.json")
         zf.write(plugin_dex, "plugin.dex")
         zf.write(icon, "icon.png")
-    print(f"打包完成: {out} ({'已签名' if signature else '未签名'})")
+        for rel, disk in so_files:
+            zf.write(disk, rel)
+    pkg_kind = "v2（含原生库）" if so_files else "v1"
+    print(f"打包完成: {out} ({pkg_kind}，{'已签名' if signature else '未签名'})")
 
 
 if __name__ == "__main__":

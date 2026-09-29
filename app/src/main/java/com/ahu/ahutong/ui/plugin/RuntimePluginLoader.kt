@@ -1,6 +1,7 @@
 package com.ahu.ahutong.ui.plugin
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.ahu.ahutong.core.plugin.AhuPlugin
 import com.ahu.ahutong.core.plugin.PluginIcon
@@ -37,10 +38,13 @@ object RuntimePluginLoader {
         val manifest = AhupInstaller.manifestOf(context, id)
             ?: throw AhupException("插件 $id 缺少 manifest")
         val dex = AhupInstaller.dexFile(context, id)
+        // v2 包：按 SUPPORTED_ABIS 顺序取第一个存在的 lib/<abi>/ 目录作原生库搜索路径，
+        // 插件内 System.loadLibrary("opencv_java4") / OpenCVLoader.initLocal() 才能找到库
+        val libDir = AhupInstaller.nativeLibDir(context, id, Build.SUPPORTED_ABIS)
         val loader = DexClassLoader(
             dex.absolutePath,
             null, // 优化目录由系统托管（Android 8+ 推荐 null）
-            null,
+            libDir?.absolutePath,
             context.classLoader
         )
         val clazz = loader.loadClass(manifest.entryClass)

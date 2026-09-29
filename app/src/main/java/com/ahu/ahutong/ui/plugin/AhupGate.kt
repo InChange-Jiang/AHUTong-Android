@@ -1,6 +1,7 @@
 package com.ahu.ahutong.ui.plugin
 
 import android.content.Context
+import java.io.File
 
 /**
  * 插件总开关（开发者选项）：关 = 全部门禁——卸载全部运行期插件并清空其存储。
@@ -20,13 +21,22 @@ object AhupGate {
         if (!enabled) uninstallAll(context)
     }
 
-    /** 卸载全部运行期插件 + 清空每个插件的隔离存储。 */
+    /** 卸载全部运行期插件 + 清空每个插件的隔离存储（KV + 二进制目录）。 */
     fun uninstallAll(context: Context) {
         AhupInstaller.installedIds(context).forEach { id ->
             AhupInstaller.uninstall(context, id)
-            context.getSharedPreferences("plugin_$id", Context.MODE_PRIVATE)
-                .edit().clear().apply()
+            cleanupPluginData(context, id)
         }
         PluginRegistry.reload(context)
     }
+}
+
+/**
+ * 卸载时插件的全部数据清场（KV 存储 + pluginFilesDir 二进制目录）。
+ * 供 AhupGate.uninstallAll 与管理页单个卸载共用同一清理路径。
+ */
+internal fun cleanupPluginData(context: Context, pluginId: String) {
+    context.getSharedPreferences("plugin_$pluginId", Context.MODE_PRIVATE)
+        .edit().clear().apply()
+    File(context.filesDir, "ahup_plugins/$pluginId").deleteRecursively()
 }

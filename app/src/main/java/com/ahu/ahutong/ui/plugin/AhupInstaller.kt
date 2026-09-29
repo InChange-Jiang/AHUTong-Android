@@ -13,11 +13,13 @@ import java.util.zip.ZipInputStream
  * .ahup 包的安装/校验/装载。
  *
  * 包格式（ZIP）：
- *   manifest.json  展示用元数据（id/标题/作者/入口类/签名）
- *   plugin.dex     插件代码（dex）
- *   icon.png       入口图标
+ *   v1：manifest.json + plugin.dex + icon.png
+ *   v2：额外可选原生库，位于 lib 下各 abi 目录的 .so 文件（如 OpenCV；由 zip 内容判定，manifest 不参与）
  *
- * 安全模型：**签名是唯一闸门，签的是可执行体（dex + icon）**。
+ * 安全模型：签名是唯一闸门，签的是可执行体。
+ *   v1 载荷 = sha256(dex + icon)
+ *   v2 载荷 = sha256(dex + icon + lib 内全部 .so 按相对路径排序后逐一拼接)
+ *   （.so 是可执行代码，不纳入信任链 = 给改包注入留门）
  * manifest.json 只是展示元数据（不参与签名，篡改了也无害——能力门控读的是已签名的
  * 插件代码里的 capabilities 声明，弹窗展示的以代码声明为准）。
  * 未签名/签名不符的包给强警告，由用户自担风险确认。
@@ -26,6 +28,7 @@ object AhupInstaller {
 
     private const val DEX_FILE = "plugin.dex"
     private const val MANIFEST_FILE = "manifest.json"
+    private const val LIB_PREFIX = "lib/"
 
     private fun pluginDir(context: Context, id: String): File =
         File(context.filesDir, "ahup/$id")
@@ -42,6 +45,17 @@ object AhupInstaller {
     fun dexFile(context: Context, id: String): File = File(pluginDir(context, id), DEX_FILE)
     fun iconFile(context: Context, id: String, name: String): File = File(pluginDir(context, id), name)
 
+    /** 安装目录下本机可用的原生库搜索目录（v2 包装载用）；v1 包返回 null。 */
+    fun nativeLibDir(context: Context, id: String, supportedAbis: Array<String>): File? {
+        val libRoot = File(pluginDir(context, id), LIB_PREFIX)
+        if (!libRoot.isDirectory) return null
+        for (abi in supportedAbis) {
+            val dir = File(libRoot, abi)
+            if (dir.isDirectory) return dir
+        }
+        return null
+    }
+
     /** 解析候选包（不落盘）：供安装确认弹窗展示元数据与签名状态。 */
     fun inspect(context: Context, uri: Uri): AhupCandidate {
         val entries = readZip(context, uri)
@@ -50,8 +64,9 @@ object AhupInstaller {
         val manifest = AhupManifest.parse(manifestRaw.decodeToString())
         val dex = entries[DEX_FILE] ?: throw AhupException("包内缺少 plugin.dex")
         val icon = entries[manifest.iconFile] ?: throw AhupException("包内缺少 ${manifest.iconFile}")
-        val signatureStatus = verifySignature(manifest, dex, icon)
-        return AhupCandidate(manifest, manifestRaw, dex, icon, signatureStatus)
+        val libs = entries.filterKeys { it.startsWith(LIB_PREFIX) && it.endsWith(".so") }
+        val signatureStatus = verifySignature(manifest, dex, icon, libs)
+        return AhupCandidate(manifest, manifestRaw, dex, icon, libs, signatureStatus)
     }
 
     /** 落盘安装（先 inspect 再装）。覆盖同 id 旧版本。 */
@@ -64,7 +79,15 @@ object AhupInstaller {
         File(dir, candidate.manifest.iconFile).writeBytes(candidate.icon)
         // Android 14+：动态加载的 dex 必须只读，否则 ClassLoader 拒载
         File(dir, DEX_FILE).setReadOnly()
-        Log.i(TAG, "插件已安装：${candidate.manifest.id} v${candidate.manifest.version}")
+        // v2：原生库按相对路径落盘（lib 下各 abi 目录的 .so）
+        candidate.libs.forEach { (path, bytes) ->
+            val out = File(dir, path)
+            out.parentFile?.mkdirs()
+            out.writeBytes(bytes)
+            out.setReadOnly()
+        }
+        Log.i(TAG, "插件已安装：${candidate.manifest.id} v${candidate.manifest.version}" +
+            (if (candidate.libs.isEmpty()) "" else "（含 ${candidate.libs.size} 个原生库）"))
     }
 
     fun uninstall(context: Context, id: String) {
@@ -75,15 +98,17 @@ object AhupInstaller {
 
     enum class SignatureStatus { TRUSTED, UNSIGNED, INVALID }
 
-    private fun verifySignature(
+    internal fun verifySignature(
         manifest: AhupManifest,
         dex: ByteArray,
-        icon: ByteArray
+        icon: ByteArray,
+        libs: Map<String, ByteArray> = emptyMap()
     ): SignatureStatus {
         if (manifest.signature.isBlank()) return SignatureStatus.UNSIGNED
         val pubkey = trustedPublicKey() ?: return SignatureStatus.UNSIGNED
         return runCatching {
-            val digest = MessageDigest.getInstance("SHA-256").digest(dex + icon)
+            // 载荷由 zip 内容确定性判定：有 lib 即 v2，无则 v1（构造与测试共用 signaturePayload）
+            val digest = MessageDigest.getInstance("SHA-256").digest(signaturePayload(dex, icon, libs))
             val sig = Signature.getInstance("SHA256withRSA")
             // assets 里钉的是 X.509 证书（keytool -exportcert 产物），先解证书再取公钥
             val cert = java.security.cert.CertificateFactory.getInstance("X.509")
@@ -131,13 +156,27 @@ object AhupInstaller {
     private const val TAG = "AhupInstaller"
 }
 
-/** inspect 的产出：落盘前的一切。manifestRaw 是包内原文（签名状态展示的凭据）。 */
+/** inspect 的产出：落盘前的一切。manifestRaw 是包内原文（签名状态展示的凭据）；
+ *  libs 是 lib 下各 abi 目录 .so 的相对路径到字节映射（v2 包才有，参与签名与落盘）。 */
 class AhupCandidate(
     val manifest: AhupManifest,
     val manifestRaw: ByteArray,
     val dex: ByteArray,
     val icon: ByteArray,
+    val libs: Map<String, ByteArray> = emptyMap(),
     val signatureStatus: AhupInstaller.SignatureStatus
 )
 
 class AhupException(message: String) : Exception(message)
+
+/**
+ * .ahup 签名载荷构造（v1/v2 由 zip 内容确定性判定，两端共用同一语义）：
+ * v1（无 so）= dex + icon；v2（有 so）= dex + icon + 全部 .so 按相对路径排序后逐一拼接。
+ * internal 化以便 JVM 单测直接验证拼接顺序。
+ */
+internal fun signaturePayload(dex: ByteArray, icon: ByteArray, libs: Map<String, ByteArray>): ByteArray {
+    if (libs.isEmpty()) return dex + icon
+    var acc = dex + icon
+    libs.keys.sorted().forEach { rel -> acc += libs.getValue(rel) }
+    return acc
+}

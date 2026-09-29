@@ -4,6 +4,7 @@ composeBom = "2025.10.01"
 kotlin = "2.2.21"
 kotlinBomVersion = "2.2.21"
 coreKtx = "1.17.0"
+camerax = "1.4.2"
 coilVersion = "2.7.0"
 conscrypt = "2.5.3"
 crashreport = "4.1.9.3"
@@ -43,6 +44,10 @@ conscrypt = { module = "org.conscrypt:conscrypt-android", version.ref = "conscry
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-camera-core = { module = "androidx.camera:camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { module = "androidx.camera:camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { module = "androidx.camera:camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "camerax" }
 androidx-foundation = { module = "androidx.compose.foundation:foundation" }
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glanceAppwidget" }
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationComposeVersion" }

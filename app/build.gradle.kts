@@ -227,6 +227,11 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation(libs.androidx.core.ktx)
+    // 插件相机能力：CameraX 只进宿主（插件经父 ClassLoader 共享），OpenCV 留在插件包
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     testImplementation(kotlin("test-junit"))
 
     implementation(libs.zxing.android.embedded)

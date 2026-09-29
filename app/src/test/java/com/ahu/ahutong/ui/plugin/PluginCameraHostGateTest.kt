@@ -20,6 +20,7 @@ import kotlin.test.assertTrue
  * 3. 两个不同插件 id 的 pluginFilesDir() 路径互不相同
  * 4. 签名载荷 v1/v2 判定（无 lib 走旧载荷、有 lib 走新载荷）
  * 5. ABI 目录选择逻辑
+ * 6. close() 触发宿主 onClose 回调且无能力门控；不带回调时安全空操作
  *
  * Android 框架类型（Context/Bitmap/View）在 JVM 里是 stub——本测试只测门控与路径/目录
  * 纯逻辑，不经这些 stub 的方法（手写最小 fake 以通过构造）。
@@ -122,5 +123,25 @@ class PluginCameraHostGateTest {
         assertEquals(dirX86, pick(arrayOf("x86_64", "armeabi-v7a")))
         assertEquals(null, pick(arrayOf("mips")))
         root.deleteRecursively()
+    }
+
+    /* ---------------- close()：插件关闭自己 ---------------- */
+
+    @Test
+    fun closeInvokesHostCallbackWithoutCapabilityGate() {
+        // 无任何能力声明的插件也能关闭自己——close 不属于任何能力门控
+        var invoked = 0
+        val host = PluginHostServicesImpl(fakeContext, FakePlugin(emptySet(), fakeMeta("p1")), onClose = { invoked++ })
+        host.close()
+        assertEquals(1, invoked, "close() 必须触发宿主 onClose 回调（popBackStack）")
+        host.close()
+        assertEquals(2, invoked)
+    }
+
+    @Test
+    fun closeDefaultsToNoOpWhenNoCallbackProvided() {
+        // 旧调用点（不带 onClose）构造的宿主：close() 是安全空操作，不抛异常
+        val host = hostOf(FakePlugin(emptySet(), fakeMeta("p1")))
+        host.close() // 不抛即通过
     }
 }

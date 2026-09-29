@@ -458,7 +458,11 @@ fun Main(
                 val plugin = plugins.firstOrNull { it.meta.id == pluginId }
                 if (plugin != null) {
                     val host = remember(pluginId) {
-                        com.ahu.ahutong.ui.plugin.PluginHostServicesImpl(context, plugin)
+                        com.ahu.ahutong.ui.plugin.PluginHostServicesImpl(
+                            context,
+                            plugin,
+                            onClose = { navController.popBackStack() }
+                        )
                     }
                     plugin.Entry(host)
                 } else {

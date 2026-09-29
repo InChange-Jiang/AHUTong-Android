@@ -62,4 +62,11 @@ interface PluginHostV2 {
      * 用户取消回调 null。用于扫描插件的"从相册导入"。
      */
     fun pickImage(onResult: (Uri?) -> Unit)
+
+    /**
+     * 关闭插件自己：宿主 popBackStack 退出插件页（返回小工具页）。
+     * 无门控——插件退出自己的页面不属于任何能力声明。
+     * 返回前的二次确认由插件 UI 自理（BackHandler 里弹自己的确认弹窗，确认后调本方法）。
+     */
+    fun close()
 }

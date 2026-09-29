@@ -22,6 +22,7 @@
 | `PluginHostV2`（扩展接口） | `host is PluginHostV2` 探测 | 旧宿主优雅降级，直接调会 NoSuchMethodError，探测安全 |
 | `pluginFilesDir()` | 须声明 `PLUGIN_STORAGE` | 插件专属二进制目录 `filesDir/ahup_plugins/<插件id>/`，按 id 隔离、卸载连带清理 |
 | `pickImage()` | 无门控（零权限） | 系统照片选择器，只读 Uri 回调，取消回调 null |
+| `close()` | 无门控 | 插件**关闭自己**：宿主 popBackStack 退出插件页。返回前的二次确认由插件 UI 自理（`BackHandler` 弹自己的确认弹窗，确认后调 `close()`）；旧宿主探测不到 `PluginHostV2` 时退化为系统返回 |
 
 ## 三、宿主侧配套改动（装载链，非权限但一并说明）
 

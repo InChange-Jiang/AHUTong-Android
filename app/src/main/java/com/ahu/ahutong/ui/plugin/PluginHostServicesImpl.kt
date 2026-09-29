@@ -27,7 +27,8 @@ import java.io.File
  */
 class PluginHostServicesImpl(
     override val appContext: Context,
-    private val plugin: AhuPlugin
+    private val plugin: AhuPlugin,
+    private val onClose: () -> Unit = {}
 ) : PluginHostServices, PluginHostV2 {
 
     private val httpClient: OkHttpClient by lazy {
@@ -69,6 +70,10 @@ class PluginHostServicesImpl(
     override fun pickImage(onResult: (Uri?) -> Unit) {
         // Photo Picker 零权限，无门控
         PluginHostLauncherHub.pickImage(onResult)
+    }
+
+    override fun close() {
+        onClose()
     }
 
     private fun ensure(capability: PluginCapability) {

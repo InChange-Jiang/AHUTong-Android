@@ -62,7 +62,7 @@ manifest.json 不参与签名（纯展示元数据；能力门控读的是已签
 | `PluginCapability` | `NETWORK` / `PLUGIN_STORAGE` / `CAMERA`——未声明调用即抛 `PluginCapabilityDeniedException` |
 | `PluginHostServices` | `appContext` / `http()`（裸客户端，零全局会话）/ `storage()`（隔离 KV） |
 | `PluginCameraService` | `hasPermission` / `requestPermission` / `createPreviewView` / `startSession`（取景+逐帧分析+拍照+手电筒） |
-| `PluginHostV2` | `camera()`（CAMERA 门控）/ `pluginFilesDir()`（二进制目录，PLUGIN_STORAGE 门控）/ `pickImage()`（Photo Picker，零权限） |
+| `PluginHostV2` | `camera()`（CAMERA 门控）/ `pluginFilesDir()`（二进制目录，PLUGIN_STORAGE 门控）/ `pickImage()`（Photo Picker，零权限）/ `close()`（插件关闭自己，宿主 popBackStack） |
 
 ## 4. 十分钟写一个 .ahup 插件
 
@@ -112,6 +112,10 @@ val v2 = host as? PluginHostV2 ?: return // 旧宿主优雅降级
 val camera = v2.camera()        // 已声明 CAMERA，直接可用
 val files = v2.pluginFilesDir() // 大块二进制数据（扫描页/PDF）
 ```
+
+插件要"关闭自己返回"（含返回前二次确认）：`BackHandler` 里弹自己的确认弹窗，
+确认后调 `v2.close()`——宿主会 popBackStack 退出插件页。旧宿主上探测不到
+`PluginHostV2` 时退化为只依赖系统返回。
 
 ### 4.3 打包
 

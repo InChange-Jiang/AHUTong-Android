@@ -2,12 +2,13 @@ package com.ahu.ahutong.ui.screen.main.home
 
 import com.ahu.ahutong.data.dao.AHUCache
 import com.ahu.ahutong.data.dao.HomeWidgetLayoutFamily
+import com.ahu.ahutong.data.dao.HomeWidgetDefaults
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Shares external slot changes with the already composed Home screen. */
 object HomeWidgetPlacement {
-    const val NOTICE_WIDGET_ID = "campus_notices"
+    const val NOTICE_WIDGET_ID = HomeWidgetDefaults.NOTICE_WIDGET_ID
     private val mutableRevision = MutableStateFlow(0L)
     val revision: StateFlow<Long> = mutableRevision
 

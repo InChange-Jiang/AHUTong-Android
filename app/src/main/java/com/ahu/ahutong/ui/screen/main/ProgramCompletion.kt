@@ -1,6 +1,5 @@
 package com.ahu.ahutong.ui.screen.main
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,19 +25,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.data.crawler.model.jwxt.CompletionCourse
 import com.ahu.ahutong.data.crawler.model.jwxt.CompletionModule
+import com.ahu.ahutong.ui.components.AppCard
 import com.ahu.ahutong.ui.components.AppFilterChip
 import com.ahu.ahutong.ui.components.AppPageScaffold
 import com.ahu.ahutong.ui.components.AppSectionCard
 import com.ahu.ahutong.ui.components.AppStateCard
 import com.ahu.ahutong.ui.components.TrailingAction
-import com.ahu.ahutong.ui.shape.SmoothRoundedCornerShape
 import com.ahu.ahutong.ui.state.ProgramCompletionViewModel
 import com.kyant.monet.n1
 import com.kyant.monet.withNight
@@ -196,18 +194,18 @@ private fun CompletionSummaryCard(state: ProgramCompletionViewModel.UiState) {
     }
 }
 
-/** 大模块全览卡（可点击展开/收起）：标题 + 进度条 + 学分统计，不含课程明细。 */
+/** 大模块全览卡（可点击展开/收起）：标题 + 进度条 + 学分统计，不含课程明细。
+ *  点击走 AppCard 的 onClick（主题原生点击通道：Radiant 下无 ripple、不裁玻璃阴影）；
+ *  切勿在 AppSectionCard 外层 clip+clickable——clip 会把 Radiant 玻璃卡的阴影裁成硬边。 */
 @Composable
 private fun ModuleOverviewCard(
     module: CompletionModule,
     expanded: Boolean,
     onToggle: () -> Unit
 ) {
-    AppSectionCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(SmoothRoundedCornerShape(12.dp))
-            .clickable(onClick = onToggle)
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onToggle
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),

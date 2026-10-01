@@ -101,6 +101,7 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.feature.schedule.R
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
+import com.ahu.ahutong.data.schedule.ScheduleUiPrefs
 import com.ahu.ahutong.data.debug.DebugClock
 import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.ui.components.appLiquidGlassSceneBackground
@@ -245,14 +246,18 @@ fun Schedule(
         if (isActive && !isGraduate) scheduleViewModel.onScheduleEntered()
     }
 
+    // 当前时间指示线开关（持久化，默认关）：课表设置弹窗里可打开。
+    var showNowTimeline by remember { mutableStateOf(ScheduleUiPrefs.isNowTimelineVisible()) }
+
     // 当前时间指示线心跳：每分钟重算一次钟点分钟数，驱动 recompose 平滑前进。
     // 时间源 = DebugClock（与周次/周几同一时钟）：Debug 设置页的 mock 时间
     // （AHUCache.saveMockCurrentTimeMillis，-5天/+3天）直接驱动指示线位置。
     // 旧实现走独立的 ScheduleNowClock prefs 偏移，但全工程无 UI 写入该偏移，
     // 指示线永远用系统时间——mock 时间对时间线完全无效（已废弃该路径）。
+    // 时间线关闭时心跳整个停掉：无秒级轮询、无重组开销。
     var nowMinutes by remember { mutableStateOf(DebugClock.currentMinutes()) }
-    LaunchedEffect(isActive) {
-        while (isActive) {
+    LaunchedEffect(isActive, showNowTimeline) {
+        while (isActive && showNowTimeline) {
             delay(1_000L)
             // 每秒重读，但只在分钟值变化时写 state（同值写入不触发重组）：
             // 平时随真实/mock 分钟平滑推进，mock 时间被 Debug 页改写后 1 秒内即生效
@@ -595,9 +600,11 @@ fun Schedule(
                         .padding(cellSpacing)
                 }
             ) {
-                // 当前时间指示线（位置换算）：仅本周页、学期内、非下学期预览且非总览模式时显示；
-                // 研究生课表使用 GMIS 节次时间表换算
-                val nowIndicatorPosition = if (
+                // 当前时间指示线（位置换算）：设置开关打开、本周页、学期内、
+                // 非下学期预览且非总览模式时显示；研究生课表使用 GMIS 节次时间表换算
+                val nowIndicatorPosition = if (!showNowTimeline) {
+                    null
+                } else if (
                     !isPreviewNextSemester &&
                     !isOverviewSchedule &&
                     scheduleConfig?.isInSemester == true &&
@@ -728,6 +735,17 @@ fun Schedule(
         ScheduleSettingsDialog(
             isOverviewSchedule = isOverviewSchedule,
             isPreviewNextSemester = isPreviewNextSemester,
+            showNowTimeline = showNowTimeline,
+            onShowNowTimelineChange = { enabled ->
+                val oldValue = showNowTimeline
+                showNowTimeline = enabled
+                ScheduleUiPrefs.setNowTimelineVisible(enabled)
+                behaviorRecorder.reportCommittedMutation(
+                    MutationId.SCHEDULE_NOW_TIMELINE_CHANGED,
+                    oldValue,
+                    enabled
+                )
+            },
             showNextSemester = !isGraduate,
             extraSettings = {
                 if (isGraduate) {
@@ -1048,6 +1066,8 @@ private fun scheduleResultBucket(count: Int): ResultCountBucket = when (count) {
 private fun ScheduleSettingsDialog(
         isOverviewSchedule: Boolean,
         isPreviewNextSemester: Boolean,
+        showNowTimeline: Boolean,
+        onShowNowTimelineChange: (Boolean) -> Unit,
         onOverviewChange: (Boolean) -> Unit,
         onPreviewNextSemesterChange: (Boolean) -> Unit,
         onDismiss: () -> Unit,
@@ -1069,6 +1089,12 @@ private fun ScheduleSettingsDialog(
             ),
             content = {
                 extraSettings()
+                ScheduleSettingRow(
+                    title = "显示当前时间线",
+                    description = "在课表上标记现在的时间，直观显示当前课程进度",
+                    selected = showNowTimeline,
+                    onSelect = onShowNowTimelineChange
+                )
                 ScheduleSettingRow(
                     title = "总览课表",
                     description = "显示全部周次的课程，重叠课程会平分同一块时间区域",

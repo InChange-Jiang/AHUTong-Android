@@ -613,6 +613,14 @@ object AHUCache {
         userPutString("jwxt_stu_id", id)
     }
 
+    /** 培养方案完成情况缓存（per-user，键含 stdId）。存的是映射后领域模型 JSON——不含 PII。 */
+    fun saveProgramCompletionJson(stdId: String, json: String) {
+        userPutString("program_completion_$stdId", json)
+    }
+
+    fun getProgramCompletionJson(stdId: String): String? =
+        userGetStringOrMigrate("program_completion_$stdId") { null }
+
     fun getJwxtStudentId() : String?{
         return userGetStringOrMigrate("jwxt_stu_id") {
             kv.getString(

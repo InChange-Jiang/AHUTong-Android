@@ -59,6 +59,7 @@ import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
 import com.ahu.ahutong.ui.screen.main.Evaluation
 import com.ahu.ahutong.ui.screen.main.Exam
 import com.ahu.ahutong.ui.screen.main.FreeClassroom
+import com.ahu.ahutong.ui.screen.main.ProgramCompletion
 import com.ahu.ahutong.ui.screen.main.Grade
 import com.ahu.ahutong.ui.screen.main.Home
 import com.ahu.ahutong.ui.screen.main.LostFound
@@ -422,6 +423,9 @@ fun Main(
             }
             animatedComposable("free_classroom") {
                 FreeClassroom(onBack = { navController.popBackStack() })
+            }
+            animatedComposable("program_completion") {
+                ProgramCompletion(onBack = { navController.popBackStack() })
             }
             animatedComposable("lost_found") {
                 LostFound(onBack = { navController.popBackStack() })

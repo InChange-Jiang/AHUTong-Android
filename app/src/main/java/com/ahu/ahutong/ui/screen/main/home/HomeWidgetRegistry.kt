@@ -125,6 +125,13 @@ object HomeWidgetRegistry {
             tint = Color(0xFF1976D2)
         ),
         HomeWidgetSpec(
+            id = "program_completion",
+            title = "培养方案",
+            route = "program_completion",
+            iconId = R.drawable.ic_nav_degree_hat,
+            tint = Color(0xFF009688)
+        ),
+        HomeWidgetSpec(
             id = "identity_code",
             title = "身份码",
             route = "identity_code",

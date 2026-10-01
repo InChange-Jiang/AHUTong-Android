@@ -76,6 +76,14 @@ interface JwxtApi {
     @GET("/student/for-std/grade/sheet/info/{id}")
     suspend fun getGrade(@Path("id") id: String): GradeResponse
 
+    // 培养方案完成情况：入口页（单档案 302 → info/{stdId}，多档案返回选择页）
+    @GET("/student/for-std/program-completion-preview")
+    suspend fun fetchProgramCompletionEntry(): Response<ResponseBody>
+
+    // 完成情况数据页：HTML 内嵌 var model（全量数据，解析见 ProgramCompletionHtmlParser）
+    @GET("/student/for-std/program-completion-preview/info/{id}")
+    suspend fun getProgramCompletionInfo(@Path("id") id: String): Response<ResponseBody>
+
     @FormUrlEncoded
     @POST
     suspend fun device(

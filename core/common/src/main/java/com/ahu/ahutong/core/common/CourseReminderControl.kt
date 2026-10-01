@@ -28,4 +28,8 @@ interface CourseReminderControl {
      * 界面只说"我要打开提醒的系统入口"，于是它既不需要构造 Intent，也不需要认识回落顺序。
      */
     fun openSystemSettings()
+
+    fun canScheduleExactReminders(): Boolean
+
+    fun openExactAlarmSettings()
 }

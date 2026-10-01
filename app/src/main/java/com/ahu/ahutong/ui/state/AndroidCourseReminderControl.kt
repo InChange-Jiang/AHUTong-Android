@@ -2,10 +2,13 @@ package com.ahu.ahutong.ui.state
 
 import android.content.Context
 import android.content.Intent
+import android.app.AlarmManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.core.common.CourseReminderControl
 import com.ahu.ahutong.notification.CourseReminderCapability
-import com.ahu.ahutong.notification.CourseReminderNotifier
 import com.ahu.ahutong.notification.CourseReminderScheduler
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -30,7 +33,18 @@ class AndroidCourseReminderControl @Inject constructor() : CourseReminderControl
     }
 
     override fun cancelActiveReminder() {
-        CourseReminderNotifier.cancelActiveReminder(context)
+        CourseReminderScheduler.dismissActiveReminder(context)
+    }
+
+    override fun canScheduleExactReminders(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            context.getSystemService(AlarmManager::class.java)?.canScheduleExactAlarms() == true
+
+    override fun openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+            Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent.resolveActivity(context.packageManager) != null) context.startActivity(intent)
     }
 
     /**

@@ -8,7 +8,9 @@ data class CourseReminderPayload(
     val timeText: String?,
     val courseStartAtMillis: Long? = null,
     val notificationId: Int = 1001,
-    val allowLiveCountdown: Boolean = false
+    val allowLiveCountdown: Boolean = false,
+    val occurrenceKey: String? = null,
+    val isDebug: Boolean = false
 ) {
     val supportsLiveCountdown: Boolean
         get() = allowLiveCountdown && courseStartAtMillis != null
@@ -20,6 +22,8 @@ data class CourseReminderPayload(
         putExtra(EXTRA_NOTIFICATION_ID, notificationId)
         courseStartAtMillis?.let { putExtra(EXTRA_COURSE_START_AT_MILLIS, it) }
         putExtra(EXTRA_ALLOW_LIVE_COUNTDOWN, allowLiveCountdown)
+        putExtra(EXTRA_OCCURRENCE_KEY, occurrenceKey)
+        putExtra(EXTRA_IS_DEBUG, isDebug)
     }
 
     companion object {
@@ -29,6 +33,8 @@ data class CourseReminderPayload(
         private const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
         private const val EXTRA_COURSE_START_AT_MILLIS = "extra_course_start_at_millis"
         private const val EXTRA_ALLOW_LIVE_COUNTDOWN = "extra_allow_live_countdown"
+        private const val EXTRA_OCCURRENCE_KEY = "extra_occurrence_key"
+        private const val EXTRA_IS_DEBUG = "extra_is_debug"
 
         fun fromIntent(intent: Intent): CourseReminderPayload? {
             val courseName = intent.getStringExtra(EXTRA_COURSE_NAME)?.takeIf { it.isNotBlank() }
@@ -44,7 +50,9 @@ data class CourseReminderPayload(
                 timeText = intent.getStringExtra(EXTRA_TIME_TEXT),
                 courseStartAtMillis = courseStartAtMillis,
                 notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 1001),
-                allowLiveCountdown = intent.getBooleanExtra(EXTRA_ALLOW_LIVE_COUNTDOWN, false)
+                allowLiveCountdown = intent.getBooleanExtra(EXTRA_ALLOW_LIVE_COUNTDOWN, false),
+                occurrenceKey = intent.getStringExtra(EXTRA_OCCURRENCE_KEY),
+                isDebug = intent.getBooleanExtra(EXTRA_IS_DEBUG, false)
             )
         }
     }

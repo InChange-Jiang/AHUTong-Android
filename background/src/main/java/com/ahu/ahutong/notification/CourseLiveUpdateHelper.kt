@@ -3,23 +3,28 @@ package com.ahu.ahutong.notification
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Notification
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.TaskStackBuilder
 import com.ahu.ahutong.background.launchIntent
 import com.ahu.ahutong.notification.model.CourseReminderPayload
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 object CourseLiveUpdateHelper {
     private const val LIVE_NOTIFICATION_ID = 4096
     private const val LIVE_UPDATE_REQUEST_CODE = 4097
     private const val LIVE_DISMISS_REQUEST_CODE = 4098
-    private const val ONE_MINUTE_MS = 60_000L
+    private const val EXTRA_OCCURRENCE_KEY = "course_reminder_occurrence"
 
     fun showLiveUpdate(
         context: Context,
@@ -29,22 +34,22 @@ object CourseLiveUpdateHelper {
 
         val courseStartAtMillis = payload.courseStartAtMillis ?: return false
         val remainingDurationMs = courseStartAtMillis - System.currentTimeMillis()
-        val remainingMinutes = calculateRemainingMinutes(remainingDurationMs)
-        if (remainingMinutes <= 0) {
+        if (remainingDurationMs <= 0) {
             cancel(context)
             cancelScheduledUpdate(context)
             return false
         }
 
-        val countdownText = buildCountdownText(remainingMinutes)
-        val collapsedText = buildCollapsedText(payload, countdownText)
-        val expandedText = buildExpandedText(payload, countdownText)
+        val startText = Instant.ofEpochMilli(courseStartAtMillis).atZone(ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("HH:mm")) + " 开始上课"
+        val contentText = listOfNotNull(payload.location?.takeIf { it.isNotBlank() }, startText)
+            .joinToString(" · ")
         CourseReminderScheduler.createNotificationChannel(context)
         val notification = NotificationCompat.Builder(context, CourseReminderScheduler.CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
             .setContentTitle(payload.courseName)
-            .setContentText(collapsedText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(expandedText))
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -52,10 +57,13 @@ object CourseLiveUpdateHelper {
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setShowWhen(false)
+            .setWhen(courseStartAtMillis)
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
             .setTimeoutAfter(remainingDurationMs)
             .setRequestPromotedOngoing(true)
-            .setShortCriticalText(buildChipText(remainingMinutes))
+            .addExtras(Bundle().apply { putString(EXTRA_OCCURRENCE_KEY, payload.occurrenceKey) })
             .setContentIntent(buildContentIntent(context, payload.notificationId))
             .setDeleteIntent(buildDismissPendingIntent(context))
             .build()
@@ -71,31 +79,23 @@ object CourseLiveUpdateHelper {
             return false
         }
 
-        NotificationManagerCompat.from(context).notify(LIVE_NOTIFICATION_ID, notification)
-        return true
-    }
-
-    fun scheduleNextUpdate(
-        context: Context,
-        payload: CourseReminderPayload
-    ) {
-        val courseStartAtMillis = payload.courseStartAtMillis ?: return
-        val remainingMinutes = calculateRemainingMinutes(
-            courseStartAtMillis - System.currentTimeMillis()
-        )
-        if (remainingMinutes <= 1) {
-            cancelScheduledUpdate(context)
-            return
+        return try {
+            NotificationManagerCompat.from(context).notify(LIVE_NOTIFICATION_ID, notification)
+            true
+        } catch (_: SecurityException) {
+            false
         }
-
-        val nextUpdateAtMillis = courseStartAtMillis - (remainingMinutes - 1L) * ONE_MINUTE_MS
-        val pendingIntent = buildUpdatePendingIntent(context, payload)
-        cancelScheduledUpdate(context)
-        scheduleAlarm(context, nextUpdateAtMillis, pendingIntent)
     }
 
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(LIVE_NOTIFICATION_ID)
+    }
+
+    fun retainCurrentOccurrence(context: Context, validKeys: Set<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val key = manager.activeNotifications.firstOrNull { it.id == LIVE_NOTIFICATION_ID && it.tag == null }
+            ?.notification?.extras?.getString(EXTRA_OCCURRENCE_KEY) ?: return
+        if (key !in validKeys) cancel(context)
     }
 
     fun cancelScheduledUpdate(context: Context) {
@@ -138,81 +138,9 @@ object CourseLiveUpdateHelper {
         )
     }
 
-    private fun buildUpdatePendingIntent(
-        context: Context,
-        payload: CourseReminderPayload?
-    ): PendingIntent {
-        val intent = Intent(context, CourseReminderReceiver::class.java).apply {
-            action = CourseReminderReceiver.ACTION_UPDATE_LIVE_COUNTDOWN
-            payload?.writeToIntent(this)
-        }
-        return PendingIntent.getBroadcast(
-            context,
-            LIVE_UPDATE_REQUEST_CODE,
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-    }
-
-    private fun scheduleAlarm(
-        context: Context,
-        triggerAtMillis: Long,
-        pendingIntent: PendingIntent
-    ) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent
-            )
-        }
-    }
-
     private fun hasPromotableCharacteristics(notification: Notification): Boolean {
         if (Build.VERSION.SDK_INT < 36) return false
         return notification.hasPromotableCharacteristics()
     }
 
-    private fun calculateRemainingMinutes(
-        remainingDurationMs: Long
-    ): Int {
-        if (remainingDurationMs <= 0L) return 0
-        return ((remainingDurationMs - 1L) / ONE_MINUTE_MS + 1L).toInt()
-    }
-
-    private fun buildChipText(
-        remainingMinutes: Int
-    ): String = "${remainingMinutes}分钟"
-
-    private fun buildCountdownText(
-        remainingMinutes: Int
-    ): String = "${remainingMinutes} 分钟后上课"
-
-    private fun buildExpandedText(
-        payload: CourseReminderPayload,
-        countdownText: String
-    ): String {
-        return buildString {
-            if (!payload.location.isNullOrBlank()) {
-                append(payload.location)
-                append('\n')
-            }
-            append(countdownText)
-        }
-    }
-
-    private fun buildCollapsedText(
-        payload: CourseReminderPayload,
-        countdownText: String
-    ): String {
-        val location = payload.location?.takeIf { it.isNotBlank() } ?: return countdownText
-        return "$location · $countdownText"
-    }
 }

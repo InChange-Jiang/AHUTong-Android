@@ -8,16 +8,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
-import com.ahu.ahutong.background.launchIntent
 import com.ahu.ahutong.background.scheduleReadModel
 import com.ahu.ahutong.background.courseReminderSettings
 import com.ahu.ahutong.data.schedule.ScheduleSectionTimes
-import com.ahu.ahutong.data.model.Course
 import com.ahu.ahutong.notification.model.CourseReminderPayload
-import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -26,12 +22,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 object CourseReminderScheduler {
     private val schedulerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val rescheduleMutex = Mutex()
+    private val commands = CourseReminderCommands(schedulerScope)
     internal const val CHANNEL_ID = "course_reminder_v2"
 
     private const val CHANNEL_NAME = "课前提醒"
@@ -39,13 +33,6 @@ object CourseReminderScheduler {
     private const val REQUEST_CODE = 2001
     private const val DEBUG_REQUEST_CODE_BASE = 2100
     private const val DEBUG_LIVE_COUNTDOWN_MINUTES = 3L
-    private const val SCAN_DAYS = 21L
-    private const val REMINDER_MINUTES = 10L
-
-    data class ReminderCandidate(
-        val triggerAt: LocalDateTime,
-        val course: Course
-    )
 
     fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -61,38 +48,77 @@ object CourseReminderScheduler {
         manager.createNotificationChannel(channel)
     }
 
-    fun reschedule(context: Context): Job = schedulerScope.launch {
+    fun reschedule(context: Context): Job = submit {
+        rescheduleNow(context.applicationContext)
+    }
+
+    private fun submit(action: suspend () -> Unit): Job = commands.submit {
         try {
-            rescheduleMutex.withLock {
-                rescheduleNow(context.applicationContext)
-            }
+            action()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            Log.e(TAG, "Unable to reschedule course reminder", error)
+            Log.e(TAG, "Unable to update course reminder", error)
         }
     }
 
     private suspend fun rescheduleNow(context: Context) {
         cancelScheduledReminder(context)
-        if (!scheduleReadModel().canUseUndergraduateAcademics()) {
+        CourseLiveUpdateHelper.cancelScheduledUpdate(context)
+        val readModel = scheduleReadModel()
+        if (!readModel.canUseUndergraduateAcademics() || !isReminderEnabled()) {
             CourseReminderNotifier.cancelActiveReminder(context)
+            CourseReminderNotifier.cancelStandardReminders(context)
             return
         }
-        if (!isReminderEnabled(context)) return
-
-        val nextReminder = findNextReminder() ?: return
-        val triggerAtMillis = nextReminder.triggerAt
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val pendingIntent = buildPendingIntent(context, nextReminder)
-        scheduleAlarm(context, triggerAtMillis, pendingIntent)
+        val accountKey = readModel.reminderAccountKey()
+        if (accountKey == null) {
+            CourseReminderNotifier.cancelActiveReminder(context)
+            CourseReminderNotifier.cancelStandardReminders(context)
+            return
+        }
+        val now = LocalDateTime.now()
+        val deliveryStore = CourseReminderDeliveryStore(context)
+        val deliveredKeys = deliveryStore.deliveredKeys(System.currentTimeMillis())
+        val reminders = findReminders(now)
+        CourseLiveUpdateHelper.retainCurrentOccurrence(context, reminders.map { it.key }.toSet())
+        for (reminder in reminders.filter { it.key !in deliveredKeys }) {
+            if (readModel.reminderAccountKey() != accountKey || !isReminderEnabled()) return
+            val payload = buildPayload(reminder)
+            if (reminder.reminderAt.isAfter(now)) {
+                scheduleAlarm(context, reminder.reminderAt.toEpochMillis(), buildPendingIntent(context, payload))
+                return
+            }
+            // The original alarm may still be delayed. Deliver once while the course is upcoming.
+            val result = CourseReminderNotifier.showReminder(context, payload)
+            if (result != CourseReminderNotifier.DeliveryResult.BLOCKED) {
+                deliveryStore.markDelivered(reminder.key, reminder.courseStart.toEpochMillis())
+            }
+        }
     }
 
-    fun cancel(context: Context) {
+    fun cancel(context: Context): Job = submit {
         cancelScheduledReminder(context)
         CourseReminderNotifier.cancelActiveReminder(context)
+        CourseReminderNotifier.cancelStandardReminders(context)
+    }
+
+    suspend fun clearDeliveryHistory(context: Context) {
+        commands.withLock { CourseReminderDeliveryStore(context).clear() }
+    }
+
+    fun dismissActiveReminder(context: Context): Job = schedulerScope.launch {
+        commands.withLock { CourseReminderNotifier.cancelActiveReminder(context) }
+    }
+
+    fun deliverDebugReminder(context: Context, payload: CourseReminderPayload): Job = schedulerScope.launch {
+        try {
+            commands.withLock { CourseReminderNotifier.showReminder(context, payload) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.e(TAG, "Unable to deliver debug course reminder", error)
+        }
     }
 
     fun scheduleDebugReminder(context: Context, delayMinutes: Int) {
@@ -103,7 +129,8 @@ object CourseReminderScheduler {
             location = "预计 $delayMinutes 分钟后触发",
             timeText = "调试通知",
             notificationId = DEBUG_REQUEST_CODE_BASE + delayMinutes,
-            allowLiveCountdown = false
+            allowLiveCountdown = false,
+            isDebug = true
         )
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -126,7 +153,8 @@ object CourseReminderScheduler {
             timeText = "${DEBUG_LIVE_COUNTDOWN_MINUTES} 分钟后开始",
             courseStartAtMillis = triggerAtMillis + DEBUG_LIVE_COUNTDOWN_MINUTES * 60_000L,
             notificationId = DEBUG_REQUEST_CODE_BASE + 100 + delayMinutes,
-            allowLiveCountdown = true
+            allowLiveCountdown = true,
+            isDebug = true
         )
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -143,7 +171,7 @@ object CourseReminderScheduler {
     fun scheduleDebugNextCourseInThreeMinutes(context: Context): String? {
         createNotificationChannel(context)
 
-        val nextReminder = findNextReminder() ?: return null
+        val nextReminder = findReminders().firstOrNull() ?: return null
         val course = nextReminder.course
         val startRange = ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
         val startMinutes = startRange.first
@@ -155,7 +183,8 @@ object CourseReminderScheduler {
             timeText = "$sections $startTimeText",
             courseStartAtMillis = System.currentTimeMillis() + DEBUG_LIVE_COUNTDOWN_MINUTES * 60_000L,
             notificationId = DEBUG_REQUEST_CODE_BASE + 300,
-            allowLiveCountdown = true
+            allowLiveCountdown = true,
+            isDebug = true
         )
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -172,16 +201,15 @@ object CourseReminderScheduler {
 
     private fun cancelScheduledReminder(context: Context) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        alarmManager.cancel(
-            PendingIntent.getBroadcast(
-                context,
-                REQUEST_CODE,
-                Intent(context, CourseReminderReceiver::class.java).setAction(
-                    CourseReminderReceiver.ACTION_REMIND
-                ),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            REQUEST_CODE,
+            Intent(context, CourseReminderReceiver::class.java).setAction(
+                CourseReminderReceiver.ACTION_REMIND
+            ),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
+        if (pendingIntent != null) alarmManager.cancel(pendingIntent)
     }
 
     private fun scheduleAlarm(
@@ -190,7 +218,7 @@ object CourseReminderScheduler {
         pendingIntent: PendingIntent
     ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()) {
             alarmManager.setExactAndAllowWhileIdle(
                 AlarmManager.RTC_WAKEUP,
                 triggerAtMillis,
@@ -205,33 +233,27 @@ object CourseReminderScheduler {
         }
     }
 
-    private suspend fun isReminderEnabled(context: Context): Boolean =
+    private suspend fun isReminderEnabled(): Boolean =
         courseReminderSettings().courseReminderEnabled.first()
 
-    private fun buildPendingIntent(
-        context: Context,
-        reminder: ReminderCandidate
-    ): PendingIntent {
+    private fun buildPayload(reminder: CourseReminderPlan.Occurrence): CourseReminderPayload {
         val startRange = ScheduleSectionTimes.getCourseTimeRangeInMinutes(reminder.course)
         val startMinutes = startRange.first
         val startTimeText = "%02d:%02d".format(startMinutes / 60, startMinutes % 60)
         val sections = "${reminder.course.startTime}-${reminder.course.startTime + reminder.course.length - 1}节"
         val timeText = "$sections $startTimeText"
-        val notificationId = reminder.triggerAt.hashCode()
-        val courseStartAtMillis = reminder.triggerAt
-            .plusMinutes(REMINDER_MINUTES)
-            .atZone(ZoneId.systemDefault())
-            .toInstant()
-            .toEpochMilli()
-        val payload = CourseReminderPayload(
+        return CourseReminderPayload(
             courseName = reminder.course.name,
             location = reminder.course.location,
             timeText = timeText,
-            courseStartAtMillis = courseStartAtMillis,
-            notificationId = notificationId,
-            allowLiveCountdown = true
+            courseStartAtMillis = reminder.courseStart.toEpochMillis(),
+            notificationId = reminder.key.hashCode(),
+            allowLiveCountdown = true,
+            occurrenceKey = reminder.key
         )
+    }
 
+    private fun buildPendingIntent(context: Context, payload: CourseReminderPayload): PendingIntent {
         val intent = Intent(context, CourseReminderReceiver::class.java).apply {
             action = CourseReminderReceiver.ACTION_REMIND
             payload.writeToIntent(this)
@@ -244,56 +266,28 @@ object CourseReminderScheduler {
         )
     }
 
-    private fun findNextReminder(now: LocalDateTime = LocalDateTime.now()): ReminderCandidate? {
-        val semesterKey = scheduleReadModel().cachedSemesterKey() ?: return null
-        val startTime = scheduleReadModel().schoolTermStartTime(
+    private fun findReminders(
+        now: LocalDateTime = LocalDateTime.now(),
+        deliveredKeys: Set<String> = emptySet()
+    ): List<CourseReminderPlan.Occurrence> {
+        val readModel = scheduleReadModel()
+        val accountKey = readModel.reminderAccountKey() ?: return emptyList()
+        val semesterKey = readModel.cachedSemesterKey() ?: return emptyList()
+        val startTime = readModel.schoolTermStartTime(
             semesterKey.schoolYear,
             semesterKey.schoolTerm
-        ) ?: return null
-        val termStartDate = runCatching { LocalDate.parse(startTime) }.getOrNull() ?: return null
-        val schedule = scheduleReadModel().cachedSchedule(semesterKey.raw).orEmpty()
-        if (schedule.isEmpty()) return null
-
-        var best: ReminderCandidate? = null
-        for (offset in 0..SCAN_DAYS) {
-            val targetDate = now.toLocalDate().plusDays(offset)
-            val weekIndex = calculateWeekIndex(termStartDate, targetDate)
-            if (weekIndex < 1) continue
-            schedule.forEach { course ->
-                if (!isCourseActiveOnDate(course, targetDate, weekIndex)) return@forEach
-                val courseStartTime = courseStartLocalTime(course) ?: return@forEach
-                val courseStart = targetDate.atTime(courseStartTime)
-                val reminderAt = courseStart.minusMinutes(REMINDER_MINUTES)
-                if (!reminderAt.isAfter(now)) return@forEach
-                val candidate = ReminderCandidate(reminderAt, course)
-                if (best == null || candidate.triggerAt.isBefore(best!!.triggerAt)) {
-                    best = candidate
-                }
-            }
-            if (best != null && Duration.between(now, best!!.triggerAt).toDays() < offset) {
-                break
-            }
-        }
-        return best
+        ) ?: return emptyList()
+        val termStartDate = runCatching { LocalDate.parse(startTime) }.getOrNull() ?: return emptyList()
+        return CourseReminderPlan.build(
+            accountKey, semesterKey.raw, termStartDate,
+            readModel.cachedSchedule(semesterKey.raw).orEmpty(), now,
+            todayInSemester = readModel.cachedConfig().isInSemester,
+            deliveredKeys = deliveredKeys
+        )
     }
 
-    private fun calculateWeekIndex(termStartDate: LocalDate, targetDate: LocalDate): Int {
-        val days = Duration.between(
-            termStartDate.atStartOfDay(),
-            targetDate.atStartOfDay()
-        ).toDays()
-        return (days / 7L).toInt() + 1
-    }
-
-    private fun isCourseActiveOnDate(course: Course, date: LocalDate, weekIndex: Int): Boolean {
-        return date.dayOfWeek.value == course.weekday && weekIndex in course.weekIndexes
-    }
-
-    private fun courseStartLocalTime(course: Course): LocalTime? {
-        val range = ScheduleSectionTimes.getCourseTimeRangeInMinutes(course)
-        if (range.isEmpty()) return null
-        return LocalTime.of(range.first / 60, range.first % 60)
-    }
+    private fun LocalDateTime.toEpochMillis(): Long =
+        atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     private const val TAG = "CourseReminderScheduler"
 }

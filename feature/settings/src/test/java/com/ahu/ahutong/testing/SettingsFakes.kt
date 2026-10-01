@@ -247,6 +247,14 @@ class FakeCourseReminderControl : CourseReminderControl {
     override fun openSystemSettings() {
         openSettingsCount++
     }
+
+    var exactAlarmAllowed = true
+    var openExactAlarmSettingsCount = 0
+        private set
+
+    override fun canScheduleExactReminders(): Boolean = exactAlarmAllowed
+
+    override fun openExactAlarmSettings() { openExactAlarmSettingsCount++ }
 }
 
 /** [AppDataReset] 的 fake：只记下被调用了几次。 */

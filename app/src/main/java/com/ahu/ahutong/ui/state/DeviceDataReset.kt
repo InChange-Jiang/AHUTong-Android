@@ -34,10 +34,11 @@ class DeviceDataReset @Inject constructor(
     private val context: Context get() = AppEnvironmentHolder.context()
 
     override suspend fun clearAll() {
-        CourseReminderScheduler.cancel(context)
+        CourseReminderScheduler.cancel(context).join()
         CampusNoticeNotifier.cancelAll(context)
         CampusNoticeRepository.clearAll()
         settings.clearAll()
+        CourseReminderScheduler.clearDeliveryHistory(context)
         updateSkipStore.clear()
         behavior.logoutAndClear()
         session.signOut()

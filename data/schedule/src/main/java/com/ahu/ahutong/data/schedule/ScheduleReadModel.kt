@@ -14,6 +14,9 @@ interface ScheduleReadModel {
     /** 当前账号是否能使用本科教务；后台组件据此避免显示旧账号的本科课表。 */
     fun canUseUndergraduateAcademics(): Boolean
 
+    /** Stable owner of the cached timetable; null when there is no authenticated account. */
+    fun reminderAccountKey(): String?
+
     /** 某学期的课表缓存；没有缓存返回 null。 */
     fun cachedSchedule(schoolTerm: String): List<Course>?
 

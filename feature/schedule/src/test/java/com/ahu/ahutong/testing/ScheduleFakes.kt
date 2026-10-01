@@ -152,4 +152,8 @@ class FakeCourseReminderControl : CourseReminderControl {
     override fun openSystemSettings() {
         openSettingsCount++
     }
+
+    override fun canScheduleExactReminders(): Boolean = true
+
+    override fun openExactAlarmSettings() = Unit
 }

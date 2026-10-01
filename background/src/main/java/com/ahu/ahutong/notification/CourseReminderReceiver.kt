@@ -22,25 +22,17 @@ class CourseReminderReceiver : BroadcastReceiver() {
             try {
                 when (intent.action) {
                     ACTION_REMIND -> {
-                        val liveUpdateShown = CourseReminderNotifier.showReminder(context, payload)
-                        if (liveUpdateShown) {
-                            CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
+                        if (payload.isDebug) {
+                            CourseReminderScheduler.deliverDebugReminder(context, payload).join()
+                        } else {
+                            // Re-read settings and the timetable: queued or legacy payloads can be stale.
+                            CourseReminderScheduler.reschedule(context).join()
                         }
-                        CourseReminderScheduler.reschedule(context).join()
                     }
 
                     ACTION_UPDATE_LIVE_COUNTDOWN -> {
-                        if (!CourseReminderCapability.shouldTryLiveCountdown(context, payload)) {
-                            CourseReminderNotifier.cancelActiveReminder(context)
-                            return@launch
-                        }
-
-                        val liveUpdateShown = CourseLiveUpdateHelper.showLiveUpdate(context, payload)
-                        if (liveUpdateShown) {
-                            CourseLiveUpdateHelper.scheduleNextUpdate(context, payload)
-                        } else {
-                            CourseReminderNotifier.cancelActiveReminder(context)
-                        }
+                        // Cancel minute alarms left by an older version. SystemUI now owns the timer.
+                        CourseLiveUpdateHelper.cancelScheduledUpdate(context)
                     }
                 }
             } finally {

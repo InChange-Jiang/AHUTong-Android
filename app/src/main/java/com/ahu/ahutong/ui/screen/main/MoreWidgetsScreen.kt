@@ -35,7 +35,7 @@ import com.kyant.monet.withNight
  *
  * - GridCells.Adaptive(150dp)：列数不封顶、随屏宽自适应，列宽均分 → 每行严格两边对齐；
  * - 分类按枚举声明序渲染，过滤后为空的分类整段跳过（如研究生无"学业教务"）；
- * - 分类内奇数张卡时末卡跨全行，不留半行空白；
+ * - 残行卡片保持普通列宽、左对齐，不做整行拉伸；
  * - 标题栏 / 插件管理 / 桌面课表卡为跨全行 item，顺序保持旧版。
  */
 @Composable
@@ -58,7 +58,7 @@ fun MoreWidgetsScreen(
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 150.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
         modifier = Modifier
             .fillMaxSize()
@@ -114,13 +114,9 @@ fun MoreWidgetsScreen(
                     modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
                 )
             }
-            specs.forEachIndexed { index, spec ->
-                // 奇数张卡时末卡跨全行，保持每行两边对齐
-                val lastOdd = specs.size % 2 == 1 && index == specs.size - 1
-                item(
-                    span = { GridItemSpan(if (lastOdd) maxLineSpan else 1) },
-                    key = spec.id
-                ) {
+            for (spec in specs) {
+                // 残行卡保持普通列宽、左对齐，不做整行拉伸
+                item(key = spec.id) {
                     CategorizedToolCard(
                         spec = spec,
                         onClick = { navController.navigate(spec.route) }

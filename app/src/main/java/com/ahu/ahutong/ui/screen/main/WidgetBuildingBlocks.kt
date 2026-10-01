@@ -1,6 +1,7 @@
 package com.ahu.ahutong.ui.screen.main
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -140,8 +141,8 @@ internal fun DesktopScheduleWidgetCard() {
 /**
  * 「全部小工具」页的分类网格卡：图标 + 名字横排矮宽卡（48dp 高，图标 20dp）。
  *
- * 点击反馈用 `indication = null`（照 RadiantCardImpl）：卡面是 appLiquidGlassSurface，
- * 外层再加 clip 会把 Radiant 玻璃面越界绘制的光影裁成硬边（培养方案页实踩过的坑）。
+ * 卡面：无色透明 + 细边框（与旧版 ToolItem 的零填充观感一致，只多一圈描边）。
+ * 点击反馈用 `indication = null`（照 RadiantCardImpl）：不 clip 不垫色，无玻璃阴影裁切问题。
  */
 @Composable
 internal fun CategorizedToolCard(
@@ -152,9 +153,10 @@ internal fun CategorizedToolCard(
     Row(
         modifier = modifier
             .height(48.dp)
-            .appLiquidGlassSurface(
-                shape = SmoothRoundedCornerShape(16.dp),
-                fallbackColor = 96.n1 withNight 28.n1
+            .border(
+                width = 1.dp,
+                color = 90.n1 withNight 30.n1,
+                shape = SmoothRoundedCornerShape(16.dp)
             )
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },

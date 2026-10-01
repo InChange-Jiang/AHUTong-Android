@@ -66,7 +66,7 @@ fun PluginManagerSection() {
         }
     }
 
-    AppSectionCard(modifier = Modifier.padding(horizontal = 16.dp)) {
+    AppSectionCard(modifier = Modifier) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)

@@ -52,6 +52,7 @@ import com.ahu.ahutong.ui.screen.main.BathroomDeposit
 import com.ahu.ahutong.ui.screen.main.Billing
 import com.ahu.ahutong.ui.screen.main.BillingStats
 import com.ahu.ahutong.ui.screen.main.CardBalanceDeposit
+import com.ahu.ahutong.ui.screen.main.CampusNoticeScreen
 import com.ahu.ahutong.ui.screen.main.ElectricityDeposit
 import com.ahu.ahutong.ui.screen.main.ElectricityAlertSettings
 import com.ahu.ahutong.ui.screen.main.ElectricityRecentRooms
@@ -396,6 +397,9 @@ fun Main(
                     onEditHome = ::requestHomeEdit
                 )
             }
+            animatedComposable("campus_notices") {
+                CampusNoticeScreen()
+            }
             animatedComposable("school_calendar") {
                 SchoolCalendar(navController = navController)
             }
@@ -690,7 +694,7 @@ fun Main(
             AppDialogSurface(
                 onDismissRequest = { onReLoginDismiss() },
                 properties = DialogProperties(
-                    dismissOnBackPress = false,
+                    dismissOnBackPress = true,
                     dismissOnClickOutside = false,
                     usePlatformDefaultWidth = false
                 )
@@ -712,6 +716,12 @@ fun Main(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("重新登录", style = MaterialTheme.typography.titleMedium)
+                    }
+                    AppButton(
+                        onClick = onReLoginDismiss,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("继续使用", style = MaterialTheme.typography.titleMedium)
                     }
                 }
             }

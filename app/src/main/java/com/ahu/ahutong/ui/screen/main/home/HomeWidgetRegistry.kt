@@ -3,6 +3,7 @@ package com.ahu.ahutong.ui.screen.main.home
 import androidx.compose.ui.graphics.Color
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.dao.HomeWidgetDefaults
 import com.ahu.ahutong.data.model.AcademicFeatureAccess
 
 data class HomeWidgetSpec(
@@ -39,11 +40,8 @@ object HomeWidgetRegistry {
     /** 曜光版（RadiantUI）主页插槽数量：图标网格（4 + 3，末位为「更多」入口）。 */
     const val slotCountRadiant = 7
 
-    /** RadiantUI 首次启动的默认插槽（7 个填满，按展示顺序）。 */
-    val defaultSlotsRadiant: List<String?> = listOf(
-        "electricity", "bathroom", "grade", "exam",
-        "weather", "network_recharge", "free_classroom"
-    )
+    /** Radiant 配置直接读取时的兜底；主页首次加载仍沿用 Classic 默认槽位。 */
+    val defaultSlotsRadiant: List<String?> = HomeWidgetDefaults.radiant
 
     /** 内置小工具 + 插件入口（插件由 ServiceLoader 发现，可为空）。 */
     val widgets: List<HomeWidgetSpec> get() = builtInWidgets + pluginWidgets
@@ -118,6 +116,13 @@ object HomeWidgetRegistry {
             route = "weather",
             iconId = R.drawable.ic_weather,
             tint = Color(0xFFFFB300)
+        ),
+        HomeWidgetSpec(
+            id = "campus_notices",
+            title = "校园通知",
+            route = "campus_notices",
+            iconId = R.drawable.ic_campus_notice,
+            tint = Color(0xFF1976D2)
         ),
         HomeWidgetSpec(
             id = "identity_code",

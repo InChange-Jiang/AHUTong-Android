@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Badge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -94,6 +95,7 @@ fun HomeWidgetSlotLayout(
     navController: NavHostController,
     isHomeActive: Boolean,
     slots: List<String?>,
+    noticeUnreadCount: Int,
     isEditing: Boolean,
     highlightedSlot: Int?,
     draggingWidgetId: String?,
@@ -112,6 +114,7 @@ fun HomeWidgetSlotLayout(
             navController = navController,
             isHomeActive = isHomeActive,
             slots = slots,
+            noticeUnreadCount = noticeUnreadCount,
             isEditing = isEditing,
             highlightedSlot = highlightedSlot,
             draggingWidgetId = draggingWidgetId,
@@ -129,6 +132,7 @@ fun HomeWidgetSlotLayout(
 private fun HomeWidgetSlot(
     slotIndex: Int,
     widgetId: String?,
+    noticeUnreadCount: Int,
     isEditing: Boolean,
     isHighlighted: Boolean,
     isDragging: Boolean,
@@ -208,6 +212,7 @@ private fun HomeWidgetSlot(
         iconId = spec.iconId,
         iconBytes = spec.iconBytes,
         tint = spec.tint,
+        badgeCount = if (widgetId == HomeWidgetPlacement.NOTICE_WIDGET_ID) noticeUnreadCount else 0,
         isEditing = isEditing,
         isHighlighted = isHighlighted,
         modifier = slotModifier
@@ -222,6 +227,7 @@ private fun TextHomeWidgetCard(
     iconId: Int,
     iconBytes: ByteArray?,
     tint: Color,
+    badgeCount: Int = 0,
     isEditing: Boolean,
     isHighlighted: Boolean,
     modifier: Modifier = Modifier,
@@ -232,6 +238,7 @@ private fun TextHomeWidgetCard(
             iconId = iconId,
             iconBytes = iconBytes,
             tint = tint,
+            badgeCount = badgeCount,
             isEditing = isEditing,
             isHighlighted = isHighlighted,
             modifier = modifier,
@@ -245,6 +252,7 @@ private fun RadiantTextHomeWidgetCard(
     iconId: Int,
     iconBytes: ByteArray?,
     tint: Color,
+    badgeCount: Int,
     isEditing: Boolean,
     isHighlighted: Boolean,
     modifier: Modifier = Modifier,
@@ -283,6 +291,11 @@ private fun RadiantTextHomeWidgetCard(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelMedium
             )
+        }
+        if (badgeCount > 0) {
+            Badge(modifier = Modifier.align(Alignment.TopEnd)) {
+                Text(if (badgeCount > 99) "99+" else badgeCount.toString())
+            }
         }
     }
 }
@@ -332,6 +345,7 @@ private fun RadiantHomeWidgetSlotLayout(
     navController: NavHostController,
     isHomeActive: Boolean,
     slots: List<String?>,
+    noticeUnreadCount: Int,
     isEditing: Boolean,
     highlightedSlot: Int?,
     draggingWidgetId: String?,
@@ -386,6 +400,7 @@ private fun RadiantHomeWidgetSlotLayout(
                             HomeWidgetSlot(
                                 slotIndex = cell,
                                 widgetId = widgetId,
+                                noticeUnreadCount = noticeUnreadCount,
                                 isEditing = isEditing,
                                 isHighlighted = highlightedSlot == cell,
                                 isDragging = draggingWidgetId == widgetId,

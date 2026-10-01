@@ -58,6 +58,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.ahu.ahutong.BuildConfig
 import com.ahu.ahutong.R
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.notice.CampusNoticeRepository
 import com.ahu.ahutong.data.schedule.gmis.GmisTimetableAdapter
 import com.ahu.ahutong.data.crawler.gmis.PostgraduateScheduleRepository
 import com.ahu.ahutong.data.schedule.PostgraduateTeachingWeek
@@ -86,6 +87,7 @@ import com.ahu.ahutong.ui.screen.main.home.HomeWeatherWidget
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetDragOverlay
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetLibrarySheet
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetRegistry
+import com.ahu.ahutong.ui.screen.main.home.HomeWidgetPlacement
 import com.ahu.ahutong.ui.screen.main.home.HomeWidgetSlotLayout
 import com.ahu.ahutong.ui.screen.main.home.CourseStrip
 import com.ahu.ahutong.ui.state.DiscoveryViewModel
@@ -128,6 +130,17 @@ fun Home(
     onEnterEditModeRequestConsumed: () -> Unit = {}
 ) {
     val undergraduateEnabled = AHUCache.canUseUndergraduateAcademics()
+    val noticeAccountId = com.ahu.ahutong.data.session.SessionStore.currentUser()?.xh
+    val noticeSnapshot by CampusNoticeRepository.snapshot.collectAsState()
+    val noticeUnreadCount = noticeSnapshot?.takeIf { it.accountId == noticeAccountId }?.unreadCount ?: 0
+    LaunchedEffect(isActive, noticeAccountId) {
+        if (isActive && AHUCache.isPrivacyAccepted() &&
+            com.ahu.ahutong.data.session.SessionStore.isLoggedIn() && !noticeAccountId.isNullOrBlank()
+        ) {
+            CampusNoticeRepository.open(noticeAccountId)
+            CampusNoticeRepository.requestSyncIfDue()
+        }
+    }
     val graduateAccountId = if (undergraduateEnabled) null else AHUCache.getCurrentUser()?.xh
     val graduateRepository = remember { PostgraduateScheduleRepository.instance }
     val graduateCacheRevision by graduateRepository.revision.collectAsState()
@@ -213,7 +226,7 @@ fun Home(
     // 主页排版全主题统一为 Radiant 方案（曜光居中 Hero 布局），主题只换材质皮肤
     val layoutFamily = HomeWidgetLayoutFamily.RADIANT
     val slotCount = HomeWidgetRegistry.slotCountRadiant
-    val knownWidgetIds = remember {
+    val knownWidgetIds = remember(noticeAccountId, undergraduateEnabled) {
         HomeWidgetRegistry.availableWidgets(true).mapTo(mutableSetOf()) { it.id }
     }
     val initialCalendar = remember { Calendar.getInstance(Locale.CHINA) }
@@ -224,14 +237,12 @@ fun Home(
         )
     }
     var isEditingHome by remember { mutableStateOf(false) }
-    var homeWidgetSlots by remember {
-        // 一次性迁移：Radiant 族没存过配置时，沿用经典族的用户配置
-        val initial = if (AHUCache.hasStoredHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT)) {
-            AHUCache.getHomeWidgetSlots(HomeWidgetLayoutFamily.RADIANT)
-        } else {
-            AHUCache.getHomeWidgetSlots(HomeWidgetLayoutFamily.CLASSIC)
-        }
-        mutableStateOf(normalizeHomeWidgetSlots(initial, slotCount, knownWidgetIds))
+    var homeWidgetSlots by remember(noticeAccountId) {
+        mutableStateOf(normalizeHomeWidgetSlots(HomeWidgetPlacement.currentSlots(), slotCount, knownWidgetIds))
+    }
+    val homeWidgetRevision by HomeWidgetPlacement.revision.collectAsState()
+    LaunchedEffect(homeWidgetRevision, noticeAccountId) {
+        homeWidgetSlots = normalizeHomeWidgetSlots(HomeWidgetPlacement.currentSlots(), slotCount, knownWidgetIds)
     }
     val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
     var libraryBounds by remember { mutableStateOf<Rect?>(null) }
@@ -546,6 +557,7 @@ fun Home(
                 navController = navController,
                 isHomeActive = isActive,
                 slots = homeWidgetSlots,
+                noticeUnreadCount = noticeUnreadCount,
                 isEditing = isEditingHome,
                 highlightedSlot = highlightedSlot,
                 draggingWidgetId = activeDrag?.widgetId,

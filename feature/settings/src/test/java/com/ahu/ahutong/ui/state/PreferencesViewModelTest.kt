@@ -21,6 +21,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,8 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 /**
  * 设置 ViewModel 的契约测试：两个协作方都是 fake，因此不需要设备、不碰 DataStore、
@@ -36,6 +40,7 @@ import kotlinx.coroutines.test.setMain
  *
  * 用 UnconfinedTestDispatcher：ViewModel 的收集与写入都是立即完成的，断言可以直接读结果。
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PreferencesViewModelTest {
 
     @BeforeTest
@@ -52,10 +57,51 @@ class PreferencesViewModelTest {
     private val behavior = FakeBehaviorRecorder()
 
     private fun viewModel(
-        store: FakeSettingsStore = FakeSettingsStore(),
+        store: SettingsStore = FakeSettingsStore(),
         personalization: FakePersonalizationSettings = FakePersonalizationSettings(),
         repository: FakeRepositoryIndex = FakeRepositoryIndex()
     ) = PreferencesViewModel(store, personalization, reminders, repository, behavior)
+
+    @Test
+    fun `enabling waits for storage before scheduling and a following disable wins`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = FakeSettingsStore()
+        val writeGate = CompletableDeferred<Unit>()
+        val delayedStore = object : SettingsStore by store {
+            override suspend fun setCourseReminderEnabled(value: Boolean) {
+                if (value) writeGate.await()
+                store.setCourseReminderEnabled(value)
+            }
+        }
+        val subject = viewModel(delayedStore)
+        subject.setCourseReminderEnabled(true)
+        runCurrent()
+        assertFalse(store.courseReminderEnabled.value)
+        assertEquals(0, reminders.rescheduleCount)
+
+        subject.setCourseReminderEnabled(false)
+        runCurrent()
+        assertEquals(0, reminders.cancelCount)
+        writeGate.complete(Unit)
+        runCurrent()
+        assertFalse(store.courseReminderEnabled.value)
+        assertEquals(1, reminders.rescheduleCount)
+        assertEquals(1, reminders.cancelCount)
+    }
+
+    @Test
+    fun `granting exact alarm access refreshes state and reschedules only once`() {
+        reminders.exactAlarmAllowed = false
+        val subject = viewModel()
+        assertFalse(subject.courseReminderExactAlarmAllowed.value)
+        subject.openCourseReminderExactAlarmSettings()
+        assertEquals(1, reminders.openExactAlarmSettingsCount)
+        reminders.exactAlarmAllowed = true
+        subject.refreshCourseReminderAlarmAccess()
+        subject.refreshCourseReminderAlarmAccess()
+        assertTrue(subject.courseReminderExactAlarmAllowed.value)
+        assertEquals(1, reminders.rescheduleCount)
+    }
 
     @Test
     fun `the acceleration sources come from the repository port`() {

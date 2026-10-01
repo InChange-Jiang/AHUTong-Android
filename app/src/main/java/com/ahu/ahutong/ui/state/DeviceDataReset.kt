@@ -5,9 +5,11 @@ import com.ahu.ahutong.core.common.AppEnvironmentHolder
 import com.ahu.ahutong.core.storage.SettingsStore
 import com.ahu.ahutong.data.crawler.manager.CookieManager
 import com.ahu.ahutong.data.dao.AHUCache
+import com.ahu.ahutong.data.notice.CampusNoticeRepository
 import com.ahu.ahutong.data.session.AhuSession
 import com.ahu.ahutong.data.update.ApkUpdateSkipStore
 import com.ahu.ahutong.notification.CourseReminderScheduler
+import com.ahu.ahutong.notification.CampusNoticeNotifier
 import com.ahu.ahutong.personalization.runtime.BehaviorPredictionRuntime
 import com.ahu.ahutong.sdk.RustSDK
 import javax.inject.Inject
@@ -32,8 +34,11 @@ class DeviceDataReset @Inject constructor(
     private val context: Context get() = AppEnvironmentHolder.context()
 
     override suspend fun clearAll() {
-        CourseReminderScheduler.cancel(context)
+        CourseReminderScheduler.cancel(context).join()
+        CampusNoticeNotifier.cancelAll(context)
+        CampusNoticeRepository.clearAll()
         settings.clearAll()
+        CourseReminderScheduler.clearDeliveryHistory(context)
         updateSkipStore.clear()
         behavior.logoutAndClear()
         session.signOut()

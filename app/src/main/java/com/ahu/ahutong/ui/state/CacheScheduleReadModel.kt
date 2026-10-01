@@ -20,6 +20,10 @@ class CacheScheduleReadModel @Inject constructor() : ScheduleReadModel {
 
     override fun canUseUndergraduateAcademics(): Boolean = AHUCache.canUseUndergraduateAcademics()
 
+    override fun reminderAccountKey(): String? =
+        AHUCache.getCurrentUser()?.xh?.takeIf { it.isNotBlank() }
+            ?: "mock".takeIf { AHUCache.getMockData() }
+
     override fun cachedSchedule(schoolTerm: String): List<Course>? =
         AHUCache.getSchedule(schoolTerm)
 

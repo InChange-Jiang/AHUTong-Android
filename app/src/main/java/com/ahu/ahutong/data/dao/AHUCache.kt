@@ -460,17 +460,8 @@ object AHUCache {
 
     private fun defaultHomeWidgetSlots(layoutFamily: HomeWidgetLayoutFamily): List<String?> =
         when (layoutFamily) {
-            HomeWidgetLayoutFamily.CLASSIC ->
-                listOf("bathroom", "electricity") + List(HOME_WIDGET_SLOT_COUNT_CLASSIC - 2) { null }
-            HomeWidgetLayoutFamily.RADIANT -> listOf(
-                "electricity",
-                "bathroom",
-                "grade",
-                "exam",
-                "weather",
-                "network_recharge",
-                "free_classroom"
-            )
+            HomeWidgetLayoutFamily.CLASSIC -> HomeWidgetDefaults.classic
+            HomeWidgetLayoutFamily.RADIANT -> HomeWidgetDefaults.radiant
         }
 
     private fun normalizeHomeWidgetSlots(

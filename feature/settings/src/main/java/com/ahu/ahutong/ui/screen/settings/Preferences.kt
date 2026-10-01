@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ahu.ahutong.data.model.AppThemeMode
 import com.ahu.ahutong.data.model.AppUiTheme
 import com.ahu.ahutong.data.model.DEFAULT_THEME_COLOR
@@ -88,6 +92,16 @@ fun Preferences(
     val useBuiltInSecurePasswordKeyboard by
         viewModel.useBuiltInSecurePasswordKeyboard.collectAsState()
     val courseReminderEnabled by viewModel.courseReminderEnabled.collectAsState()
+    val courseReminderExactAlarmAllowed by viewModel.courseReminderExactAlarmAllowed.collectAsState()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCourseReminderAlarmAccess()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        viewModel.refreshCourseReminderAlarmAccess()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     val courseReminderLiveCountdownEnabled by
         viewModel.courseReminderLiveCountdownEnabled.collectAsState()
     val bootstrapContributionStatus by viewModel.bootstrapContributionStatus.collectAsState()
@@ -98,7 +112,6 @@ fun Preferences(
         isRequestingPermission = false
         if (granted) {
             viewModel.setCourseReminderEnabled(true)
-            viewModel.rescheduleCourseReminders()
         } else {
             viewModel.setCourseReminderEnabled(false)
             Toast.makeText(context, "未授予通知权限，无法开启课前提醒", Toast.LENGTH_SHORT).show()
@@ -108,7 +121,6 @@ fun Preferences(
     val requestCourseReminder: (Boolean) -> Unit = { enabled ->
         if (!enabled) {
             viewModel.setCourseReminderEnabled(false)
-            viewModel.cancelCourseReminders()
         } else if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -122,7 +134,6 @@ fun Preferences(
             }
         } else {
             viewModel.setCourseReminderEnabled(true)
-            viewModel.rescheduleCourseReminders()
         }
     }
 
@@ -254,6 +265,17 @@ fun Preferences(
                 backdrop = backdrop,
                 onHorizontalDragActiveChange = onToggleHorizontalDragActiveChange
             )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                SettingsActionRow(
+                    title = "准时提醒权限",
+                    subtitle = if (courseReminderExactAlarmAllowed) {
+                        "已允许预约准时提醒"
+                    } else {
+                        "未允许，课前提醒可能延迟；点击前往授权"
+                    },
+                    onClick = { viewModel.openCourseReminderExactAlarmSettings() }
+                )
+            }
             SettingsToggleRow(
                 title = "课前倒计时岛卡",
                 subtitle = if (Build.VERSION.SDK_INT >= 36) {
@@ -271,7 +293,6 @@ fun Preferences(
                         ).show()
                     } else {
                         viewModel.setCourseReminderLiveCountdownEnabled(enabled)
-                        if (!enabled) viewModel.dismissActiveCourseReminder()
                     }
                 },
                 backdrop = backdrop,

@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import javax.inject.Inject
 
@@ -109,7 +111,11 @@ class PreferencesViewModel @Inject constructor(
     }
 
     private val _courseReminderEnabled = MutableStateFlow(false)
+    private val courseReminderSettingMutex = Mutex()
     val courseReminderEnabled: StateFlow<Boolean> = _courseReminderEnabled.asStateFlow()
+
+    private val _courseReminderExactAlarmAllowed = MutableStateFlow(reminders.canScheduleExactReminders())
+    val courseReminderExactAlarmAllowed: StateFlow<Boolean> = _courseReminderExactAlarmAllowed.asStateFlow()
 
     private val _courseReminderLiveCountdownEnabled = MutableStateFlow(false)
     val courseReminderLiveCountdownEnabled: StateFlow<Boolean> =
@@ -259,6 +265,16 @@ class PreferencesViewModel @Inject constructor(
 
     fun openCourseReminderSystemSettings() = reminders.openSystemSettings()
 
+    fun openCourseReminderExactAlarmSettings() = reminders.openExactAlarmSettings()
+
+    fun refreshCourseReminderAlarmAccess() {
+        val allowed = reminders.canScheduleExactReminders()
+        if (_courseReminderExactAlarmAllowed.value != allowed) {
+            _courseReminderExactAlarmAllowed.value = allowed
+            reminders.reschedule()
+        }
+    }
+
     fun setShowQRCode(value: Boolean) {
         writeSetting {
             val oldValue = _showQRCode.value
@@ -301,9 +317,12 @@ class PreferencesViewModel @Inject constructor(
 
     fun setCourseReminderEnabled(value: Boolean) {
         writeSetting {
-            val oldValue = _courseReminderEnabled.value
-            settings.setCourseReminderEnabled(value)
-            behavior.reportCommittedMutation(MutationId.COURSE_REMINDER_CHANGED, oldValue, value)
+            courseReminderSettingMutex.withLock {
+                val oldValue = settings.courseReminderEnabled.first()
+                settings.setCourseReminderEnabled(value)
+                if (value) reminders.reschedule() else reminders.cancel()
+                behavior.reportCommittedMutation(MutationId.COURSE_REMINDER_CHANGED, oldValue, value)
+            }
         }
     }
 
@@ -317,6 +336,7 @@ class PreferencesViewModel @Inject constructor(
         writeSetting {
             val oldValue = _courseReminderLiveCountdownEnabled.value
             settings.setCourseReminderLiveCountdownEnabled(value)
+            if (!value) reminders.cancelActiveReminder()
             behavior.reportCommittedMutation(
                 MutationId.COURSE_LIVE_COUNTDOWN_CHANGED,
                 oldValue,
